@@ -1,5 +1,24 @@
 # Contributing to Akka Persistence R2DBC 
 
+## Running the tests
+
+The tests expect a locally running database.
+
+It can be started with the docker-comopse file in the docker folder:
+
+```
+docker-compose -f docker/docker-compose-postgres.yml up
+```
+
+```
+docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+```
+
+```
+docker exec -it docker_postgres-db_1 psql -U postgres
+```
+
+
 ## General Workflow
 
 This is the process for committing code into main.
