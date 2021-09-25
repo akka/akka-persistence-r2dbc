@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.journal
 
+import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
@@ -13,6 +15,7 @@ import akka.annotation.InternalApi
 import akka.persistence.PersistentRepr
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.SliceUtils
 import akka.serialization.Serialization
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
@@ -25,10 +28,12 @@ import org.slf4j.LoggerFactory
 @InternalApi
 private[r2dbc] object JournalDao {
   val log: Logger = LoggerFactory.getLogger(classOf[JournalDao])
+  val EmptyDbTimestamp: Instant = Instant.EPOCH
 
   final case class SerializedJournalRow(
       persistenceId: String,
       sequenceNr: Long,
+      dbTimestamp: Instant,
       payload: Array[Byte],
       serId: Int,
       serManifest: String,
@@ -43,8 +48,11 @@ private[r2dbc] object JournalDao {
     object Journal {
       def journalTable(settings: R2dbcSettings): String =
         s"""CREATE TABLE ${settings.journalTable} IF NOT EXISTS (
+           |  slice INT NOT NULL,
+           |  entity_type_hint VARCHAR(255) NOT NULL,
            |  persistence_id VARCHAR(255) NOT NULL,
            |  sequence_number BIGINT NOT NULL,
+           |  db_timestamp timestamp with time zone NOT NULL,
            |  deleted BOOLEAN DEFAULT FALSE NOT NULL,
            |  writer VARCHAR(255) NOT NULL,
            |  write_timestamp BIGINT,
@@ -55,7 +63,7 @@ private[r2dbc] object JournalDao {
            |  meta_ser_id INTEGER,
            |  meta_ser_manifest VARCHAR(255),
            |  meta_payload BYTEA,
-           |  PRIMARY KEY(persistence_id, sequence_number)
+           |  PRIMARY KEY(slice, entity_type_hint, persistence_id, sequence_number)
            |)""".stripMargin
 
       def deserializeRow(
@@ -73,9 +81,9 @@ private[r2dbc] object JournalDao {
           sender = ActorRef.noSender).withTimestamp(row.timestamp)
 
         val reprWithMeta = row.metadata match {
+          case None => repr
           case Some(meta) =>
             repr.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-          case None => repr
         }
         reprWithMeta
       }
@@ -101,8 +109,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
   private val insertEventSql = s"INSERT INTO ${journalSettings.journalTable} " +
-    "(persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+    "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
+    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
 
   private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from ${journalSettings.journalTable} " +
     "WHERE persistence_id = $1 AND sequence_number >= $2"
@@ -116,23 +124,28 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val deleteEventsSql = s"DELETE FROM ${journalSettings.journalTable} " +
     "WHERE persistence_id = $1 AND sequence_number <= $2"
   private val insertDeleteMarkerSql = s"INSERT INTO ${journalSettings.journalTable} " +
-    "(persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+    "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
+    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10, $11)"
 
   def writeEvents(events: Seq[SerializedJournalRow]): Future[Unit] = {
     require(events.nonEmpty)
     val persistenceId = events.head.persistenceId
 
+    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
-        .bind("$1", write.persistenceId)
-        .bind("$2", write.sequenceNr)
-        .bind("$3", write.writerUuid)
-        .bind("$4", write.timestamp)
-        .bind("$5", "") // FIXME
-        .bind("$6", write.serId)
-        .bind("$7", write.serManifest)
-        .bind("$8", write.payload)
+        .bind("$1", slice)
+        .bind("$2", entityTypeHint)
+        .bind("$3", write.persistenceId)
+        .bind("$4", write.sequenceNr)
+        .bind("$5", write.writerUuid)
+        .bind("$6", write.timestamp)
+        .bind("$7", "") // FIXME
+        .bind("$8", write.serId)
+        .bind("$9", write.serManifest)
+        .bind("$10", write.payload)
     }
 
     val result = {
@@ -191,10 +204,10 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       fromSequenceNr: Long,
       toSequenceNr: Long,
       max: Long)(replay: PersistentRepr => Unit): Future[Unit] = {
-    def replayRow(row: SerializedJournalRow): Unit = {
+    def replayRow(row: SerializedJournalRow): SerializedJournalRow = {
       val repr = Schema.Journal.deserializeRow(journalSettings, serialization, row)
-      log.trace("replaying {}", repr)
       replay(repr)
+      row
     }
 
     val result = r2dbcExecutor.select(s"select replay [$persistenceId]")(
@@ -214,6 +227,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
           SerializedJournalRow(
             persistenceId = persistenceId,
             sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
+            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             payload = row.get("event_payload", classOf[Array[Byte]]),
             serId = row.get("event_ser_id", classOf[java.lang.Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
@@ -224,7 +238,17 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
           )))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Replayed persistenceId [{}], [{}] events", persistenceId, rows.size))
+      result.foreach { rows =>
+        log.debug("Replayed persistenceId [{}], [{}] events", persistenceId, rows.size)
+        if (log.isTraceEnabled)
+          rows.foreach { row: SerializedJournalRow =>
+            log.debug(
+              "Replayed persistenceId [{}], seqNr [{}], dbTimestamp [{}]",
+              persistenceId,
+              row.sequenceNr,
+              row.dbTimestamp)
+          }
+      }
 
     result.map(_ => ())(ExecutionContext.parasitic)
   }
@@ -238,16 +262,20 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     deleteMarkerSeqNrFut.flatMap { deleteMarkerSeqNr =>
       def bindDeleteMarker(stmt: Statement): Statement = {
+        val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+        val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
         stmt
-          .bind("$1", persistenceId)
-          .bind("$2", deleteMarkerSeqNr)
-          .bind("$3", "")
-          .bind("$4", System.currentTimeMillis())
+          .bind("$1", slice)
+          .bind("$2", entityTypeHint)
+          .bind("$3", persistenceId)
+          .bind("$4", deleteMarkerSeqNr)
           .bind("$5", "")
-          .bind("$6", 0)
+          .bind("$6", System.currentTimeMillis())
           .bind("$7", "")
-          .bind("$8", Array.emptyByteArray)
-          .bind("$9", true)
+          .bind("$8", 0)
+          .bind("$9", "")
+          .bind("$10", Array.emptyByteArray)
+          .bind("$11", true)
       }
 
       val result = r2dbcExecutor.update(s"delete [$persistenceId]") { connection =>

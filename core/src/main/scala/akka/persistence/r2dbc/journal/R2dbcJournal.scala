@@ -89,6 +89,7 @@ final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJour
           val write = SerializedJournalRow(
             pr.persistenceId,
             pr.sequenceNr,
+            JournalDao.EmptyDbTimestamp,
             serialized,
             id,
             manifest,
