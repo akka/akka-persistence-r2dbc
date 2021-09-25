@@ -18,7 +18,7 @@ object R2dbcJournalPerfSpec {
 }
 
 class R2dbcJournalPerfSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) with TestDbLifecycle {
-  override def eventsCount: Int = 100
+  override def eventsCount: Int = 200
 
   override def measurementIterations: Int = 2 // increase when testing for real
 

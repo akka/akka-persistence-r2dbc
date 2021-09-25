@@ -58,21 +58,26 @@ object R2dbcExecutor {
     def asFutureDone(): Future[Done] = {
       val promise = Promise[Done]()
       publisher.subscribe(new Subscriber[Any] {
+        @volatile private var subscription: Subscription = null
 
         override def onSubscribe(s: Subscription): Unit = {
+          subscription = s
           s.request(1)
         }
 
         override def onNext(value: Any): Unit = {
-          // TODO do we need to cancel subscription here?
+          subscription.cancel()
+          subscription = null
           promise.trySuccess(Done)
         }
 
         override def onError(t: Throwable): Unit = {
+          subscription = null
           promise.tryFailure(t)
         }
 
         override def onComplete(): Unit = {
+          subscription = null
           promise.trySuccess(Done)
         }
       })

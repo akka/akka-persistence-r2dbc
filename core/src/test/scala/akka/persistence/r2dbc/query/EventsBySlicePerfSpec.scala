@@ -38,7 +38,7 @@ class EventsBySlicePerfSpec
   s"EventsBySlices performance" should {
 
     "retrieve from several slices" in {
-      val numberOfPersisters = 100
+      val numberOfPersisters = 300
       val numberOfEvents = 10
       val writeConcurrency = 10
       val numberOfSliceRanges = 4
@@ -58,7 +58,7 @@ class EventsBySlicePerfSpec
         ref ! TestActors.Persister.Stop(probe.ref)
         if (i > writeConcurrency && i % writeConcurrency == 0) {
           // not too many at the same time
-          probe.receiveMessages(writeConcurrency)
+          probe.receiveMessages(writeConcurrency, 10.seconds)
           doneCount += writeConcurrency
 
           if (doneCount % 10 == 0)

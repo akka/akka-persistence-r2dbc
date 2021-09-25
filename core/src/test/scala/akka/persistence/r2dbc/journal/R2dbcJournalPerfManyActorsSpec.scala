@@ -27,7 +27,7 @@ class R2dbcJournalPerfManyActorsSpec extends JournalPerfSpec(R2dbcJournalPerfSpe
 
   override def typedSystem: ActorSystem[_] = system.toTyped
 
-  def actorCount = 10 // increase when testing for real
+  def actorCount = 20 // increase when testing for real
 
   private val commands = Vector(1 to eventsCount: _*)
 
