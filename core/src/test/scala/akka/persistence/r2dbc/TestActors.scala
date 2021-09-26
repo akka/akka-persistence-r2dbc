@@ -14,6 +14,7 @@ object TestActors {
     sealed trait Command
     final case class Persist(payload: Any) extends Command
     final case class PersistWithAck(payload: Any, replyTo: ActorRef[Done]) extends Command
+    final case class PersistAll(payloads: List[Any]) extends Command
     final case class Ping(replyTo: ActorRef[Done]) extends Command
     final case class Stop(replyTo: ActorRef[Done]) extends Command
 
@@ -27,6 +28,8 @@ object TestActors {
               Effect.persist(command.payload)
             case command: PersistWithAck =>
               Effect.persist(command.payload).thenRun(_ => command.replyTo ! Done)
+            case command: PersistAll =>
+              Effect.persist(command.payloads)
             case Ping(replyTo) =>
               replyTo ! Done
               Effect.none

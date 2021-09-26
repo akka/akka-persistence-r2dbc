@@ -19,6 +19,7 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister.Persist
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
+import akka.persistence.r2dbc.TestActors.Persister.Ping
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
@@ -27,16 +28,28 @@ import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 
 object EventsBySliceSpec {
   sealed trait QueryType
   case object Live extends QueryType
   case object Current extends QueryType
+
+  def config: Config = ConfigFactory
+    .parseString(s"""
+    akka.persistence.r2dbc-small-buffer = $${akka.persistence.r2dbc}
+    akka.persistence.r2dbc-small-buffer.query {
+      buffer-size = 3
+    }
+    """)
+    .withFallback(TestConfig.config)
+    .resolve()
 }
 
 class EventsBySliceSpec
-    extends ScalaTestWithActorTestKit(TestConfig.config)
+    extends ScalaTestWithActorTestKit(EventsBySliceSpec.config)
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
@@ -59,12 +72,17 @@ class EventsBySliceSpec
   }
 
   List[QueryType](Current, Live).foreach { queryType =>
-    def doQuery(entityTypeHint: String, minSlice: Int, maxSlice: Int, offset: Offset): Source[EventEnvelope, NotUsed] =
+    def doQuery(
+        entityTypeHint: String,
+        minSlice: Int,
+        maxSlice: Int,
+        offset: Offset,
+        queryImpl: R2dbcReadJournal = query): Source[EventEnvelope, NotUsed] =
       queryType match {
         case Live =>
-          query.eventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.eventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
         case Current =>
-          query.currentEventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.currentEventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
       }
 
     def assertFinished(probe: TestSubscriber.Probe[EventEnvelope]): Unit =
@@ -118,6 +136,29 @@ class EventsBySliceSpec
         assertFinished(withOffset)
       }
 
+      "read in chunks" in new Setup {
+        val queryWithSmallBuffer = PersistenceQuery(testKit.system)
+          .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
+        // FIXME this doesn't work for PersistAll (same transaction_timestamp
+//        for (i <- 1 to 10) {
+//          persister ! PersistAll((1 to 10).map(n => s"e-$i-$n").toList)
+//        }
+        for (i <- 1 to 10; n <- 1 to 10) {
+          persister ! Persist(s"e-$i-$n")
+        }
+        persister ! Ping(probe.ref)
+        probe.expectMessage(10.seconds, Done)
+        Thread.sleep(3000)
+        val result: TestSubscriber.Probe[EventEnvelope] =
+          doQuery(entityTypeHint, slice, slice, NoOffset, queryWithSmallBuffer)
+            .runWith(sinkProbe)
+            .request(101)
+        for (i <- 1 to 10; n <- 1 to 10) {
+          result.expectNext().event shouldBe s"e-$i-$n"
+        }
+        assertFinished(result)
+      }
+
     }
   }
 
@@ -153,7 +194,7 @@ class EventsBySliceSpec
     }
 
     "retrieve from several slices" in new Setup {
-      val numberOfPersisters = 40
+      val numberOfPersisters = 20
       val numberOfEvents = 3
       val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityTypeHint)).toVector
       val persisters = persistenceIds.map { pid =>
@@ -216,7 +257,7 @@ class EventsBySliceSpec
     }
 
     "retrieve from several slices" in new Setup {
-      val numberOfPersisters = 40
+      val numberOfPersisters = 20
       val numberOfEvents = 3
 
       maxNumberOfSlices should be(128)
@@ -249,6 +290,12 @@ class EventsBySliceSpec
         for (i <- 1 to numberOfEvents) {
           ref ! Persist(s"e-$i")
         }
+        ref
+      }
+
+      persisters.foreach { ref =>
+        ref ! Ping(probe.ref)
+        probe.expectMessage(10.seconds, Done)
       }
 
       allEnvelopes.futureValue.size should be(numberOfPersisters * numberOfEvents)
