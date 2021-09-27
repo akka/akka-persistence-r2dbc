@@ -35,6 +35,7 @@ final class R2dbcSettings(config: Config) {
 @InternalStableApi
 final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
+  val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").asScala
   val bufferSize: Int = config.getInt("buffer-size")
 }
 

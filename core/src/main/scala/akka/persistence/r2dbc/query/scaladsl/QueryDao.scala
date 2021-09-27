@@ -36,12 +36,17 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
+  private val behindCurrentTimeInterval =
+    s"${settings.querySettings.behindCurrentTime.toMillis} milliseconds"
+
   private def eventsBySlicesRangeSql(maxDbTimestamp: Boolean): String =
+    // FIXME make that interval configurable
     s"""SELECT *
        |FROM ${settings.journalTable}
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
-       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp <= $6" else ""}
+       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp <= $6"
+    else s"AND db_timestamp < statement_timestamp() - interval '$behindCurrentTimeInterval'"}
        |AND deleted = false
        |ORDER BY db_timestamp, sequence_number
        |LIMIT $$5
