@@ -7,12 +7,18 @@
         </encoder>
     </appender>
 
-<!--    <logger name="akka.persistence.r2dbc" level="DEBUG" />-->
+    <appender name="CapturingAppender" class="akka.actor.testkit.typed.internal.CapturingAppender"/>
+    <logger name="akka.actor.testkit.typed.internal.CapturingAppenderDelegate">
+        <appender-ref ref="STDOUT"/>
+    </logger>
+
+<!--    <logger name="akka.persistence.r2dbc" level="TRACE" />-->
 <!--    <logger name="io.r2dbc.pool" level="DEBUG" />-->
 
 
     <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="CapturingAppender"/>
+<!--        <appender-ref ref="STDOUT"/>-->
     </root>
 
 </configuration>

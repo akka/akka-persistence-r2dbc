@@ -29,4 +29,6 @@ final class R2dbcSettings(config: Config) {
 
   val querySettings = new QuerySettings(config.getConfig("query"))
 
+  val maxNumberOfSlices = 128 // FIXME config
+
 }

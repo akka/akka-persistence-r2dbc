@@ -14,10 +14,24 @@ docker-compose -f docker/docker-compose-postgres.yml up
 docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 ```
 
+## Some useful debug queries
+
 ```
 docker exec -it docker_postgres-db_1 psql -U postgres
 ```
 
+```
+select slice, entity_type_hint, persistence_id, sequence_number, db_timestamp from event_journal;
+```
+
+connections:
+```
+SELECT *
+FROM   pg_stat_activity
+WHERE  datname = current_database()  -- only current database
+AND    pid <> pg_backend_pid()       -- except your current session
+AND    state LIKE 'idle%';
+```
 
 ## General Workflow
 
