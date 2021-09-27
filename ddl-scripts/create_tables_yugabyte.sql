@@ -23,4 +23,4 @@ CREATE TABLE IF NOT EXISTS event_journal(
   PRIMARY KEY(slice, entity_type_hint, persistence_id, sequence_number)
 );
 
-CREATE INDEX event_journal_slice_idx ON event_journal(slice, entity_type_hint, db_timestamp);
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type_hint, db_timestamp);
