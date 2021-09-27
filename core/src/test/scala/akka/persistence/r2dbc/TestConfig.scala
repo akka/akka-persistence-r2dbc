@@ -19,5 +19,6 @@ object TestConfig {
         "akka.persistence.r2dbc.CborSerializable" = jackson-cbor
       }
     }
+    akka.actor.testkit.typed.default-timeout = 10s
     """))
 }

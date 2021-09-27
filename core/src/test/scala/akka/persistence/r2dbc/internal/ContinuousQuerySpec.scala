@@ -16,38 +16,60 @@ import akka.stream.testkit.scaladsl.TestSink
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.wordspec.AnyWordSpecLike
 
+object ContinuousQuerySpec {
+  class Results[T](results: Source[T, NotUsed]*) {
+    private var r = results.toList
+    def next(): Option[Source[T, NotUsed]] = {
+      r match {
+        case x :: xs =>
+          r = xs
+          Some(x)
+        case Nil => None
+      }
+    }
+  }
+}
+
 class ContinuousQuerySpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with ScalaFutures with LogCapturing {
+  import ContinuousQuerySpec.Results
   implicit val as: ActorSystem = system.classicSystem
+
   "ContinuousQuery" should {
     "work for initial query" in {
+      val results = new Results(Source(List("one", "two", "three")))
       ContinuousQuery[String, String](
-        "cats",
+        "dogs",
         (_, _) => "cats",
-        results(Source(List("one", "two", "three"))),
-        0,
-        1.second).runWith(Sink.seq).futureValue shouldEqual List("one", "two", "three")
+        _ => Some(1.second),
+        (state, nrElementsInPrevious) => {
+          if (state == "dogs") nrElementsInPrevious shouldBe -1 // initial query
+          else nrElementsInPrevious shouldBe 3
+          results.next()
+        }).runWith(Sink.seq).futureValue shouldEqual List("one", "two", "three")
     }
     "complete if none returned" in {
-      ContinuousQuery[String, String]("cats", (_, _) => "cats", _ => None, 0, 1.second)
+      ContinuousQuery[String, String]("cats", (_, _) => "cats", _ => Some(1.second), (_, _) => None)
         .runWith(Sink.seq)
         .futureValue shouldEqual Nil
     }
     "execute next query on complete" in {
+      val results = new Results(Source(List("one", "two")), Source(List("three", "four")))
       ContinuousQuery[String, String](
-        "cats",
+        "dogs",
         (_, _) => "cats",
-        results(Source(List("one", "two")), Source(List("three", "four"))),
-        1,
-        1.second).runWith(Sink.seq).futureValue shouldEqual List("one", "two", "three", "four")
+        _ => Some(1.second),
+        (state, nrElementsInPrevious) => {
+          if (state == "dogs") nrElementsInPrevious shouldBe -1 // initial query
+          else nrElementsInPrevious shouldBe 2
+          results.next()
+        }).runWith(Sink.seq).futureValue shouldEqual List("one", "two", "three", "four")
     }
 
     "buffer element if no demand" in {
-      val sub = ContinuousQuery[String, String](
-        "cats",
-        (_, _) => "cats",
-        results(Source(List("one", "two")), Source(List("three", "four"))),
-        0,
-        1.second).runWith(TestSink.probe[String])
+      val results = new Results(Source(List("one", "two")), Source(List("three", "four")))
+      val sub =
+        ContinuousQuery[String, String]("cats", (_, _) => "cats", _ => Some(1.second), (state, _) => results.next())
+          .runWith(TestSink.probe[String])
 
       sub
         .request(1)
@@ -63,12 +85,15 @@ class ContinuousQuerySpec extends ScalaTestWithActorTestKit with AnyWordSpecLike
 
     "fails if subsstream fails" in {
       val t = new RuntimeException("oh dear")
-      val sub = ContinuousQuery[String, () => String](
-        "cats",
-        (_, _) => "cats",
-        results(Source(List(() => "one", () => "two")), Source(List(() => "three", () => throw t))),
-        0,
-        1.second).map(_.apply()).runWith(TestSink.probe)
+      val results = new Results(Source(List(() => "one", () => "two")), Source(List(() => "three", () => throw t)))
+      val sub =
+        ContinuousQuery[String, () => String](
+          "cats",
+          (_, _) => "cats",
+          _ => Some(1.second),
+          (state, _) => results.next())
+          .map(_.apply())
+          .runWith(TestSink.probe)
 
       sub
         .requestNext("one")
@@ -79,12 +104,10 @@ class ContinuousQuerySpec extends ScalaTestWithActorTestKit with AnyWordSpecLike
     }
 
     "should pull something something" in {
-      val sub = ContinuousQuery[String, String](
-        "cats",
-        (_, _) => "cats",
-        results(Source(List("one", "two", "three"))),
-        0,
-        1.second).runWith(TestSink.probe[String])
+      val results = new Results(Source(List("one", "two", "three")))
+      val sub =
+        ContinuousQuery[String, String]("cats", (_, _) => "cats", _ => Some(1.second), (state, _) => results.next())
+          .runWith(TestSink.probe[String])
 
       // give time for the startup to do the pull the buffer the element
       Thread.sleep(500)
@@ -98,20 +121,5 @@ class ContinuousQuerySpec extends ScalaTestWithActorTestKit with AnyWordSpecLike
       sub.expectNext("three")
     }
 
-    "update state every element" in {
-      pending
-    }
-
-    def results[T](results: Source[T, NotUsed]*): String => Option[Source[T, NotUsed]] = {
-      var r = results.toList
-      def next(state: String): Option[Source[T, NotUsed]] =
-        r match {
-          case x :: xs =>
-            r = xs
-            Some(x)
-          case Nil => None
-        }
-      next
-    }
   }
 }

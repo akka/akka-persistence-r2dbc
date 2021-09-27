@@ -16,6 +16,7 @@ import com.typesafe.config.Config
 @InternalStableApi
 final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
+  val bufferSize: Int = config.getInt("buffer-size")
 }
 
 /**

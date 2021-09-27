@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.query.scaladsl
 import java.time.Instant
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
@@ -32,29 +33,54 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     system: ActorSystem[_]) {
   import QueryDao.log
 
-  private val eventsBySlicesRangeSql =
+  private val currentDbTimestampSql =
+    "SELECT transaction_timestamp() AS db_timestamp"
+
+  private def eventsBySlicesRangeSql(maxDbTimestamp: Boolean): String =
     s"""SELECT *
        |FROM ${settings.journalTable}
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
-       |AND db_timestamp >= $$4
-       |ORDER BY db_timestamp, sequence_number""".stripMargin
+       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp <= $6" else ""}
+       |ORDER BY db_timestamp, sequence_number
+       |LIMIT $$5
+       |""".stripMargin
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+
+  def currentDbTimestamp(): Future[Instant] = {
+    r2dbcExecutor
+      .selectOne("select current db timestamp")(
+        connection => connection.createStatement(currentDbTimestampSql),
+        row => row.get("db_timestamp", classOf[Instant]))
+      .map {
+        case Some(time) => time
+        case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
+      }
+  }
 
   def eventsBySlices(
       entityTypeHint: String,
       minSlice: Int,
       maxSlice: Int,
-      fromTimestamp: Instant): Source[SerializedJournalRow, NotUsed] = {
+      fromTimestamp: Instant,
+      toTimestamp: Option[Instant]): Source[SerializedJournalRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
-        connection
-          .createStatement(eventsBySlicesRangeSql)
+        val stmt = connection
+          .createStatement(eventsBySlicesRangeSql(toTimestamp.isDefined))
           .bind("$1", entityTypeHint)
           .bind("$2", minSlice)
           .bind("$3", maxSlice)
           .bind("$4", fromTimestamp)
+        toTimestamp match {
+          case Some(to) =>
+            stmt.bind("$5", settings.querySettings.bufferSize)
+            stmt.bind("$6", to)
+          case None =>
+            stmt.bind("$5", settings.querySettings.bufferSize)
+        }
+        stmt
       },
       row =>
         SerializedJournalRow(

@@ -181,6 +181,10 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
     }
   }
 
+  def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
+    select(logPrefix)(statement, mapRow).map(_.headOption)(ExecutionContext.parasitic)
+  }
+
   def select[A](
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
     val startTime = System.nanoTime()

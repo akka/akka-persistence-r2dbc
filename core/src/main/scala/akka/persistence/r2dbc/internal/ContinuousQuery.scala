@@ -21,10 +21,9 @@ private[r2dbc] object ContinuousQuery {
   def apply[S, T](
       initialState: S,
       updateState: (S, T) => S,
-      nextQuery: S => Option[Source[T, NotUsed]],
-      threshold: Long,
-      refreshInterval: FiniteDuration): Source[T, NotUsed] =
-    Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, nextQuery, threshold, refreshInterval))
+      delayNextQuery: Long => Option[FiniteDuration],
+      nextQuery: (S, Long) => Option[Source[T, NotUsed]]): Source[T, NotUsed] =
+    Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery))
 
   private case object NextQuery
 }
@@ -37,6 +36,8 @@ private[r2dbc] object ContinuousQuery {
  *   Initial state for first call to nextQuery
  * @param updateState
  *   Called for every element
+ * @param delayNextQuery
+ *   Called when previous source completes
  * @param nextQuery
  *   Called each time the previous source completes
  * @tparam S
@@ -48,9 +49,8 @@ private[r2dbc] object ContinuousQuery {
 final private[r2dbc] class ContinuousQuery[S, T](
     initialState: S,
     updateState: (S, T) => S,
-    nextQuery: S => Option[Source[T, NotUsed]],
-    threshold: Long,
-    refreshInterval: FiniteDuration)
+    delayNextQuery: Long => Option[FiniteDuration],
+    nextQuery: (S, Long) => Option[Source[T, NotUsed]])
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
 
@@ -63,11 +63,11 @@ final private[r2dbc] class ContinuousQuery[S, T](
       var sinkIn: SubSinkInlet[T] = _
       var state = initialState
       var nrElements = Long.MaxValue
+      var nrElementsInPreviousQuery = -1L
       var subStreamFinished = false
 
       private def pushAndUpdateState(t: T): Unit = {
         state = updateState(state, t)
-        nrElements += 1
         push(out, t)
       }
 
@@ -75,48 +75,56 @@ final private[r2dbc] class ContinuousQuery[S, T](
         case NextQuery => next()
       }
 
-      def next(): Unit =
-        if (nrElements <= threshold) {
-          nrElements = Long.MaxValue
-          scheduleOnce(NextQuery, refreshInterval)
-        } else {
-          nrElements = 0
-          subStreamFinished = false
-          val source = nextQuery(state)
-          source match {
-            case Some(source) =>
-              sinkIn = new SubSinkInlet[T]("queryIn")
-              sinkIn.setHandler(new InHandler {
-                override def onPush(): Unit = {
-                  if (!nextRow.isEmpty) {
-                    throw new IllegalStateException(s"onPush called when we already have next row.")
-                  }
-                  if (isAvailable(out)) {
-                    val element = sinkIn.grab()
-                    pushAndUpdateState(element)
-                    sinkIn.pull()
-                  } else {
-                    nextRow = OptionVal(sinkIn.grab())
-                  }
-                }
+      def next(): Unit = {
+        if (nrElements != Long.MaxValue)
+          nrElementsInPreviousQuery = nrElements
 
-                override def onUpstreamFinish(): Unit =
-                  if (nextRow.isDefined) {
-                    // wait for the element to be pulled
-                    subStreamFinished = true
-                  } else {
-                    next()
+        val delay =
+          if (nrElements == Long.MaxValue) None
+          else delayNextQuery(nrElementsInPreviousQuery)
+        delay match {
+          case Some(d) =>
+            nrElements = Long.MaxValue
+            scheduleOnce(NextQuery, d)
+          case None =>
+            nrElements = 0
+            subStreamFinished = false
+            nextQuery(state, nrElementsInPreviousQuery) match {
+              case Some(source) =>
+                sinkIn = new SubSinkInlet[T]("queryIn")
+                sinkIn.setHandler(new InHandler {
+                  override def onPush(): Unit = {
+                    if (!nextRow.isEmpty) {
+                      throw new IllegalStateException(s"onPush called when we already have next row.")
+                    }
+                    nrElements += 1
+                    if (isAvailable(out)) {
+                      val element = sinkIn.grab()
+                      pushAndUpdateState(element)
+                      sinkIn.pull()
+                    } else {
+                      nextRow = OptionVal(sinkIn.grab())
+                    }
                   }
-              })
-              val graph = Source
-                .fromGraph(source)
-                .to(sinkIn.sink)
-              interpreter.subFusingMaterializer.materialize(graph)
-              sinkIn.pull()
-            case None =>
-              completeStage()
-          }
+
+                  override def onUpstreamFinish(): Unit =
+                    if (nextRow.isDefined) {
+                      // wait for the element to be pulled
+                      subStreamFinished = true
+                    } else {
+                      next()
+                    }
+                })
+                val graph = Source
+                  .fromGraph(source)
+                  .to(sinkIn.sink)
+                interpreter.subFusingMaterializer.materialize(graph)
+                sinkIn.pull()
+              case None =>
+                completeStage()
+            }
         }
+      }
 
       override def preStart(): Unit =
         // eager pull
