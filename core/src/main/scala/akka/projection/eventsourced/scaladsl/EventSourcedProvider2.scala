@@ -36,6 +36,10 @@ object EventSourcedProvider2 {
     new EventsBySlicesSourceProvider(eventsBySlicesQuery, entityTypeHint, minSlice, maxSlice, system)
   }
 
+  // FIXME these should also be here
+  //def sliceForPersistenceId(persistenceId: String): Int
+  //def sliceRanges(numberOfRanges: Int): immutable.Seq[Range]
+
   private class EventsBySlicesSourceProvider[Event](
       eventsBySlicesQuery: EventsBySliceQuery,
       entityTypeHint: String,
