@@ -11,7 +11,6 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
 import akka.persistence.r2dbc.internal.DummyConnectionPool
-import com.typesafe.config.Config
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
 import io.r2dbc.spi.ConnectionFactories
@@ -34,28 +33,29 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       configLocation,
       configLocation => {
         val config = system.settings.config.getConfig(configLocation)
-//        createConnectionFactory(config)
-        new DummyConnectionPool(createConnectionFactory(config), 20)(system)
+        val settings = new ConnectionFactorySettings(config)
+//        createConnectionFactory(settings)
+        new DummyConnectionPool(createConnectionFactory(settings), 20)(system)
       })
   }
 
-  private def createConnectionFactory(config: Config): ConnectionFactory = {
+  private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
     // FIXME config
     ConnectionFactories.get(
       ConnectionFactoryOptions
         .builder()
-        .option(ConnectionFactoryOptions.DRIVER, "postgresql")
-        .option(ConnectionFactoryOptions.HOST, "localhost")
-        .option(ConnectionFactoryOptions.PORT, Integer.valueOf(5432))
-        .option(ConnectionFactoryOptions.USER, "postgres")
-        .option(ConnectionFactoryOptions.PASSWORD, "postgres")
-        .option(ConnectionFactoryOptions.DATABASE, "postgres")
+        .option(ConnectionFactoryOptions.DRIVER, settings.driver)
+        .option(ConnectionFactoryOptions.HOST, settings.host)
+        .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
+        .option(ConnectionFactoryOptions.USER, settings.user)
+        .option(ConnectionFactoryOptions.PASSWORD, settings.password)
+        .option(ConnectionFactoryOptions.DATABASE, settings.database)
         .build())
   }
 
-  private def createConnectionPoolFactory(config: Config): ConnectionFactory = {
+  private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
     // FIXME config
-    val connectionFactory = createConnectionFactory(config)
+    val connectionFactory = createConnectionFactory(settings)
 
     // FIXME connection pool is not working: "PostgresConnectionClosedException: Cannot exchange messages because the connection is closed"
     val poolConfiguration = ConnectionPoolConfiguration

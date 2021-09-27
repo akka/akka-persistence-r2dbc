@@ -14,6 +14,25 @@ import com.typesafe.config.Config
  * INTERNAL API
  */
 @InternalStableApi
+final class R2dbcSettings(config: Config) {
+  val journalTable: String = config.getString("journal.table")
+
+  val snapshotsTable: String = config.getString("snapshot.table")
+
+  val maxNumberOfSlices = 128 // FIXME config
+
+  val dialect: String = config.getString("dialect")
+
+  val querySettings = new QuerySettings(config.getConfig("query"))
+
+  val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
+
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
 final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
   val bufferSize: Int = config.getInt("buffer-size")
@@ -23,13 +42,11 @@ final class QuerySettings(config: Config) {
  * INTERNAL API
  */
 @InternalStableApi
-final class R2dbcSettings(config: Config) {
-  val journalTable = config.getString("journal.table")
-
-  val snapshotsTable = config.getString("snapshot.table")
-
-  val querySettings = new QuerySettings(config.getConfig("query"))
-
-  val maxNumberOfSlices = 128 // FIXME config
-
+final class ConnectionFactorySettings(config: Config) {
+  val driver: String = config.getString("driver")
+  val host: String = config.getString("host")
+  val port: Int = config.getInt("port")
+  val user: String = config.getString("user")
+  val password: String = config.getString("password")
+  val database: String = config.getString("database")
 }

@@ -1,6 +1,6 @@
 # Contributing to Akka Persistence R2DBC 
 
-## Running the tests
+## Running the tests Postgres
 
 The tests expect a locally running database.
 
@@ -14,7 +14,7 @@ docker-compose -f docker/docker-compose-postgres.yml up
 docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 ```
 
-## Some useful debug queries
+##3 Some useful debug queries for Postgres
 
 ```
 docker exec -it docker_postgres-db_1 psql -U postgres
@@ -32,6 +32,28 @@ WHERE  datname = current_database()  -- only current database
 AND    pid <> pg_backend_pid()       -- except your current session
 AND    state LIKE 'idle%';
 ```
+
+## Running the tests with Yugabyte
+
+The tests expect a locally running database.
+
+It can be started with the docker-comopse file in the docker folder:
+
+```
+docker-compose -f docker/docker-compose-yugabyte.yml up
+```
+
+```
+docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
+```
+
+### Connect with ysqlsh
+
+```
+docker exec -it yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1
+```
+
+
 
 ## General Workflow
 
