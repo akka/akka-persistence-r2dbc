@@ -26,6 +26,9 @@ object Dependencies {
     val akkaSlf4j = "com.typesafe.akka" %% "akka-slf4j" % AkkaVersion
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" // EPL 1.0 / LGPL 2.1
 
+    // FIXME remove when EventSourcedProvider2 has been incorporated in Akka Projection
+    val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % "1.2.2"
+
     val postgresql = "org.postgresql" % "postgresql" % "42.2.18"
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % R2dbcVersion
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % R2dbcVersion
@@ -53,6 +56,7 @@ object Dependencies {
     r2dbcPool,
     r2dbcPostgres,
     postgresql,
+    akkaProjectionEventSourced,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,

@@ -42,6 +42,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
        |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp <= $6" else ""}
+       |AND deleted = false
        |ORDER BY db_timestamp, sequence_number
        |LIMIT $$5
        |""".stripMargin
