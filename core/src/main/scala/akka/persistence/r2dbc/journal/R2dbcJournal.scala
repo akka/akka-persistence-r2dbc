@@ -55,7 +55,9 @@ final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJour
   private val journalSettings = new R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
 
   private val journalDao =
-    new JournalDao(journalSettings, ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath))
+    new JournalDao(
+      journalSettings,
+      ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
 
   // if there are pending writes when an actor restarts we must wait for
   // them to complete before we can read the highest sequence number or we will miss it

@@ -12,9 +12,7 @@ import akka.persistence.journal.JournalPerfSpec
 import akka.persistence.r2dbc.TestDbLifecycle
 
 object R2dbcJournalPerfSpec {
-  val dbName = "R2dbcJournalPerfSpec"
-
-  val config = R2dbcJournalSpec.testConfig(dbName)
+  val config = R2dbcJournalSpec.testConfig()
 }
 
 class R2dbcJournalPerfSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) with TestDbLifecycle {

@@ -45,7 +45,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)
   private val queryDao =
-    new QueryDao(settings, ConnectionFactoryProvider(typedSystem).connectionFactoryFor(sharedConfigPath))(
+    new QueryDao(
+      settings,
+      ConnectionFactoryProvider(typedSystem).connectionFactoryFor(sharedConfigPath + ".connection-factory"))(
       typedSystem.executionContext,
       typedSystem)
 
