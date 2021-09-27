@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
+import akka.persistence.r2dbc.internal.DummyConnectionPool
 import com.typesafe.config.Config
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
@@ -33,7 +34,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       configLocation,
       configLocation => {
         val config = system.settings.config.getConfig(configLocation)
-        createConnectionFactory(config)
+//        createConnectionFactory(config)
+        new DummyConnectionPool(createConnectionFactory(config), 20)(system)
       })
   }
 
@@ -60,8 +62,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .builder(connectionFactory)
       .initialSize(1)
       .maxSize(1)
-      .preRelease(_.rollbackTransaction)
-      .validationQuery("SELECT 1")
+//      .preRelease(_.rollbackTransaction)
+//      .validationQuery("SELECT 1")
       .acquireRetry(3)
       .maxAcquireTime(Duration.ofMillis(3000))
       .build()
