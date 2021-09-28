@@ -3,7 +3,8 @@ name: Publish
 on:
   push:
     branches:
-      - main
+      # TODO change this to enable publish of snapshots
+      - main_todo
     tags: ["*"]
 
 jobs:
