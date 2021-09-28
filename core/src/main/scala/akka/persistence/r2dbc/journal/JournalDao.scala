@@ -44,52 +44,28 @@ private[r2dbc] object JournalDao {
 
   final case class SerializedEventMetadata(serId: Int, serManifest: String, payload: Array[Byte])
 
-  object Schema {
-    object Journal {
-      def journalTable(settings: R2dbcSettings): String =
-        s"""CREATE TABLE ${settings.journalTable} IF NOT EXISTS (
-           |  slice INT NOT NULL,
-           |  entity_type_hint VARCHAR(255) NOT NULL,
-           |  persistence_id VARCHAR(255) NOT NULL,
-           |  sequence_number BIGINT NOT NULL,
-           |  db_timestamp timestamp with time zone NOT NULL,
-           |  deleted BOOLEAN DEFAULT FALSE NOT NULL,
-           |  writer VARCHAR(255) NOT NULL,
-           |  write_timestamp BIGINT,
-           |  adapter_manifest VARCHAR(255),
-           |  event_ser_id INTEGER NOT NULL,
-           |  event_ser_manifest VARCHAR(255) NOT NULL,
-           |  event_payload BYTEA NOT NULL,
-           |  meta_ser_id INTEGER,
-           |  meta_ser_manifest VARCHAR(255),
-           |  meta_payload BYTEA,
-           |  PRIMARY KEY(slice, entity_type_hint, persistence_id, sequence_number)
-           |)""".stripMargin
+  def deserializeRow(
+      settings: R2dbcSettings,
+      serialization: Serialization,
+      row: SerializedJournalRow): PersistentRepr = {
+    val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+    val repr = PersistentRepr(
+      payload,
+      row.sequenceNr,
+      row.persistenceId,
+      writerUuid = row.writerUuid,
+      manifest = "", // FIXME
+      deleted = false,
+      sender = ActorRef.noSender).withTimestamp(row.timestamp)
 
-      def deserializeRow(
-          settings: R2dbcSettings,
-          serialization: Serialization,
-          row: SerializedJournalRow): PersistentRepr = {
-        val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-        val repr = PersistentRepr(
-          payload,
-          row.sequenceNr,
-          row.persistenceId,
-          writerUuid = row.writerUuid,
-          manifest = "", // FIXME
-          deleted = false,
-          sender = ActorRef.noSender).withTimestamp(row.timestamp)
-
-        val reprWithMeta = row.metadata match {
-          case None => repr
-          case Some(meta) =>
-            repr.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-        }
-        reprWithMeta
-      }
+    val reprWithMeta = row.metadata match {
+      case None => repr
+      case Some(meta) =>
+        repr.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
     }
-
+    reprWithMeta
   }
+
 }
 
 /**
@@ -102,8 +78,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     ec: ExecutionContext,
     system: ActorSystem[_]) {
 
-  import JournalDao.Schema
   import JournalDao.SerializedJournalRow
+  import JournalDao.deserializeRow
   import JournalDao.log
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
@@ -156,12 +132,13 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
           if (events.size == 1)
             bind(stmt, events.head)
           else
+            // TODO this is not used yet, batch statements doesn't work stmt.bind().add().bind().execute()
             events.foldLeft(stmt) { (s, write) =>
               bind(s, write).add()
             }
         }
       } else {
-        // TODO batch statements doesn't work stmt.bind().add().bind().execute()
+        // TODO batch statements doesn't work, see above
         r2dbcExecutor
           .update(s"insert [$persistenceId]") { connection =>
             events.map { write =>
@@ -205,7 +182,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       toSequenceNr: Long,
       max: Long)(replay: PersistentRepr => Unit): Future[Unit] = {
     def replayRow(row: SerializedJournalRow): SerializedJournalRow = {
-      val repr = Schema.Journal.deserializeRow(journalSettings, serialization, row)
+      val repr = deserializeRow(journalSettings, serialization, row)
       replay(repr)
       row
     }

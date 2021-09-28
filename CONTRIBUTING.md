@@ -44,7 +44,12 @@ docker-compose -f docker/docker-compose-yugabyte.yml up
 ```
 
 ```
-docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
+docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_postgres.sql
+```
+
+Run tests with:
+```
+sbt -Dakka.persistence.r2dbc.dialect=yugabyte
 ```
 
 ### Connect with ysqlsh
