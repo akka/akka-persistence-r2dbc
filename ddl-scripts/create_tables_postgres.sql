@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
 
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type_hint, db_timestamp);
 
+-- DROP TABLE IF EXISTS akka_projection_offset_store;
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,
@@ -36,7 +37,22 @@ CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   PRIMARY KEY(projection_name, projection_key)
 );
 
-CREATE INDEX IF NOT EXISTS projection_name_index ON akka_projection_offset_store (projection_name);
+-- DROP TABLE IF EXISTS akka_projection_timestamp_offset_store;
+
+CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
+  projection_name VARCHAR(255) NOT NULL,
+  projection_key VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  sequence_number BIGINT NOT NULL,
+  -- timestamp_offset is the db_timestamp of the original event
+  timestamp_offset timestamp with time zone NOT NULL,
+  -- last_updated is when the offset was stored
+  -- the consumer lag is last_updated - timestamp_offset
+  last_updated timestamp with time zone NOT NULL,
+  PRIMARY KEY(projection_name, projection_key, persistence_id)
+);
+
+-- DROP TABLE IF EXISTS akka_projection_management;
 
 CREATE TABLE IF NOT EXISTS akka_projection_management (
   projection_name VARCHAR(255) NOT NULL,
