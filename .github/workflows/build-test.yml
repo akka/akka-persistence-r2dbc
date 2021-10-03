@@ -66,38 +66,38 @@ jobs:
       - name: test
         run: sbt test
 
-  test-yugabyte:
-    name: Run tests with Yugabyte
-    runs-on: ubuntu-18.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-
-      - name: Checkout GitHub merge
-        if: github.event.pull_request
-        run: |-
-          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
-          git checkout scratch
-
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
-
-      - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
-
-      - name: Start DB
-        run: |-
-          docker-compose -f docker/docker-compose-yugabyte.yml up -d
-          # TODO: could we poll the port instead of sleep?
-          sleep 10
-          docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_postgres.sql
-
-      - name: test
-        run: sbt -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte test
+#  test-yugabyte:
+#    name: Run tests with Yugabyte
+#    runs-on: ubuntu-18.04
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v2
+#        with:
+#          fetch-depth: 0
+#
+#      - name: Checkout GitHub merge
+#        if: github.event.pull_request
+#        run: |-
+#          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
+#          git checkout scratch
+#
+#      - name: Set up JDK 11
+#        uses: olafurpg/setup-scala@v10
+#        with:
+#          java-version: adopt@1.11.0-9
+#
+#      - name: Cache Coursier cache
+#        uses: coursier/cache-action@v5
+#
+#      - name: Start DB
+#        run: |-
+#          docker-compose -f docker/docker-compose-yugabyte.yml up -d
+#          # TODO: could we poll the port instead of sleep?
+#          sleep 10
+#          docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_postgres.sql
+#
+#      - name: test
+#        run: sbt -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte test
 
   test-docs:
     name: Docs
