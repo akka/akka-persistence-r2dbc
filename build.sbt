@@ -52,13 +52,18 @@ lazy val root = (project in file("."))
   .settings(
     name := "akka-persistence-r2dbc-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
-  .aggregate(core)
+  .aggregate(core, projection)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 
 lazy val core = (project in file("core"))
   .settings(common)
   .settings(name := "akka-persistence-r2dbc", libraryDependencies ++= Dependencies.core)
+
+lazy val projection = (project in file("projection"))
+  .dependsOn(core)
+  .settings(common)
+  .settings(name := "akka-projection-r2dbc", libraryDependencies ++= Dependencies.projection)
 
 lazy val docs = project
   .in(file("docs"))

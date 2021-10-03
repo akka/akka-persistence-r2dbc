@@ -4,14 +4,15 @@
 
 package akka.persistence.r2dbc.internal
 
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
-import scala.collection.immutable
 import scala.util.control.NonFatal
 
 import akka.Done
 import akka.actor.typed.ActorSystem
+import akka.annotation.InternalStableApi
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.Connection
@@ -23,7 +24,8 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 
-object R2dbcExecutor {
+// FIXME make public?
+@InternalStableApi private[akka] object R2dbcExecutor {
   final implicit class PublisherOps[T](val publisher: Publisher[T]) extends AnyVal {
     def asFuture(): Future[T] = {
       val promise = Promise[T]()
@@ -84,12 +86,44 @@ object R2dbcExecutor {
       promise.future
     }
   }
+
+  def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
+    stmt.execute().asFuture().flatMap { result =>
+      result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
+    }
+  }
+
+  def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
+      ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] = {
+    Future.sequence(statements.map { stmt =>
+      // FIXME is it ok to execute next like this before previous has completed?
+      stmt.execute().asFuture().flatMap { result =>
+        result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
+      }
+    })
+  }
+
+  def selectOneInTx[A](statement: Statement, mapRow: Row => A)(implicit
+      ec: ExecutionContext,
+      system: ActorSystem[_]): Future[Option[A]] = {
+    selectInTx(statement, mapRow).map(_.headOption)
+  }
+
+  def selectInTx[A](statement: Statement, mapRow: Row => A)(implicit
+      ec: ExecutionContext,
+      system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] = {
+    statement.execute().asFuture().flatMap { result =>
+      val resultPublisher: Publisher[A] =
+        result.map((row, _) => mapRow(row))
+      Source.fromPublisher(resultPublisher).runWith(Sink.seq[A]).map(_.toIndexedSeq)(ExecutionContext.parasitic)
+    }
+  }
 }
 
-class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
+class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_]) {
-  import R2dbcExecutor.PublisherOps
+  import R2dbcExecutor._
 
   private def getConnection(): Future[Connection] =
     connectionFactory.create().asFuture()
@@ -109,10 +143,7 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
               rollbackAndClose(connection)
               throw exc
           }
-        val rowsUpdated =
-          boundStmt.execute().asFuture().flatMap { result =>
-            result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
-          }
+        val rowsUpdated = updateOneInTx(boundStmt)
 
         if (log.isDebugEnabled()) {
           rowsUpdated.foreach { r =>
@@ -149,13 +180,7 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
               rollbackAndClose(connection)
               throw exc
           }
-        val rowsUpdated: Future[immutable.IndexedSeq[Int]] =
-          Future.sequence(boundStmts.map { stmt =>
-            // FIXME is it ok to execute next like this before previous has completed?
-            stmt.execute().asFuture().flatMap { result =>
-              result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
-            }
-          })
+        val rowsUpdated = updateInTx(boundStmts)
 
         if (log.isDebugEnabled()) {
           rowsUpdated.foreach { r =>
@@ -182,7 +207,7 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
   }
 
   def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
-    select(logPrefix)(statement, mapRow).map(_.headOption)(ExecutionContext.parasitic)
+    select(logPrefix)(statement, mapRow).map(_.headOption)
   }
 
   def select[A](
@@ -199,12 +224,7 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
             rollbackAndClose(connection)
             throw exc
         }
-      val mappedRows =
-        boundStmt.execute().asFuture().flatMap { result =>
-          val resultPublisher: Publisher[A] =
-            result.map((row, _) => mapRow(row))
-          Source.fromPublisher(resultPublisher).runWith(Sink.seq[A]).map(_.toIndexedSeq)(ExecutionContext.parasitic)
-        }
+      val mappedRows = selectInTx(boundStmt, mapRow)
 
       if (log.isDebugEnabled()) {
         mappedRows.foreach { r =>
@@ -221,6 +241,41 @@ class R2dbcExecutor(connectionFactory: ConnectionFactory, log: Logger)(implicit
         connection.close().asFutureDone()
       }
 
+    }
+  }
+
+  def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
+    val startTime = System.nanoTime()
+    val connection = getConnection()
+
+    connection.flatMap { connection =>
+      connection.beginTransaction().asFutureDone().flatMap { _ =>
+        val result =
+          try fun(connection)
+          catch {
+            case NonFatal(exc) =>
+              log.debug("{} - Call failed: {}", logPrefix, exc)
+              rollbackAndClose(connection)
+              throw exc
+          }
+
+        if (log.isDebugEnabled()) {
+          result.foreach { r =>
+            log.debug("{} - DB call completed in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
+          }
+        }
+
+        result.failed.foreach { exc =>
+          log.debug("{} - DB call failed: {}", logPrefix, exc)
+          // ok to rollback async like this, or should it be before completing the returned Future?
+          rollbackAndClose(connection)
+        }
+
+        result.flatMap { r =>
+          commitAndClose(connection).map(_ => r)(ExecutionContext.parasitic)
+        }
+
+      }
     }
   }
 

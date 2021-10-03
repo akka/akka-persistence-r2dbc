@@ -13,6 +13,7 @@ object Dependencies {
   val AkkaHttpVersion = "10.2.6"
   val AkkaManagementVersion = "1.0.6"
   val R2dbcVersion = "0.9.0.M2"
+  val AkkaProjectionVersion = "1.2.2"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -27,7 +28,8 @@ object Dependencies {
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" // EPL 1.0 / LGPL 2.1
 
     // FIXME remove when EventSourcedProvider2 has been incorporated in Akka Projection
-    val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % "1.2.2"
+    val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion
+    val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
     val postgresql = "org.postgresql" % "postgresql" % "42.2.18"
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % R2dbcVersion
@@ -40,6 +42,8 @@ object Dependencies {
     val akkaTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
+
+    val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
     val logback = Compile.logback % Test
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.1" % Test // ApacheV2
@@ -56,10 +60,24 @@ object Dependencies {
     r2dbcPool,
     r2dbcPostgres,
     postgresql,
-    akkaProjectionEventSourced,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
+    TestDeps.akkaJackson,
+    TestDeps.logback,
+    TestDeps.scalaTest)
+
+  val projection = Seq(
+    akkaPersistenceQuery,
+    r2dbcSpi,
+    r2dbcPool,
+    r2dbcPostgres,
+    postgresql,
+    akkaProjectionEventSourced,
+    akkaProjectionCore,
+    TestDeps.akkaStreamTestkit,
+    TestDeps.akkaTestkit,
+    TestDeps.akkaProjectionTestKit,
     TestDeps.akkaJackson,
     TestDeps.logback,
     TestDeps.scalaTest)
