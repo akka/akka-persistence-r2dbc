@@ -13,7 +13,7 @@ import akka.persistence.r2dbc.query.TimestampOffset
 import akka.serialization.SerializationExtension
 import org.scalatest.wordspec.AnyWordSpecLike
 
-class SpannerSerializerSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with LogCapturing {
+class SerializerSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with LogCapturing {
   private val serializer = new R2dbcSerializer(system.classicSystem.asInstanceOf[ExtendedActorSystem])
   private val commitTimestamp = Instant.now()
 
