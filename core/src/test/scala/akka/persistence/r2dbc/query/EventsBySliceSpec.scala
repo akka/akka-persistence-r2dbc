@@ -37,15 +37,16 @@ object EventsBySliceSpec {
   case object Live extends QueryType
   case object Current extends QueryType
 
-  def config: Config = ConfigFactory
-    .parseString(s"""
+  def config: Config =
+    TestConfig.backtrackingDisabledConfig
+      .withFallback(ConfigFactory.parseString(s"""
     akka.persistence.r2dbc-small-buffer = $${akka.persistence.r2dbc}
     akka.persistence.r2dbc-small-buffer.query {
       buffer-size = 3
     }
-    """)
-    .withFallback(TestConfig.config)
-    .resolve()
+    """))
+      .withFallback(TestConfig.config)
+      .resolve()
 }
 
 class EventsBySliceSpec
