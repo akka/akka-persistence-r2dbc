@@ -92,6 +92,7 @@ final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJour
             pr.persistenceId,
             pr.sequenceNr,
             JournalDao.EmptyDbTimestamp,
+            JournalDao.EmptyDbTimestamp,
             serialized,
             id,
             manifest,

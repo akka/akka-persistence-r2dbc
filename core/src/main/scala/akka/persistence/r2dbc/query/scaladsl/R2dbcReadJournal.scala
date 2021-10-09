@@ -9,6 +9,7 @@ import java.time.{ Duration => JDuration }
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
@@ -81,6 +82,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private val backtrackingWindow = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)
   private val halfBacktrackingWindow = backtrackingWindow.dividedBy(2)
+  private val firstBacktrackingQueryWindow =
+    backtrackingWindow.plus(JDuration.ofMillis(settings.querySettings.backtrackingBehindCurrentTime.toMillis))
 
   private def toTimestampOffset(offset: Offset): TimestampOffset = {
     offset match {
@@ -134,7 +137,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               minSlice,
               maxSlice,
               state.latest.timestamp,
-              untilTimestamp = Some(toDbTimestamp))
+              untilTimestamp = Some(toDbTimestamp),
+              behindCurrentTime = Duration.Zero)
             .statefulMapConcat(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
@@ -234,8 +238,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             .compareTo(halfBacktrackingWindow) > 0) {
           // switching to backtracking
           val fromOffset =
-            if (state.latestBacktracking == TimestampOffset.Zero)
-              TimestampOffset.Zero.copy(timestamp = state.latest.timestamp.minus(backtrackingWindow))
+            if (state.latestBacktracking == TimestampOffset.Zero && initialOffset == TimestampOffset.Zero)
+              TimestampOffset.Zero
+            else if (state.latestBacktracking == TimestampOffset.Zero)
+              TimestampOffset.Zero.copy(timestamp = initialOffset.timestamp.minus(firstBacktrackingQueryWindow))
             else
               state.latestBacktracking
 
@@ -254,6 +260,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         } else {
           state.copy(rowCount = 0, queryCount = state.queryCount + 1)
         }
+
+      // FIXME for backtracking we could consider to use behind latest offset instead of behind current db time
+      val behindCurrentTime =
+        if (newState.backtracking) settings.querySettings.backtrackingBehindCurrentTime
+        else settings.querySettings.behindCurrentTime
 
       if (log.isDebugEnabled())
         log.debugN(
@@ -274,7 +285,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             minSlice,
             maxSlice,
             newState.nextQueryFromTimestamp,
-            newState.nextQueryUntilTimestamp)
+            newState.nextQueryUntilTimestamp,
+            behindCurrentTime)
           .statefulMapConcat(deserializeAndAddOffset(newState.currentOffset)))
     }
 
@@ -313,14 +325,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         } else {
           currentSequenceNrs = currentSequenceNrs.updated(row.persistenceId, row.sequenceNr)
           val offset =
-            TimestampOffset(row.dbTimestamp, currentSequenceNrs)
+            TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
           toEnvelope(offset) :: Nil
         }
       } else {
         // ne timestamp, reset currentSequenceNrs
         currentTimestamp = row.dbTimestamp
         currentSequenceNrs = Map(row.persistenceId -> row.sequenceNr)
-        val offset = TimestampOffset(row.dbTimestamp, currentSequenceNrs)
+        val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
         toEnvelope(offset) :: Nil
       }
     }

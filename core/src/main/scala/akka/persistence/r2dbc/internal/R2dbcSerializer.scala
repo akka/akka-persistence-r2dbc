@@ -42,6 +42,7 @@ import akka.serialization.SerializerWithStringManifest
   private def offsetToBinary(offset: TimestampOffset): Array[Byte] = {
     val str = new java.lang.StringBuilder
     str.append(offset.timestamp)
+    // readTimestamp not used in serialized
     if (offset.seen.size == 1) {
       // optimized for the normal case
       val pid = offset.seen.head._1
@@ -67,6 +68,7 @@ import akka.serialization.SerializerWithStringManifest
     try {
       val parts = str.split(separator)
       val timestamp = Instant.parse(parts(0))
+      // readTimestamp not used in serialized
       if (parts.length == 3) {
         // optimized for the normal case
         TimestampOffset(timestamp, Map(parts(1) -> parts(2).toLong))

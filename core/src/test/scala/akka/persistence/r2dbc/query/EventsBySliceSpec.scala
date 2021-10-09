@@ -188,10 +188,11 @@ class EventsBySliceSpec
       offset.seen shouldEqual Map(singleEvent.persistenceId -> singleEvent.sequenceNr)
 
       val offsetWithoutSeen = TimestampOffset(offset.timestamp, Map.empty)
-      query
+      val singleEvent2 = query
         .currentEventsBySlices(entityTypeHint, slice, slice, offsetWithoutSeen)
         .runWith(Sink.headOption)
-        .futureValue shouldEqual Some(singleEvent)
+        .futureValue
+      singleEvent2.get.event shouldBe "e-1"
     }
 
     "retrieve from several slices" in new Setup {

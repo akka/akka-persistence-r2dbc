@@ -19,17 +19,19 @@ class SerializerSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with
 
   "SpannerSerializer" must {
     Seq(
-      "TimestampOffset-1" -> TimestampOffset(commitTimestamp, Map.empty),
-      "TimestampOffset-2" -> TimestampOffset(commitTimestamp, Map("pid1" -> 5L)),
-      "TimestampOffset-3" -> TimestampOffset(commitTimestamp, Map("pid1" -> 5L, "pid2" -> 3L, "pid3" -> 7L))).foreach {
-      case (scenario, item) =>
-        s"resolve serializer for $scenario" in {
-          SerializationExtension(system).findSerializerFor(item).getClass should be(classOf[R2dbcSerializer])
-        }
+      "TimestampOffset-1" -> TimestampOffset(commitTimestamp, Instant.EPOCH, Map.empty),
+      "TimestampOffset-2" -> TimestampOffset(commitTimestamp, Instant.EPOCH, Map("pid1" -> 5L)),
+      "TimestampOffset-3" -> TimestampOffset(
+        commitTimestamp,
+        Instant.EPOCH,
+        Map("pid1" -> 5L, "pid2" -> 3L, "pid3" -> 7L))).foreach { case (scenario, item) =>
+      s"resolve serializer for $scenario" in {
+        SerializationExtension(system).findSerializerFor(item).getClass should be(classOf[R2dbcSerializer])
+      }
 
-        s"serialize and de-serialize $scenario" in {
-          verifySerialization(item)
-        }
+      s"serialize and de-serialize $scenario" in {
+        verifySerialization(item)
+      }
     }
   }
 

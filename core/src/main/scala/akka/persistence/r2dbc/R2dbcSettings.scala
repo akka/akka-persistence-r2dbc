@@ -40,6 +40,7 @@ final class QuerySettings(config: Config) {
   val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").asScala
   val backtrackingEnabled: Boolean = config.getBoolean("backtracking.enabled")
   val backtrackingWindow: FiniteDuration = config.getDuration("backtracking.window").asScala
+  val backtrackingBehindCurrentTime: FiniteDuration = config.getDuration("backtracking.behind-current-time").asScala
   val bufferSize: Int = config.getInt("buffer-size")
 }
 
