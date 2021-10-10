@@ -5,10 +5,11 @@
 package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
+import java.time.{ Duration => JDuration }
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
@@ -32,12 +33,39 @@ import org.slf4j.LoggerFactory
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
 
+  private object EventsBySlicesState {
+    val empty: EventsBySlicesState =
+      EventsBySlicesState(TimestampOffset.Zero, 0, 0, backtracking = false, TimestampOffset.Zero)
+  }
+
+  private final case class EventsBySlicesState(
+      latest: TimestampOffset,
+      rowCount: Int,
+      queryCount: Long,
+      backtracking: Boolean,
+      latestBacktracking: TimestampOffset) {
+
+    def currentOffset: TimestampOffset =
+      if (backtracking) latestBacktracking
+      else latest
+
+    def nextQueryFromTimestamp: Instant =
+      if (backtracking) latestBacktracking.timestamp
+      else latest.timestamp
+
+    def nextQueryUntilTimestamp: Option[Instant] =
+      if (backtracking) Some(latest.timestamp)
+      else None
+  }
+
 }
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery {
+  import R2dbcReadJournal.EventsBySlicesState
+
   private val log = LoggerFactory.getLogger(classOf[R2dbcReadJournal])
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = new R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
@@ -50,6 +78,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       ConnectionFactoryProvider(typedSystem).connectionFactoryFor(sharedConfigPath + ".connection-factory"))(
       typedSystem.executionContext,
       typedSystem)
+
+  private val backtrackingWindow = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)
+  private val halfBacktrackingWindow = backtrackingWindow.dividedBy(2)
 
   private def toTimestampOffset(offset: Offset): TimestampOffset = {
     offset match {
@@ -75,59 +106,67 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val initialOffset = toTimestampOffset(offset)
     implicit val ec: ExecutionContext = system.dispatcher
 
-    def nextOffset(previousOffset: TimestampOffset, eventEnvelope: EventEnvelope): TimestampOffset = {
-      eventEnvelope.offset.asInstanceOf[TimestampOffset]
+    def nextOffset(state: EventsBySlicesState, eventEnvelope: EventEnvelope): EventsBySlicesState = {
+      state.copy(latest = eventEnvelope.offset.asInstanceOf[TimestampOffset], rowCount = state.rowCount + 1)
     }
 
     def nextQuery(
-        fromOffset: TimestampOffset,
-        nrRowsFoundInPreviousQuery: Long,
-        toDbTimestamp: Instant): Option[Source[EventEnvelope, NotUsed]] = {
-      // FIXME why is this nrRowsFoundInPreviousQuery -1 of expected?, see test EventsBySliceSpec "read in chunks"
-      if (nrRowsFoundInPreviousQuery == -1 || nrRowsFoundInPreviousQuery >= settings.querySettings.bufferSize - 1) {
+        state: EventsBySlicesState,
+        toDbTimestamp: Instant): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
+      // FIXME why is this rowCount -1 of expected?, see test EventsBySliceSpec "read in chunks"
+      if (state.queryCount == 0L || state.rowCount >= settings.querySettings.bufferSize - 1) {
+        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
-        if (nrRowsFoundInPreviousQuery != -1 && log.isDebugEnabled())
+        if (state.queryCount != 0 && log.isDebugEnabled())
           log.debugN(
-            "Query next from slices [{} - {}], from time [{}] to now [{}]. Found [{}] rows in previous query.",
+            "currentEventsBySlices query [{}] from slices [{} - {}], from time [{}] to now [{}]. Found [{}] rows in previous query.",
+            state.queryCount,
             minSlice,
             maxSlice,
-            fromOffset.timestamp,
+            state.latest.timestamp,
             toDbTimestamp,
-            nrRowsFoundInPreviousQuery)
+            state.rowCount)
 
-        Some(
+        newState -> Some(
           queryDao
-            .eventsBySlices(entityTypeHint, minSlice, maxSlice, fromOffset.timestamp, toTimestamp = Some(toDbTimestamp))
-            .statefulMapConcat(deserializeAndAddOffset(fromOffset)))
+            .eventsBySlices(
+              entityTypeHint,
+              minSlice,
+              maxSlice,
+              state.latest.timestamp,
+              untilTimestamp = Some(toDbTimestamp))
+            .statefulMapConcat(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
           log.debugN(
-            "Query next from slices [{} - {}], from time [{}] to now [{}] completed. Found [{}] rows in previous query.",
+            "currentEventsBySlices query [{}] from slices [{} - {}] completed. Found [{}] rows in previous query.",
+            state.queryCount,
             minSlice,
             maxSlice,
-            fromOffset.timestamp,
+            state.latest.timestamp,
             toDbTimestamp,
-            nrRowsFoundInPreviousQuery)
-        None
+            state.rowCount)
+
+        state -> None
       }
     }
 
     Source
       .futureSource[EventEnvelope, NotUsed] {
-        queryDao.currentDbTimestamp().map { dbTimestamp =>
+        queryDao.currentDbTimestamp().map { currentDbTime =>
           if (log.isDebugEnabled())
             log.debugN(
-              "Query slices [{} - {}], from time [{}] to now [{}].",
+              "currentEventsBySlices query slices [{} - {}], from time [{}] until now [{}].",
               minSlice,
               maxSlice,
               initialOffset.timestamp,
-              dbTimestamp)
+              currentDbTime)
 
-          ContinuousQuery[TimestampOffset, EventEnvelope](
-            initialOffset,
-            nextOffset,
-            _ => None,
-            (latestOffset, nrRowsInPrevious) => nextQuery(latestOffset, nrRowsInPrevious, dbTimestamp))
+          ContinuousQuery[EventsBySlicesState, EventEnvelope](
+            initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
+            updateState = nextOffset,
+            delayNextQuery = state => (state, None),
+            nextQuery = state => nextQuery(state, currentDbTime))
         }
       }
       .mapMaterializedValue(_ => NotUsed)
@@ -139,34 +178,111 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
+    val someRefreshInterval = Some(settings.querySettings.refreshInterval)
+
     if (log.isDebugEnabled())
       log.debugN(
-        "Starting live query from slices [{} - {}], from time [{}].",
+        "Starting eventsBySlices query from slices [{} - {}], from time [{}].",
         minSlice,
         maxSlice,
         initialOffset.timestamp)
 
-    def nextOffset(previousOffset: TimestampOffset, eventEnvelope: EventEnvelope): TimestampOffset =
-      eventEnvelope.offset.asInstanceOf[TimestampOffset]
+    def nextOffset(state: EventsBySlicesState, eventEnvelope: EventEnvelope): EventsBySlicesState = {
+      if (state.backtracking) {
+        val offset = eventEnvelope.offset.asInstanceOf[TimestampOffset]
+        if (offset.timestamp.isBefore(state.latestBacktracking.timestamp))
+          throw new IllegalArgumentException(
+            s"Unexpected offset [$offset] before latestBacktracking [${state.latestBacktracking}].")
 
-    def nextQuery(fromOffset: TimestampOffset): Source[EventEnvelope, NotUsed] = {
-      if (log.isDebugEnabled())
-        log.debugN("Query next from slices [{} - {}], from time [{}].", minSlice, maxSlice, fromOffset.timestamp)
+        state.copy(latestBacktracking = offset, rowCount = state.rowCount + 1)
+      } else {
+        val offset = eventEnvelope.offset.asInstanceOf[TimestampOffset]
+        if (offset.timestamp.isBefore(state.latest.timestamp))
+          throw new IllegalArgumentException(s"Unexpected offset [$offset] before latest [${state.latest}].")
 
-      queryDao
-        .eventsBySlices(entityTypeHint, minSlice, maxSlice, fromOffset.timestamp, toTimestamp = None)
-        .statefulMapConcat(deserializeAndAddOffset(fromOffset))
+        state.copy(latest = offset, rowCount = state.rowCount + 1)
+      }
     }
-    val someRefreshInterval = Some(settings.querySettings.refreshInterval)
 
-    ContinuousQuery[TimestampOffset, EventEnvelope](
-      initialOffset,
-      nextOffset,
-      nrRowsInPrevious =>
-        // FIXME verify that this is correct
-        // the same row comes back and is filtered due to how the offset works
-        if (0 <= nrRowsInPrevious && nrRowsInPrevious <= 1) someRefreshInterval else None,
-      (latestOffset, _) => Some(nextQuery(latestOffset)))
+    def delayNextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[FiniteDuration]) = {
+      // FIXME verify that this is correct
+      // the same row comes back and is filtered due to how the offset works
+      val delay =
+        if (0 <= state.rowCount && state.rowCount <= 1) someRefreshInterval
+        else None // immediately if there might be more rows to fetch
+
+      // TODO we could have different delays here depending on how many rows that were found.
+      // e.g. a short delay if rowCount is < some threshold
+
+      if (log.isDebugEnabled)
+        delay.foreach { d =>
+          log.debug(
+            "eventsBySlices query [{}] from slices [{} - {}] delay next [{}] ms.",
+            state.queryCount,
+            minSlice,
+            maxSlice,
+            d.toMillis)
+        }
+
+      state -> delay
+    }
+
+    def nextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
+      val newState =
+        if (settings.querySettings.backtrackingEnabled && !state.backtracking && JDuration
+            .between(state.latestBacktracking.timestamp, state.latest.timestamp)
+            .compareTo(halfBacktrackingWindow) > 0) {
+          // switching to backtracking
+          val fromOffset =
+            if (state.latestBacktracking == TimestampOffset.Zero)
+              TimestampOffset.Zero.copy(timestamp = state.latest.timestamp.minus(backtrackingWindow))
+            else
+              state.latestBacktracking
+
+          // FIXME the backtracking until offset is state.latest (not equal), but we should probably have an
+          // additional lag to support async (at-least-once) projections without too many duplicates from
+          // backtracking. For exactly-once I think all duplicates are filtered as expected.
+
+          state.copy(
+            rowCount = 0,
+            queryCount = state.queryCount + 1,
+            backtracking = true,
+            latestBacktracking = fromOffset)
+        } else if (state.backtracking && state.rowCount <= settings.querySettings.bufferSize - 1) {
+          // switch from backtracking
+          state.copy(rowCount = 0, queryCount = state.queryCount + 1, backtracking = false)
+        } else {
+          state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+        }
+
+      if (log.isDebugEnabled())
+        log.debugN(
+          "eventsBySlices query [{}]{} from slices [{} - {}], from time [{}]. Found [{}] rows in previous{} query.",
+          newState.queryCount,
+          if (newState.backtracking) " in backtracking mode" else "",
+          minSlice,
+          maxSlice,
+          newState.nextQueryFromTimestamp,
+          state.rowCount,
+          if (state.backtracking) " backtracking" else "")
+
+      newState ->
+      Some(
+        queryDao
+          .eventsBySlices(
+            entityTypeHint,
+            minSlice,
+            maxSlice,
+            newState.nextQueryFromTimestamp,
+            newState.nextQueryUntilTimestamp)
+          .statefulMapConcat(deserializeAndAddOffset(newState.currentOffset)))
+    }
+
+    ContinuousQuery[EventsBySlicesState, EventEnvelope](
+      initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
+      updateState = nextOffset,
+      delayNextQuery = state => delayNextQuery(state),
+      nextQuery = state => nextQuery(state))
   }
 
   // TODO Unit test in isolation

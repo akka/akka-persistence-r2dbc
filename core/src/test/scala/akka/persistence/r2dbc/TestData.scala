@@ -18,6 +18,6 @@ trait TestData {
   def nextPid() = s"p-${pidCounter.incrementAndGet()}"
   def nextPid(entityTypeHint: String) = s"$entityTypeHint|p-${pidCounter.incrementAndGet()}"
 
-  def nextEntityTypeHint = s"TestEntity-${entityTypeHintCounter.incrementAndGet()}"
+  def nextEntityTypeHint() = s"TestEntity-${entityTypeHintCounter.incrementAndGet()}"
 
 }

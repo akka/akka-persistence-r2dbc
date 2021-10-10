@@ -52,4 +52,7 @@ object TestConfig {
     akka.actor.testkit.typed.default-timeout = 10s
     """)))
   }
+
+  val backtrackingDisabledConfig: Config =
+    ConfigFactory.parseString("akka.persistence.r2dbc.query.backtracking.enabled = off")
 }

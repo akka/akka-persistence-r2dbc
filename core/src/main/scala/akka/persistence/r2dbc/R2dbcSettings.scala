@@ -15,6 +15,8 @@ import com.typesafe.config.Config
  */
 @InternalStableApi
 final class R2dbcSettings(config: Config) {
+  // FIXME add schema config property, see projection settings
+
   val journalTable: String = config.getString("journal.table")
 
   val snapshotsTable: String = config.getString("snapshot.table")
@@ -36,6 +38,8 @@ final class R2dbcSettings(config: Config) {
 final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
   val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").asScala
+  val backtrackingEnabled: Boolean = config.getBoolean("backtracking.enabled")
+  val backtrackingWindow: FiniteDuration = config.getDuration("backtracking.window").asScala
   val bufferSize: Int = config.getInt("buffer-size")
 }
 

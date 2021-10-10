@@ -45,7 +45,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
        |FROM ${settings.journalTable}
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
-       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp <= $6"
+       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp < $6"
     else s"AND db_timestamp < statement_timestamp() - interval '$behindCurrentTimeInterval'"}
        |AND deleted = false
        |ORDER BY db_timestamp, sequence_number
@@ -70,19 +70,19 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      toTimestamp: Option[Instant]): Source[SerializedJournalRow, NotUsed] = {
+      untilTimestamp: Option[Instant]): Source[SerializedJournalRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
-          .createStatement(eventsBySlicesRangeSql(toTimestamp.isDefined))
+          .createStatement(eventsBySlicesRangeSql(untilTimestamp.isDefined))
           .bind("$1", entityTypeHint)
           .bind("$2", minSlice)
           .bind("$3", maxSlice)
           .bind("$4", fromTimestamp)
-        toTimestamp match {
-          case Some(to) =>
+        untilTimestamp match {
+          case Some(until) =>
             stmt.bind("$5", settings.querySettings.bufferSize)
-            stmt.bind("$6", to)
+            stmt.bind("$6", until)
           case None =>
             stmt.bind("$5", settings.querySettings.bufferSize)
         }

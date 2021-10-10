@@ -21,8 +21,8 @@ private[r2dbc] object ContinuousQuery {
   def apply[S, T](
       initialState: S,
       updateState: (S, T) => S,
-      delayNextQuery: Long => Option[FiniteDuration],
-      nextQuery: (S, Long) => Option[Source[T, NotUsed]]): Source[T, NotUsed] =
+      delayNextQuery: S => (S, Option[FiniteDuration]),
+      nextQuery: S => (S, Option[Source[T, NotUsed]])): Source[T, NotUsed] =
     Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery))
 
   private case object NextQuery
@@ -49,8 +49,8 @@ private[r2dbc] object ContinuousQuery {
 final private[r2dbc] class ContinuousQuery[S, T](
     initialState: S,
     updateState: (S, T) => S,
-    delayNextQuery: Long => Option[FiniteDuration],
-    nextQuery: (S, Long) => Option[Source[T, NotUsed]])
+    delayNextQuery: S => (S, Option[FiniteDuration]),
+    nextQuery: S => (S, Option[Source[T, NotUsed]]))
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
 
@@ -63,7 +63,6 @@ final private[r2dbc] class ContinuousQuery[S, T](
       var sinkIn: SubSinkInlet[T] = _
       var state = initialState
       var nrElements = Long.MaxValue
-      var nrElementsInPreviousQuery = -1L
       var subStreamFinished = false
 
       private def pushAndUpdateState(t: T): Unit = {
@@ -76,12 +75,16 @@ final private[r2dbc] class ContinuousQuery[S, T](
       }
 
       def next(): Unit = {
-        if (nrElements != Long.MaxValue)
-          nrElementsInPreviousQuery = nrElements
-
-        val delay =
+        val delay = {
           if (nrElements == Long.MaxValue) None
-          else delayNextQuery(nrElementsInPreviousQuery)
+          else
+            delayNextQuery(state) match {
+              case (newState, d) =>
+                state = newState
+                d
+            }
+        }
+
         delay match {
           case Some(d) =>
             nrElements = Long.MaxValue
@@ -89,8 +92,9 @@ final private[r2dbc] class ContinuousQuery[S, T](
           case None =>
             nrElements = 0
             subStreamFinished = false
-            nextQuery(state, nrElementsInPreviousQuery) match {
-              case Some(source) =>
+            nextQuery(state) match {
+              case (newState, Some(source)) =>
+                state = newState
                 sinkIn = new SubSinkInlet[T]("queryIn")
                 sinkIn.setHandler(new InHandler {
                   override def onPush(): Unit = {
@@ -120,7 +124,8 @@ final private[r2dbc] class ContinuousQuery[S, T](
                   .to(sinkIn.sink)
                 interpreter.subFusingMaterializer.materialize(graph)
                 sinkIn.pull()
-              case None =>
+              case (newState, None) =>
+                state = newState
                 completeStage()
             }
         }

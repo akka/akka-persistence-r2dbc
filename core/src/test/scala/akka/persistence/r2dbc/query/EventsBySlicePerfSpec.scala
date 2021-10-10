@@ -25,7 +25,7 @@ import akka.stream.scaladsl.Sink
 import org.scalatest.wordspec.AnyWordSpecLike
 
 class EventsBySlicePerfSpec
-    extends ScalaTestWithActorTestKit(TestConfig.config)
+    extends ScalaTestWithActorTestKit(TestConfig.backtrackingDisabledConfig.withFallback(TestConfig.config))
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
@@ -45,7 +45,7 @@ class EventsBySlicePerfSpec
       val iterations = 5
       val totalNumberOfEvents = numberOfPersisters * numberOfEvents
 
-      val entityTypeHint = nextEntityTypeHint
+      val entityTypeHint = nextEntityTypeHint()
       val probe = createTestProbe[Done]()
       val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityTypeHint)).toVector
       var doneCount = 0
