@@ -34,6 +34,7 @@ private[r2dbc] object JournalDao {
       persistenceId: String,
       sequenceNr: Long,
       dbTimestamp: Instant,
+      readDbTimestamp: Instant,
       payload: Array[Byte],
       serId: Int,
       serManifest: String,
@@ -205,6 +206,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             persistenceId = persistenceId,
             sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+            readDbTimestamp = Instant.EPOCH, // not needed here
             payload = row.get("event_payload", classOf[Array[Byte]]),
             serId = row.get("event_ser_id", classOf[java.lang.Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),

@@ -8,6 +8,8 @@ import java.time.Instant
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
@@ -36,21 +38,24 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
-  private val behindCurrentTimeInterval =
-    s"${settings.querySettings.behindCurrentTime.toMillis} milliseconds"
+  private def eventsBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
+    val maxDbTimestampParamCondition =
+      if (maxDbTimestampParam) "AND db_timestamp < $6" else ""
+    val behindCurrentTimeIntervalCondition =
+      if (behindCurrentTime > Duration.Zero)
+        s"AND db_timestamp < statement_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
+      else ""
 
-  private def eventsBySlicesRangeSql(maxDbTimestamp: Boolean): String =
-    // FIXME make that interval configurable
-    s"""SELECT *
+    s"""SELECT slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload
        |FROM ${settings.journalTable}
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
-       |AND db_timestamp >= $$4 ${if (maxDbTimestamp) "AND db_timestamp < $6"
-    else s"AND db_timestamp < statement_timestamp() - interval '$behindCurrentTimeInterval'"}
+       |AND db_timestamp >= $$4 $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
        |AND deleted = false
        |ORDER BY db_timestamp, sequence_number
        |LIMIT $$5
        |""".stripMargin
+  }
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
@@ -70,11 +75,12 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      untilTimestamp: Option[Instant]): Source[SerializedJournalRow, NotUsed] = {
+      untilTimestamp: Option[Instant],
+      behindCurrentTime: FiniteDuration): Source[SerializedJournalRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
-          .createStatement(eventsBySlicesRangeSql(untilTimestamp.isDefined))
+          .createStatement(eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
           .bind("$1", entityTypeHint)
           .bind("$2", minSlice)
           .bind("$3", maxSlice)
@@ -93,6 +99,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           persistenceId = row.get("persistence_id", classOf[String]),
           sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+          readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = row.get("event_payload", classOf[Array[Byte]]),
           serId = row.get("event_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),

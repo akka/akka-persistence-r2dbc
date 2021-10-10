@@ -9,13 +9,18 @@ import java.time.Instant
 import akka.persistence.query.Offset
 
 object TimestampOffset {
-  val Zero: TimestampOffset = TimestampOffset(Instant.EPOCH, Map.empty)
+  val Zero: TimestampOffset = TimestampOffset(Instant.EPOCH, Instant.EPOCH, Map.empty)
+
+  def apply(timestamp: Instant, seen: Map[String, Long]): TimestampOffset =
+    TimestampOffset(timestamp, Instant.EPOCH, seen)
 }
 
 /**
  * @param timestamp
- *   microsecond granularity database timestamp
+ *   time when the event was stored, microsecond granularity database timestamp
+ * @param readTimestamp
+ *   time when the event was read, microsecond granularity database timestamp
  * @param seen
  *   List of sequence nrs for every persistence id seen at this timestamp
  */
-final case class TimestampOffset(timestamp: Instant, seen: Map[String, Long]) extends Offset
+final case class TimestampOffset(timestamp: Instant, readTimestamp: Instant, seen: Map[String, Long]) extends Offset
