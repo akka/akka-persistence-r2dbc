@@ -1,6 +1,9 @@
 import sbt.Keys.parallelExecution
 import xerial.sbt.Sonatype.autoImport.sonatypeProfileName
 
+GlobalScope / parallelExecution := false
+Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
+
 inThisBuild(
   Seq(
     organization := "com.lightbend.akka",
@@ -18,8 +21,6 @@ inThisBuild(
       url("https://github.com/akka/akka-persistence-r2dbc/graphs/contributors")),
     licenses := Seq(("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0"))),
     description := "An Akka Persistence backed by SQL database with R2DBC",
-    // due to the emulator
-    parallelExecution := false,
     // add snapshot repo when Akka version overriden
     resolvers ++=
       (if (System.getProperty("override.akka.version") != null)
@@ -34,11 +35,12 @@ def common: Seq[Setting[_]] =
     scalafmtOnCompile := true,
     sonatypeProfileName := "com.lightbend",
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
-    javacOptions in compile ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
+    Compile / javacOptions ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
     headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>""")),
-    logBuffered in Test := System.getProperty("akka.logBufferedTests", "false").toBoolean,
+    Test / logBuffered := false,
+    Test / parallelExecution := false,
     // show full stack traces and test case durations
-    testOptions in Test += Tests.Argument("-oDF"),
+    Test / testOptions += Tests.Argument("-oDF"),
     // -v Log "test run started" / "test started" / "test run finished" events on log level "info" instead of "debug".
     // -a Show stack traces and exception class name for AssertionErrors.
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-v", "-a"),
