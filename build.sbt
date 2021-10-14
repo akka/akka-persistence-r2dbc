@@ -44,6 +44,8 @@ def common: Seq[Setting[_]] =
     // -v Log "test run started" / "test started" / "test run finished" events on log level "info" instead of "debug".
     // -a Show stack traces and exception class name for AssertionErrors.
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-v", "-a"),
+    Test / fork := true, // some non-heap memory is leaking
+    Test / javaOptions ++= Seq("-Xms1G", "-Xmx1G", "-XX:MaxDirectMemorySize=256M"),
     projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value))
 
 lazy val dontPublish = Seq(skip in publish := true, publishArtifact in Compile := false)
