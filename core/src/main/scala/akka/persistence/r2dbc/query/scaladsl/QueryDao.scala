@@ -81,16 +81,16 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       connection => {
         val stmt = connection
           .createStatement(eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
-          .bind("$1", entityTypeHint)
-          .bind("$2", minSlice)
-          .bind("$3", maxSlice)
-          .bind("$4", fromTimestamp)
+          .bind(0, entityTypeHint)
+          .bind(1, minSlice)
+          .bind(2, maxSlice)
+          .bind(3, fromTimestamp)
         untilTimestamp match {
           case Some(until) =>
-            stmt.bind("$5", settings.querySettings.bufferSize)
-            stmt.bind("$6", until)
+            stmt.bind(4, settings.querySettings.bufferSize)
+            stmt.bind(5, until)
           case None =>
-            stmt.bind("$5", settings.querySettings.bufferSize)
+            stmt.bind(4, settings.querySettings.bufferSize)
         }
         stmt
       },

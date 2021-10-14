@@ -113,16 +113,16 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
-        .bind("$1", slice)
-        .bind("$2", entityTypeHint)
-        .bind("$3", write.persistenceId)
-        .bind("$4", write.sequenceNr)
-        .bind("$5", write.writerUuid)
-        .bind("$6", write.timestamp)
-        .bind("$7", "") // FIXME
-        .bind("$8", write.serId)
-        .bind("$9", write.serManifest)
-        .bind("$10", write.payload)
+        .bind(0, slice)
+        .bind(1, entityTypeHint)
+        .bind(2, write.persistenceId)
+        .bind(3, write.sequenceNr)
+        .bind(4, write.writerUuid)
+        .bind(5, write.timestamp)
+        .bind(6, "") // FIXME
+        .bind(7, write.serId)
+        .bind(8, write.serManifest)
+        .bind(9, write.payload)
     }
 
     val result = {
@@ -163,7 +163,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     val result = r2dbcExecutor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
-          connection.createStatement(selectHighestSequenceNrSql).bind("$1", persistenceId).bind("$2", fromSequenceNr),
+          connection.createStatement(selectHighestSequenceNrSql).bind(0, persistenceId).bind(1, fromSequenceNr),
         row => {
           val seqNr = row.get(0, classOf[java.lang.Long])
           if (seqNr eq null) 0L else seqNr.longValue
@@ -192,9 +192,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       connection => {
         val stmt = connection
           .createStatement(if (max == Long.MaxValue) selectEventsSql else selectEventsWithLimitSql)
-          .bind("$1", persistenceId)
-          .bind("$2", fromSequenceNr)
-          .bind("$3", toSequenceNr)
+          .bind(0, persistenceId)
+          .bind(1, fromSequenceNr)
+          .bind(2, toSequenceNr)
         if (max != Long.MaxValue)
           stmt.bind("$$4", max)
         else
@@ -244,22 +244,22 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
         val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
         stmt
-          .bind("$1", slice)
-          .bind("$2", entityTypeHint)
-          .bind("$3", persistenceId)
-          .bind("$4", deleteMarkerSeqNr)
-          .bind("$5", "")
-          .bind("$6", System.currentTimeMillis())
-          .bind("$7", "")
-          .bind("$8", 0)
-          .bind("$9", "")
-          .bind("$10", Array.emptyByteArray)
-          .bind("$11", true)
+          .bind(0, slice)
+          .bind(1, entityTypeHint)
+          .bind(2, persistenceId)
+          .bind(3, deleteMarkerSeqNr)
+          .bind(4, "")
+          .bind(5, System.currentTimeMillis())
+          .bind(6, "")
+          .bind(7, 0)
+          .bind(8, "")
+          .bind(9, Array.emptyByteArray)
+          .bind(10, true)
       }
 
       val result = r2dbcExecutor.update(s"delete [$persistenceId]") { connection =>
         Vector(
-          connection.createStatement(deleteEventsSql).bind("$1", persistenceId).bind("$2", toSequenceNr),
+          connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, toSequenceNr),
           bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
       }
 
