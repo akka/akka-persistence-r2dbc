@@ -36,13 +36,14 @@ object R2dbcReadJournal {
 
   private object EventsBySlicesState {
     val empty: EventsBySlicesState =
-      EventsBySlicesState(TimestampOffset.Zero, 0, 0, backtracking = false, TimestampOffset.Zero)
+      EventsBySlicesState(TimestampOffset.Zero, 0, 0, 0, backtracking = false, TimestampOffset.Zero)
   }
 
   private final case class EventsBySlicesState(
       latest: TimestampOffset,
       rowCount: Int,
       queryCount: Long,
+      idleCount: Long,
       backtracking: Boolean,
       latestBacktracking: TimestampOffset) {
 
@@ -147,8 +148,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             state.queryCount,
             minSlice,
             maxSlice,
-            state.latest.timestamp,
-            toDbTimestamp,
             state.rowCount)
 
         state -> None
@@ -232,10 +231,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     }
 
     def nextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
+      val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
       val newState =
-        if (settings.querySettings.backtrackingEnabled && !state.backtracking && JDuration
+        if (settings.querySettings.backtrackingEnabled && !state.backtracking &&
+          (newIdleCount >= 5 || JDuration
             .between(state.latestBacktracking.timestamp, state.latest.timestamp)
-            .compareTo(halfBacktrackingWindow) > 0) {
+            .compareTo(halfBacktrackingWindow) > 0)) {
+          // FIXME config for newIdleCount >= 5 and maybe something like `newIdleCount % 5 == 0`
+
           // switching to backtracking
           val fromOffset =
             if (state.latestBacktracking == TimestampOffset.Zero && initialOffset == TimestampOffset.Zero)
@@ -252,13 +255,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           state.copy(
             rowCount = 0,
             queryCount = state.queryCount + 1,
+            idleCount = newIdleCount,
             backtracking = true,
             latestBacktracking = fromOffset)
-        } else if (state.backtracking && state.rowCount <= settings.querySettings.bufferSize - 1) {
+        } else if (state.backtracking && state.rowCount < settings.querySettings.bufferSize - 1) {
           // switch from backtracking
-          state.copy(rowCount = 0, queryCount = state.queryCount + 1, backtracking = false)
+          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount, backtracking = false)
         } else {
-          state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount)
         }
 
       // FIXME for backtracking we could consider to use behind latest offset instead of behind current db time
@@ -268,14 +272,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
       if (log.isDebugEnabled())
         log.debugN(
-          "eventsBySlices query [{}]{} from slices [{} - {}], from time [{}]. Found [{}] rows in previous{} query.",
+          "eventsBySlices query [{}]{} from slices [{} - {}], from time [{}]. {}",
           newState.queryCount,
           if (newState.backtracking) " in backtracking mode" else "",
           minSlice,
           maxSlice,
           newState.nextQueryFromTimestamp,
-          state.rowCount,
-          if (state.backtracking) " backtracking" else "")
+          if (newIdleCount >= 3) s"Idle in [$newIdleCount] queries."
+          else if (state.backtracking) s"Found [${state.rowCount}] rows in previous backtracking query."
+          else s"Found [${state.rowCount}] rows in previous query.")
 
       newState ->
       Some(
@@ -293,8 +298,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     ContinuousQuery[EventsBySlicesState, EventEnvelope](
       initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
       updateState = nextOffset,
-      delayNextQuery = state => delayNextQuery(state),
-      nextQuery = state => nextQuery(state))
+      delayNextQuery = delayNextQuery,
+      nextQuery = nextQuery)
   }
 
   // TODO Unit test in isolation
