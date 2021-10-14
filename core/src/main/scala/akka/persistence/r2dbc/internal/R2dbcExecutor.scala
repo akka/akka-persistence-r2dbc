@@ -254,7 +254,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
           try fun(connection)
           catch {
             case NonFatal(exc) =>
-              log.debug("{} - Call failed: {}", logPrefix, exc)
+              if (log.isDebugEnabled())
+                log.debug("{} - Call failed: {}", logPrefix, exc.toString)
               rollbackAndClose(connection)
               throw exc
           }
@@ -266,7 +267,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
         }
 
         result.failed.foreach { exc =>
-          log.debug("{} - DB call failed: {}", logPrefix, exc)
+          if (log.isDebugEnabled())
+            log.debug("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
           rollbackAndClose(connection)
         }

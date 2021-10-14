@@ -149,7 +149,6 @@ class EventsBySliceSpec
         }
         persister ! Ping(probe.ref)
         probe.expectMessage(10.seconds, Done)
-        Thread.sleep(3000)
         val result: TestSubscriber.Probe[EventEnvelope] =
           doQuery(entityTypeHint, slice, slice, NoOffset, queryWithSmallBuffer)
             .runWith(sinkProbe)
