@@ -51,14 +51,14 @@ class EventsBySliceBacktrackingSpec
     val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
       connection
         .createStatement(insertEventSql)
-        .bind("$1", slice)
-        .bind("$2", entityTypeHint)
-        .bind("$3", persistenceId)
-        .bind("$4", seqNr)
-        .bind("$5", timestamp)
-        .bind("$6", timestamp.toEpochMilli)
-        .bind("$7", stringSerializer.identifier)
-        .bind("$8", stringSerializer.toBinary(event))
+        .bind(0, slice)
+        .bind(1, entityTypeHint)
+        .bind(2, persistenceId)
+        .bind(3, seqNr)
+        .bind(4, timestamp)
+        .bind(5, timestamp.toEpochMilli)
+        .bind(6, stringSerializer.identifier)
+        .bind(7, stringSerializer.toBinary(event))
     }
     result.futureValue shouldBe 1
   }
