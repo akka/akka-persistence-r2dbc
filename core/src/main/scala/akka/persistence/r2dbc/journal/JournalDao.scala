@@ -85,22 +85,24 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
-  private val insertEventSql = s"INSERT INTO ${journalSettings.journalTable} " +
+  private val journalTable = journalSettings.journalTableWithSchema
+
+  private val insertEventSql = s"INSERT INTO $journalTable " +
     "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
 
-  private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from ${journalSettings.journalTable} " +
+  private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
     "WHERE persistence_id = $1 AND sequence_number >= $2"
 
-  private val selectEventsSql = s"SELECT * from ${journalSettings.journalTable} " +
+  private val selectEventsSql = s"SELECT * from $journalTable " +
     "WHERE persistence_id = $1 AND sequence_number >= $2 AND sequence_number <= $3 " +
     "AND deleted = false " +
     "ORDER BY sequence_number"
   private val selectEventsWithLimitSql = selectEventsSql + " LIMIT $4"
 
-  private val deleteEventsSql = s"DELETE FROM ${journalSettings.journalTable} " +
+  private val deleteEventsSql = s"DELETE FROM $journalTable " +
     "WHERE persistence_id = $1 AND sequence_number <= $2"
-  private val insertDeleteMarkerSql = s"INSERT INTO ${journalSettings.journalTable} " +
+  private val insertDeleteMarkerSql = s"INSERT INTO $journalTable " +
     "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10, $11)"
 

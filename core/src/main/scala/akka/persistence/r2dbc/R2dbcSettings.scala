@@ -15,11 +15,13 @@ import com.typesafe.config.Config
  */
 @InternalStableApi
 final class R2dbcSettings(config: Config) {
-  // FIXME add schema config property, see projection settings
+  val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
 
   val journalTable: String = config.getString("journal.table")
+  val journalTableWithSchema: String = schema.map("." + _).getOrElse("") + journalTable
 
   val snapshotsTable: String = config.getString("snapshot.table")
+  val snapshotsTableWithSchema: String = schema.map("." + _).getOrElse("") + snapshotsTable
 
   val maxNumberOfSlices = 128 // FIXME config
 
