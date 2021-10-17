@@ -128,13 +128,14 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
   private def getConnection(): Future[Connection] =
     connectionFactory.create().asFuture()
 
+  /**
+   * One update statement with auto commit.
+   */
   def updateOne(logPrefix: String)(statement: Connection => Statement): Future[Int] = {
     val startTime = System.nanoTime()
-    val connection = getConnection()
 
-    connection.flatMap { connection =>
-      // FIXME is it more efficient to use auto-commit for single updates?
-      connection.beginTransaction().asFutureDone().flatMap { _ =>
+    getConnection().flatMap { connection =>
+      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
         val boundStmt =
           try statement(connection)
           catch {
@@ -158,19 +159,20 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
         }
 
         rowsUpdated.flatMap { r =>
-          commitAndClose(connection).map(_ => r)(ExecutionContext.parasitic)
+          connection.close().asFutureDone().map(_ => r)(ExecutionContext.parasitic)
         }
-
       }
     }
   }
 
+  /**
+   * Several update statements in the same transaction.
+   */
   def update(logPrefix: String)(
       statements: Connection => immutable.IndexedSeq[Statement]): Future[immutable.IndexedSeq[Int]] = {
     val startTime = System.nanoTime()
-    val connection = getConnection()
 
-    connection.flatMap { connection =>
+    getConnection().flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
         val boundStmts =
           try statements(connection)
@@ -213,9 +215,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
   def select[A](
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
     val startTime = System.nanoTime()
-    val connection = getConnection()
 
-    connection.flatMap { connection =>
+    getConnection().flatMap { connection =>
       val boundStmt =
         try statement(connection)
         catch {
@@ -246,9 +247,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     val startTime = System.nanoTime()
-    val connection = getConnection()
 
-    connection.flatMap { connection =>
+    getConnection().flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
         val result =
           try fun(connection)
