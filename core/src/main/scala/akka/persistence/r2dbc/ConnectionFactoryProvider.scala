@@ -4,13 +4,13 @@
 
 package akka.persistence.r2dbc
 
-import java.time.Duration
+import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
-import akka.persistence.r2dbc.internal.DummyConnectionPool
+import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
 import io.r2dbc.spi.ConnectionFactories
@@ -34,13 +34,11 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       configLocation => {
         val config = system.settings.config.getConfig(configLocation)
         val settings = new ConnectionFactorySettings(config)
-//        createConnectionFactory(settings)
-        new DummyConnectionPool(createConnectionFactory(settings), 20)(system)
+        createConnectionPoolFactory(settings)
       })
   }
 
   private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
-    // FIXME config
     ConnectionFactories.get(
       ConnectionFactoryOptions
         .builder()
@@ -54,23 +52,27 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   }
 
   private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
-    // FIXME config
     val connectionFactory = createConnectionFactory(settings)
 
-    // FIXME connection pool is not working: "PostgresConnectionClosedException: Cannot exchange messages because the connection is closed"
     val poolConfiguration = ConnectionPoolConfiguration
       .builder(connectionFactory)
-      .initialSize(1)
-      .maxSize(1)
+      .initialSize(settings.initialSize)
+      .maxSize(settings.maxSize)
+      .maxCreateConnectionTime(JDuration.ofMillis(settings.createTimeout.toMillis))
+      .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
+      .acquireRetry(3)
+      // FIXME more properties?
+//      .maxLifeTime(Duration.ZERO)
+//      .maxIdleTime(Duration.ofMinutes(30))
 //      .preRelease(_.rollbackTransaction)
 //      .validationQuery("SELECT 1")
-      .acquireRetry(3)
-      .maxAcquireTime(Duration.ofMillis(3000))
       .build()
 
     val pool = new ConnectionPool(poolConfiguration)
 
-//    pool.warmup().asFutureDone()
+    // eagerly create initialSize connections
+    import R2dbcExecutor.PublisherOps
+    pool.warmup().asFutureDone() // don't wait for it
 
     pool
   }

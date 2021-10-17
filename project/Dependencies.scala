@@ -31,10 +31,14 @@ object Dependencies {
     val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.2.18"
-    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % R2dbcVersion
-    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % R2dbcVersion
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % R2dbcVersion
+    val postgresql = "org.postgresql" % "postgresql" % "42.2.24"
+//    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % R2dbcVersion
+//    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % R2dbcVersion
+//    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % R2dbcVersion
+
+    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.8.6.RELEASE"
+    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.8.7.RELEASE"
+    val r2dbcPostgres = "io.r2dbc" % "r2dbc-postgresql" % "0.8.10.RELEASE"
   }
 
   object TestDeps {

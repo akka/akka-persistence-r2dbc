@@ -55,4 +55,9 @@ final class ConnectionFactorySettings(config: Config) {
   val user: String = config.getString("user")
   val password: String = config.getString("password")
   val database: String = config.getString("database")
+
+  val initialSize: Int = config.getInt("initial-size")
+  val maxSize: Int = config.getInt("max-size")
+  val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
+  val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
 }
