@@ -13,6 +13,7 @@ import akka.actor.typed.ExtensionId
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
+import io.r2dbc.postgresql.PostgresqlConnectionFactoryProvider
 import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
@@ -48,6 +49,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         .option(ConnectionFactoryOptions.USER, settings.user)
         .option(ConnectionFactoryOptions.PASSWORD, settings.password)
         .option(ConnectionFactoryOptions.DATABASE, settings.database)
+        .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
+        .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
         .build())
   }
 
