@@ -35,6 +35,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     system: ActorSystem[_]) {
   import QueryDao.log
 
+  private val journalTable = settings.journalTableWithSchema
+
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
@@ -47,7 +49,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       else ""
 
     s"""SELECT slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload
-       |FROM ${settings.journalTable}
+       |FROM $journalTable
        |WHERE entity_type_hint = $$1
        |AND slice BETWEEN $$2 AND $$3
        |AND db_timestamp >= $$4 $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition

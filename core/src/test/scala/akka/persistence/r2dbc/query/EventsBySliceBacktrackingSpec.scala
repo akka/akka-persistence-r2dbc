@@ -43,7 +43,7 @@ class EventsBySliceBacktrackingSpec
   // to be able to store events with specific timestamps
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
     log.debug("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
-    val insertEventSql = s"INSERT INTO ${settings.journalTable} " +
+    val insertEventSql = s"INSERT INTO ${settings.journalTableWithSchema} " +
       "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
       "VALUES ($1, $2, $3, $4, $5, '', $6, '', $7, '', $8)"
     val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
