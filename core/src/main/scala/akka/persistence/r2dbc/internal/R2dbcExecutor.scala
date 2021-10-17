@@ -141,7 +141,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
           catch {
             case NonFatal(exc) =>
               log.debug("{} - Update statement failed: {}", logPrefix, exc)
-              rollbackAndClose(connection)
+              // auto-commit so nothing to rollback
+              connection.close().asFutureDone()
               throw exc
           }
         val rowsUpdated = updateOneInTx(boundStmt)
@@ -154,8 +155,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
         rowsUpdated.failed.foreach { exc =>
           log.debug("{} - Update failed: {}", logPrefix, exc)
-          // ok to rollback async like this, or should it be before completing the returned Future?
-          rollbackAndClose(connection)
+          // auto-commit so nothing to rollback
+          connection.close().asFutureDone()
         }
 
         rowsUpdated.flatMap { r =>
@@ -261,7 +262,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
           }
 
         if (log.isDebugEnabled()) {
-          result.foreach { r =>
+          result.foreach { _ =>
             log.debug("{} - DB call completed in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
           }
         }
