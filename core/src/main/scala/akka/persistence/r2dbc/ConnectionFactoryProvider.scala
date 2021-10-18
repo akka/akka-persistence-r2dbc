@@ -67,7 +67,6 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       // FIXME more properties?
 //      .maxLifeTime(Duration.ZERO)
 //      .maxIdleTime(Duration.ofMinutes(30))
-//      .preRelease(_.rollbackTransaction)
 //      .validationQuery("SELECT 1")
       .build()
 

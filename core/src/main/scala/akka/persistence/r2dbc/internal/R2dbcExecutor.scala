@@ -136,30 +136,28 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
     getConnection().flatMap { connection =>
       connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
-        val boundStmt =
-          try statement(connection)
-          catch {
+        val rowsUpdated =
+          try {
+            val boundStmt = statement(connection)
+            updateOneInTx(boundStmt)
+          } catch {
             case NonFatal(exc) =>
-              log.debug("{} - Update statement failed: {}", logPrefix, exc)
-              rollbackAndClose(connection)
-              throw exc
+              // thrown from statement function
+              Future.failed(exc)
           }
-        val rowsUpdated = updateOneInTx(boundStmt)
-
-        if (log.isDebugEnabled()) {
-          rowsUpdated.foreach { r =>
-            log.debug("{} - Updated [{}] in [{}] µs", logPrefix, r, (System.nanoTime() - startTime) / 1000)
-          }
-        }
 
         rowsUpdated.failed.foreach { exc =>
           log.debug("{} - Update failed: {}", logPrefix, exc)
-          // ok to rollback async like this, or should it be before completing the returned Future?
-          rollbackAndClose(connection)
+          // auto-commit so nothing to rollback
+          connection.close().asFutureDone()
         }
 
         rowsUpdated.flatMap { r =>
-          connection.close().asFutureDone().map(_ => r)(ExecutionContext.parasitic)
+          connection.close().asFutureDone().map { _ =>
+            if (log.isDebugEnabled())
+              log.debug("{} - Updated [{}] in [{}] µs", logPrefix, r, (System.nanoTime() - startTime) / 1000)
+            r
+          }
         }
       }
     }
@@ -174,26 +172,15 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
     getConnection().flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
-        val boundStmts =
-          try statements(connection)
-          catch {
+        val rowsUpdated =
+          try {
+            val boundStmts = statements(connection)
+            updateInTx(boundStmts)
+          } catch {
             case NonFatal(exc) =>
-              log.debug("{} - Update statement failed: {}", logPrefix, exc)
-              rollbackAndClose(connection)
-              throw exc
+              // thrown from statement function
+              Future.failed(exc)
           }
-        val rowsUpdated = updateInTx(boundStmts)
-
-        if (log.isDebugEnabled()) {
-          rowsUpdated.foreach { r =>
-            log.debug(
-              "{} - Updated [{}] from [{}] statements in [{}] µs",
-              logPrefix,
-              r.sum,
-              r.size,
-              (System.nanoTime() - startTime) / 1000)
-          }
-        }
 
         rowsUpdated.failed.foreach { exc =>
           log.debug("{} - Update failed: {}", logPrefix, exc)
@@ -202,7 +189,20 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
         }
 
         rowsUpdated.flatMap { r =>
-          commitAndClose(connection).map(_ => r)(ExecutionContext.parasitic)
+          commitAndClose(connection).map { _ =>
+            if (log.isDebugEnabled()) {
+              rowsUpdated.foreach { r =>
+                log.debug(
+                  "{} - Updated [{}] from [{}] statements in [{}] µs",
+                  logPrefix,
+                  r.sum,
+                  r.size,
+                  (System.nanoTime() - startTime) / 1000)
+              }
+            }
+
+            r
+          }
         }
       }
     }
@@ -217,29 +217,27 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     val startTime = System.nanoTime()
 
     getConnection().flatMap { connection =>
-      val boundStmt =
-        try statement(connection)
-        catch {
+      val mappedRows =
+        try {
+          val boundStmt = statement(connection)
+          selectInTx(boundStmt, mapRow)
+        } catch {
           case NonFatal(exc) =>
-            log.debug("{} - Select statement failed: {}", logPrefix, exc)
-            rollbackAndClose(connection)
-            throw exc
+            // thrown from statement function
+            Future.failed(exc)
         }
-      val mappedRows = selectInTx(boundStmt, mapRow)
 
-      if (log.isDebugEnabled()) {
-        mappedRows.foreach { r =>
-          log.debug("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, (System.nanoTime() - startTime) / 1000)
-        }
+      mappedRows.failed.foreach { exc =>
+        log.debug("{} - Select failed: {}", logPrefix, exc)
+        connection.close().asFutureDone()
       }
 
-      if (log.isDebugEnabled())
-        mappedRows.failed.foreach { exc =>
-          log.debug("{} - Select failed: {}", logPrefix, exc)
+      mappedRows.flatMap { r =>
+        connection.close().asFutureDone().map { _ =>
+          if (log.isDebugEnabled())
+            log.debug("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, (System.nanoTime() - startTime) / 1000)
+          r
         }
-
-      mappedRows.andThen { _ =>
-        connection.close().asFutureDone()
       }
 
     }
@@ -251,20 +249,13 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     getConnection().flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
         val result =
-          try fun(connection)
-          catch {
+          try {
+            fun(connection)
+          } catch {
             case NonFatal(exc) =>
-              if (log.isDebugEnabled())
-                log.debug("{} - Call failed: {}", logPrefix, exc.toString)
-              rollbackAndClose(connection)
-              throw exc
+              // thrown from statement function
+              Future.failed(exc)
           }
-
-        if (log.isDebugEnabled()) {
-          result.foreach { r =>
-            log.debug("{} - DB call completed in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
-          }
-        }
 
         result.failed.foreach { exc =>
           if (log.isDebugEnabled())
@@ -274,7 +265,11 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
         }
 
         result.flatMap { r =>
-          commitAndClose(connection).map(_ => r)(ExecutionContext.parasitic)
+          commitAndClose(connection).map { _ =>
+            if (log.isDebugEnabled())
+              log.debug("{} - DB call completed in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
+            r
+          }
         }
 
       }
