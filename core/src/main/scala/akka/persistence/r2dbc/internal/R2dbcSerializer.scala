@@ -40,6 +40,7 @@ import akka.serialization.SerializerWithStringManifest
   }
 
   private def offsetToBinary(offset: TimestampOffset): Array[Byte] = {
+    // Note: this is the same offset storage mechanism we use in spanner, encoding timestamp + each seen pid+seqNr when needed (same timestamp)
     val str = new java.lang.StringBuilder
     str.append(offset.timestamp)
     // readTimestamp not used in serialized

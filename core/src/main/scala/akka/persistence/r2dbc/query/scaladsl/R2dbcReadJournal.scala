@@ -232,6 +232,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     def nextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
+
+      // Note: Found this hard to decipher - start backtracking if we saw no new events in 5 polls and time between
+      // last seen timestamp and last backtracking timestamp is larger than half backtracking window (???)
+      // what is last backtracking timestamp?
       val newState =
         if (settings.querySettings.backtrackingEnabled && !state.backtracking &&
           (newIdleCount >= 5 || JDuration
@@ -302,6 +306,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       nextQuery = nextQuery)
   }
 
+  // Note: very sneaky that this looks like a method but actually is a lambda that keeps state across invocations and
+  // also that it is called deserializeAndAddOffset but actually also filters out duplicates, can we make it something
+  // more obviously stateful while still testable in isolation (a Flow[SerializedJournalRow, EventEnvelope] perhaps)?
   // TODO Unit test in isolation
   private def deserializeAndAddOffset(
       timestampOffset: TimestampOffset): () => SerializedJournalRow => immutable.Iterable[EventEnvelope] = { () =>

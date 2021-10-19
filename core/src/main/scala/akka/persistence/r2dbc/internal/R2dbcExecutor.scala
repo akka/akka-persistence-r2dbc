@@ -58,6 +58,7 @@ import org.slf4j.Logger
     }
 
     def asFutureDone(): Future[Done] = {
+      // FIXME really worth specific impl vs asFuture().map(_ => Done)(ExecutionContexts.parasitic)
       val promise = Promise[Done]()
       publisher.subscribe(new Subscriber[Any] {
         @volatile private var subscription: Subscription = null
@@ -115,6 +116,7 @@ import org.slf4j.Logger
     statement.execute().asFuture().flatMap { result =>
       val resultPublisher: Publisher[A] =
         result.map((row, _) => mapRow(row))
+      // note: it's already indexed seq (vector) so toindexedSeq is essentially no op, not copy
       Source.fromPublisher(resultPublisher).runWith(Sink.seq[A]).map(_.toIndexedSeq)(ExecutionContext.parasitic)
     }
   }
@@ -261,8 +263,10 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
           if (log.isDebugEnabled())
             log.debug("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
+          // Comment: gut feeling is that a single transformWith { case ok => commit; case nok => rollback } would look nicer anyway
           rollbackAndClose(connection)
         }
+
 
         result.flatMap { r =>
           commitAndClose(connection).map { _ =>

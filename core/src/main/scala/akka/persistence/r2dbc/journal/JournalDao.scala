@@ -87,6 +87,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val journalTable = journalSettings.journalTableWithSchema
 
+  // Note: wasn't the thing that we can't use transaction_timestamp() because start of transaction rather than actual commit
+  // what about clock_timestamp() or maybe statement_timestamp()?
   private val insertEventSql = s"INSERT INTO $journalTable " +
     "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
@@ -134,11 +136,13 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             connection.createStatement(insertEventSql)
           if (events.size == 1)
             bind(stmt, events.head)
-          else
+          else {
             // TODO this is not used yet, batch statements doesn't work stmt.bind().add().bind().execute()
+            // Question: in which way does it not work, exception or silent ignore of binds?
             events.foldLeft(stmt) { (s, write) =>
               bind(s, write).add()
             }
+          }
         }
       } else {
         // TODO batch statements doesn't work, see above
@@ -223,7 +227,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         log.debug("Replayed persistenceId [{}], [{}] events", persistenceId, rows.size)
         if (log.isTraceEnabled)
           rows.foreach { row: SerializedJournalRow =>
-            log.debug(
+            log.trace(
               "Replayed persistenceId [{}], seqNr [{}], dbTimestamp [{}]",
               persistenceId,
               row.sequenceNr,

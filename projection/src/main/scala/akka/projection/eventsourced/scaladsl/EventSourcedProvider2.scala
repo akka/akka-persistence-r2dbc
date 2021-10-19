@@ -20,7 +20,7 @@ import akka.projection.scaladsl.SourceProvider
 import akka.stream.scaladsl.Source
 
 // FIXME this should be incorporated in Akka Projections
-
+// Question: but cannot until eventsBySlice officially is part of Akka Persistence Query, right?
 @ApiMayChange
 object EventSourcedProvider2 {
 

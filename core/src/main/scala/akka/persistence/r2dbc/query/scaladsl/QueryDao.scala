@@ -40,6 +40,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
+  // Question: but all 4 different queries are turned to prepared statements anyway by the driver even though somewhat
+  // dynamically generated here?
   private def eventsBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
     val maxDbTimestampParamCondition =
       if (maxDbTimestampParam) "AND db_timestamp < $6" else ""

@@ -54,7 +54,7 @@ final private[r2dbc] class ContinuousQuery[S, T](
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
 
-  val out = Outlet[T]("spanner.out")
+  val out = Outlet[T]("ContinuousQuery.out")
   override def shape: SourceShape[T] = SourceShape(out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
