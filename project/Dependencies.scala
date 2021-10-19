@@ -13,7 +13,7 @@ object Dependencies {
   val AkkaHttpVersion = "10.2.6"
   val AkkaManagementVersion = "1.0.6"
   val R2dbcVersion = "0.9.0.M2"
-  val AkkaProjectionVersion = "1.2.2"
+  val AkkaProjectionVersion = "1.2.2+4-4bf7734a-SNAPSHOT"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion

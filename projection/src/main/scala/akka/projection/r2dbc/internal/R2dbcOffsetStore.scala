@@ -46,7 +46,7 @@ object R2dbcOffsetStore {
     }
   }
 
-  // FIXME add unit test for this class
+  // FIXME add unit test for this class, including how seen is updated
   final case class State(
       byPid: Map[Pid, Record],
       latest: immutable.IndexedSeq[Record],
@@ -78,7 +78,17 @@ object R2dbcOffsetStore {
               acc.byPid.updated(r.pid, r)
           }
         val newSeen =
-          if (newByPid eq acc.byPid) acc.seen else acc.seen.removed(r.pid)
+          if (newByPid eq acc.byPid)
+            acc.seen
+          else {
+            acc.seen.filter { case (seenPid, seenSeqNr) =>
+              newByPid.get(seenPid) match {
+                case Some(r) => r.seqNr < seenSeqNr
+                case None    => true
+              }
+            }
+          }
+
         val latestTimestamp = acc.latestTimestamp
         val newLatest =
           if (r.timestamp.isAfter(latestTimestamp))
@@ -293,7 +303,7 @@ private[projection] class R2dbcOffsetStore(
   }
 
   /**
-   * Like saveOffset, but in own transaction. Useful for resetting an offset
+   * Like saveOffsetInTx, but in own transaction. Used by atLeastOnce and for resetting an offset.
    */
   def saveOffset[Offset](offset: Offset): Future[Done] = {
     r2dbcExecutor
@@ -317,6 +327,14 @@ private[projection] class R2dbcOffsetStore(
     }
   }
 
+  def saveOffsets[Offset](offsets: immutable.IndexedSeq[Offset]): Future[Done] = {
+    r2dbcExecutor
+      .withConnection("save offsets") { conn =>
+        saveOffsetsInTx(conn, offsets)
+      }
+      .map(_ => Done)(ExecutionContext.parasitic)
+  }
+
   def saveOffsetsInTx[Offset](conn: Connection, offsets: immutable.IndexedSeq[Offset]): Future[Done] = {
     if (offsets.exists(_.isInstanceOf[TimestampOffset])) {
       val records = offsets.flatMap {
@@ -337,8 +355,8 @@ private[projection] class R2dbcOffsetStore(
     if (filteredRecords.isEmpty) {
       FutureDone
     } else {
-
-      logger.trace("saving timestamp offset [{}]", filteredRecords.last.timestamp)
+      // FIXME change to trace
+      logger.debug("saving timestamp offset [{}], {}", filteredRecords.last.timestamp, filteredRecords)
 
       def bindRecord(stmt: Statement, record: Record): Statement =
         stmt
@@ -431,7 +449,7 @@ private[projection] class R2dbcOffsetStore(
         val timestampOffset = eventEnvelope.offset.asInstanceOf[TimestampOffset]
 
         val ok =
-          (seqNr == 1L && !currentState.byPid.contains(pid)) ||
+          (seqNr == 1L && (!currentState.byPid.contains(pid)) && (!currentState.seen.contains(pid))) ||
           JDuration
             .between(timestampOffset.timestamp, timestampOffset.readTimestamp)
             .compareTo(settings.acceptNewSequenceNumberAfterAge) >= 0 ||
@@ -448,6 +466,21 @@ private[projection] class R2dbcOffsetStore(
 
       case _ => true
     }
+  }
+
+  def wasSequenceNumberAccepted[Envelope](envelope: Envelope): Boolean = {
+    envelope match {
+      case eventEnvelope: EventEnvelope[_] if eventEnvelope.offset.isInstanceOf[TimestampOffset] =>
+        val pid = eventEnvelope.persistenceId
+        val seqNr = eventEnvelope.sequenceNr
+        val currentState = getState()
+        currentState.seen.get(pid) match {
+          case Some(`seqNr`) => true
+          case _             => false
+        }
+      case _ => true
+    }
+
   }
 
   def deleteOldTimestampOffsets(): Future[Int] = {

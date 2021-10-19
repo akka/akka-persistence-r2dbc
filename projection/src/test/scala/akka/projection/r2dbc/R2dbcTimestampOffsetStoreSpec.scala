@@ -181,10 +181,14 @@ class R2dbcTimestampOffsetStoreSpec
 
       // seqNr 1 is always accepted
       offsetStore.isSequenceNumberAccepted(createEnvelope("p4", 1L, startTime.plusMillis(1), 10, "e4-1")) shouldBe true
+      // but not if already seen, seqNr 1 was accepted
+      offsetStore.isSequenceNumberAccepted(createEnvelope("p4", 1L, startTime.plusMillis(1), 10, "e4-1")) shouldBe false
       // subsequent seqNr is accepted
       offsetStore.isSequenceNumberAccepted(createEnvelope("p4", 2L, startTime.plusMillis(2), 10, "e4-2")) shouldBe true
       // but not when gap
       offsetStore.isSequenceNumberAccepted(createEnvelope("p4", 4L, startTime.plusMillis(3), 10, "e4-4")) shouldBe false
+      // and not if later already seen, seqNr 2 was accepted
+      offsetStore.isSequenceNumberAccepted(createEnvelope("p4", 1L, startTime.plusMillis(1), 10, "e4-1")) shouldBe false
 
       // +1 to known is accepted
       offsetStore.isSequenceNumberAccepted(createEnvelope("p1", 4L, startTime.plusMillis(4), 10, "e1-4")) shouldBe true
