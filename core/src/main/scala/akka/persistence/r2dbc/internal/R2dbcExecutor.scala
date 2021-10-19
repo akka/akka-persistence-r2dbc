@@ -109,6 +109,8 @@ import org.slf4j.Logger
     selectInTx(statement, mapRow).map(_.headOption)
   }
 
+  // we may be materializing too early, I think this method should return Source
+  // or a variant selectStreamInTx
   def selectInTx[A](statement: Statement, mapRow: Row => A)(implicit
       ec: ExecutionContext,
       system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] = {

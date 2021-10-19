@@ -190,6 +190,10 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       row
     }
 
+    // Question: select with no limit may be problematic if we materialize to Future
+    // can't we have a selectStream variant returning a Source?
+    // I'm assuming that the driver won't fetch everything in one shot,
+    // but publish following the pace of the subscriber
     val result = r2dbcExecutor.select(s"select replay [$persistenceId]")(
       connection => {
         val stmt = connection
