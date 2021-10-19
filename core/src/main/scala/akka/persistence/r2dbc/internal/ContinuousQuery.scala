@@ -49,6 +49,7 @@ private[r2dbc] object ContinuousQuery {
 final private[r2dbc] class ContinuousQuery[S, T](
     initialState: S,
     updateState: (S, T) => S,
+    // FIXME: can be simplified to S => Option[FiniteDuration] as S is never modified
     delayNextQuery: S => (S, Option[FiniteDuration]),
     nextQuery: S => (S, Option[Source[T, NotUsed]]))
     extends GraphStage[SourceShape[T]] {
