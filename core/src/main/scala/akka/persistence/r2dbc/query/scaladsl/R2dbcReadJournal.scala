@@ -322,7 +322,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         // has this already been seen?
         if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.sequenceNr)) {
           log.debugN(
-            "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
+            "filtering [{}] [{}] as db timestamp is the same as last offset and it has been seen [{}]",
             row.persistenceId,
             row.sequenceNr,
             currentSequenceNrs)
