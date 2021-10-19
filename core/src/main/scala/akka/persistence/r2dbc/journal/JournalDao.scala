@@ -163,6 +163,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
     val result = r2dbcExecutor
+      // selectOne.getOrElse(0L)
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
           connection.createStatement(selectHighestSequenceNrSql).bind(0, persistenceId).bind(1, fromSequenceNr),

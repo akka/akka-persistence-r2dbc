@@ -210,9 +210,9 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     }
   }
 
-  def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
-    select(logPrefix)(statement, mapRow).map(_.headOption)
-  }
+  def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] =
+    // Suggestion: if mapRow returns `null`, we want to make it a None by default
+    select(logPrefix)(statement, row => Option(mapRow(row))).map(_.flatten.headOption)
 
   def select[A](
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
