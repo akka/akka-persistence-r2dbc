@@ -50,7 +50,7 @@ import org.slf4j.Logger
 
         override def onComplete(): Unit = {
           subscription = null
-          if (promise.isCompleted)
+          if (promise.isCompleted) // I guess what we need here is: if not (yet) completed, we complete with failure
             promise.tryFailure(new RuntimeException(s"Publisher [$publisher] completed without first value."))
         }
       })
