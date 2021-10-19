@@ -42,7 +42,10 @@ object R2dbcJournal {
  * INTERNAL API
  */
 @InternalApi
-final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
+final class R2dbcJournal(
+    config: Config, // FIXME: config: Config not used
+    cfgPath: String)
+    extends AsyncWriteJournal {
   import R2dbcJournal.WriteFinished
 
   implicit val system: ActorSystem[_] = context.system.toTyped
