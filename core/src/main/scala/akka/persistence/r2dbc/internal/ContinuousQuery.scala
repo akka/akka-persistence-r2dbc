@@ -21,7 +21,7 @@ private[r2dbc] object ContinuousQuery {
   def apply[S, T](
       initialState: S,
       updateState: (S, T) => S,
-      delayNextQuery: S => (S, Option[FiniteDuration]),
+      delayNextQuery: S => Option[FiniteDuration],
       nextQuery: S => (S, Option[Source[T, NotUsed]])): Source[T, NotUsed] =
     Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery))
 
@@ -49,7 +49,7 @@ private[r2dbc] object ContinuousQuery {
 final private[r2dbc] class ContinuousQuery[S, T](
     initialState: S,
     updateState: (S, T) => S,
-    delayNextQuery: S => (S, Option[FiniteDuration]),
+    delayNextQuery: S => Option[FiniteDuration],
     nextQuery: S => (S, Option[Source[T, NotUsed]]))
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
@@ -75,15 +75,9 @@ final private[r2dbc] class ContinuousQuery[S, T](
       }
 
       def next(): Unit = {
-        val delay = {
+        val delay =
           if (nrElements == Long.MaxValue) None
-          else
-            delayNextQuery(state) match {
-              case (newState, d) =>
-                state = newState
-                d
-            }
-        }
+          else delayNextQuery(state)
 
         delay match {
           case Some(d) =>
