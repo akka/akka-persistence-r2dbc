@@ -404,7 +404,6 @@ private[projection] class R2dbcOffsetStore(
           case None    => true
         }
       }
-    logger.debug("Cleanup seen {} => {}", currentSeen.size, newSeen.size) // FIXME remove
     if (!seen.compareAndSet(currentSeen, newSeen))
       cleanupSeen(newState) // CAS retry, concurrent update of seen
   }
