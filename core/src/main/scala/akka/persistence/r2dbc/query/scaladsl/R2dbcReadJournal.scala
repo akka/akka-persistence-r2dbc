@@ -168,7 +168,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           ContinuousQuery[EventsBySlicesState, EventEnvelope](
             initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
             updateState = nextOffset,
-            delayNextQuery = state => (state, None),
+            delayNextQuery = state => None,
             nextQuery = state => nextQuery(state, currentDbTime))
         }
       }
@@ -207,7 +207,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       }
     }
 
-    def delayNextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[FiniteDuration]) = {
+    def delayNextQuery(state: EventsBySlicesState): Option[FiniteDuration] = {
       // FIXME verify that this is correct
       // the same row comes back and is filtered due to how the offset works
       val delay =
@@ -227,7 +227,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             d.toMillis)
         }
 
-      state -> delay
+      delay
     }
 
     def nextQuery(state: EventsBySlicesState): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
