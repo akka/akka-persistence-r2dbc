@@ -213,11 +213,11 @@ class R2dbcTimestampOffsetStoreSpec
       offsetStore.isSequenceNumberAccepted(createEnvelope("p5", 8L, startTime.plusMillis(9), 10, "e5-8")) shouldBe true
 
       // it's keeping the seen that are not in the "stored" state
-      offsetStore.getState().seen shouldBe Map("p1" -> 4L, "p3" -> 8L, "p4" -> 2L, "p5" -> 8L)
+      offsetStore.getSeen() shouldBe Map("p1" -> 4L, "p3" -> 8L, "p4" -> 2L, "p5" -> 8L)
       // and they are removed from seen once they have been stored
       offsetStore.saveOffset(TimestampOffset(startTime.plusMillis(2), Map("p4" -> 2L))).futureValue
       offsetStore.saveOffset(TimestampOffset(startTime.plusMillis(9), Map("p5" -> 8L))).futureValue
-      offsetStore.getState().seen shouldBe Map("p1" -> 4L, "p3" -> 8L)
+      offsetStore.getSeen() shouldBe Map("p1" -> 4L, "p3" -> 8L)
     }
 
     "evict old records" in {

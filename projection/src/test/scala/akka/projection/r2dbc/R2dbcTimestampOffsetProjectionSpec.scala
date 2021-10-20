@@ -701,11 +701,13 @@ class R2dbcTimestampOffsetProjectionSpec
 
       val envelopes = createEnvelopesWithDuplicates(pid1, pid2)
       val projection =
-        R2dbcProjection.atLeastOnceFlow(
-          projectionId,
-          Some(settings),
-          sourceProvider = sourceProvider(envelopes),
-          handler = flowHandler)
+        R2dbcProjection
+          .atLeastOnceFlow(
+            projectionId,
+            Some(settings),
+            sourceProvider = sourceProvider(envelopes),
+            handler = flowHandler)
+          .withSaveOffset(2, 1.minute)
 
       projectionTestKit.run(projection) {
         projectedValueShouldBe("e1-1|e1-2|e1-3|e1-4")(pid1)
@@ -730,11 +732,13 @@ class R2dbcTimestampOffsetProjectionSpec
 
       val envelopes1 = createEnvelopesUnknownSequenceNumbers(startTime, pid1, pid2)
       val projection1 =
-        R2dbcProjection.atLeastOnceFlow(
-          projectionId,
-          Some(settings),
-          sourceProvider = sourceProvider(envelopes1),
-          handler = flowHandler)
+        R2dbcProjection
+          .atLeastOnceFlow(
+            projectionId,
+            Some(settings),
+            sourceProvider = sourceProvider(envelopes1),
+            handler = flowHandler)
+          .withSaveOffset(2, 1.minute)
 
       projectionTestKit.run(projection1) {
         projectedValueShouldBe("e1-1|e1-2|e1-3")(pid1)
@@ -746,11 +750,13 @@ class R2dbcTimestampOffsetProjectionSpec
       logger.debug("Starting backtracking")
       val envelopes2 = createEnvelopesBacktrackingUnknownSequenceNumbers(startTime, pid1, pid2)
       val projection2 =
-        R2dbcProjection.atLeastOnceFlow(
-          projectionId,
-          Some(settings),
-          sourceProvider = backtrackingSourceProvider(envelopes2),
-          handler = flowHandler)
+        R2dbcProjection
+          .atLeastOnceFlow(
+            projectionId,
+            Some(settings),
+            sourceProvider = backtrackingSourceProvider(envelopes2),
+            handler = flowHandler)
+          .withSaveOffset(2, 1.minute)
 
       projectionTestKit.run(projection2) {
         projectedValueShouldBe("e1-1|e1-2|e1-3|e1-4|e1-5|e1-6")(pid1)
