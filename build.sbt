@@ -47,6 +47,8 @@ def common: Seq[Setting[_]] =
     Test / fork := true, // some non-heap memory is leaking
     Test / javaOptions ++= {
       import scala.collection.JavaConverters._
+      // include all passed -Dakka. properties to the javaOptions for forked tests
+      // useful to switch DB dialects for example
       val akkaProperties = System.getProperties.stringPropertyNames.asScala.toList.collect {
         case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
       }
