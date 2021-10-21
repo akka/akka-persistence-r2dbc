@@ -53,8 +53,7 @@ def common: Seq[Setting[_]] =
         case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
       }
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
-      }
-      ,
+    },
     projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value))
 
 lazy val dontPublish = Seq(skip in publish := true, publishArtifact in Compile := false)
