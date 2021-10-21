@@ -30,26 +30,20 @@ import org.slf4j.Logger
     def asFuture(): Future[T] = {
       val promise = Promise[T]()
       publisher.subscribe(new Subscriber[T] {
-        @volatile private var subscription: Subscription = null
 
         override def onSubscribe(s: Subscription): Unit = {
-          subscription = s
           s.request(1)
         }
 
         override def onNext(value: T): Unit = {
-          subscription.cancel()
-          subscription = null
           promise.trySuccess(value)
         }
 
         override def onError(t: Throwable): Unit = {
-          subscription = null
           promise.tryFailure(t)
         }
 
         override def onComplete(): Unit = {
-          subscription = null
           if (!promise.isCompleted)
             promise.tryFailure(new RuntimeException(s"Publisher [$publisher] completed without first value."))
         }
@@ -60,26 +54,20 @@ import org.slf4j.Logger
     def asFutureDone(): Future[Done] = {
       val promise = Promise[Done]()
       publisher.subscribe(new Subscriber[Any] {
-        @volatile private var subscription: Subscription = null
 
         override def onSubscribe(s: Subscription): Unit = {
-          subscription = s
           s.request(1)
         }
 
         override def onNext(value: Any): Unit = {
-          subscription.cancel()
-          subscription = null
           promise.trySuccess(Done)
         }
 
         override def onError(t: Throwable): Unit = {
-          subscription = null
           promise.tryFailure(t)
         }
 
         override def onComplete(): Unit = {
-          subscription = null
           promise.trySuccess(Done)
         }
       })
