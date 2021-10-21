@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
-import akka.persistence.r2dbc.internal.DummyConnectionPool
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
@@ -36,10 +35,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       configLocation => {
         val config = system.settings.config.getConfig(configLocation)
         val settings = new ConnectionFactorySettings(config)
-        // FIXME connection pool is not working, see issue https://github.com/akka/akka-persistence-r2dbc/issues/46
-        // and https://github.com/akka/akka-persistence-r2dbc/issues/33
-        //createConnectionPoolFactory(settings)
-        new DummyConnectionPool(createConnectionFactory(settings), settings.maxSize)(system)
+        createConnectionPoolFactory(settings)
       })
   }
 
