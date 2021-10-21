@@ -34,6 +34,7 @@ def common: Seq[Setting[_]] =
     crossVersion := CrossVersion.binary,
     scalafmtOnCompile := true,
     sonatypeProfileName := "com.lightbend",
+    resolvers += Resolver.sonatypeRepo("snapshots"), // FIXME remove when using stable akka-projection
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
     Compile / javacOptions ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
     headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>""")),
