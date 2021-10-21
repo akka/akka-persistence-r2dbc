@@ -45,7 +45,14 @@ def common: Seq[Setting[_]] =
     // -a Show stack traces and exception class name for AssertionErrors.
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-v", "-a"),
     Test / fork := true, // some non-heap memory is leaking
-    Test / javaOptions ++= Seq("-Xms1G", "-Xmx1G", "-XX:MaxDirectMemorySize=256M"),
+    Test / javaOptions ++= {
+      import scala.collection.JavaConverters._
+      val akkaProperties = System.getProperties.stringPropertyNames.asScala.toList.collect {
+        case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
+      }
+      "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
+      }
+      ,
     projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value))
 
 lazy val dontPublish = Seq(skip in publish := true, publishArtifact in Compile := false)
