@@ -41,21 +41,26 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     "SELECT transaction_timestamp() AS db_timestamp"
 
   private def eventsBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
-    val maxDbTimestampParamCondition =
-      if (maxDbTimestampParam) "AND db_timestamp < $6" else ""
-    val behindCurrentTimeIntervalCondition =
+    var p = 0
+    def nextParam(): String = {
+      p += 1
+      "$" + p
+    }
+    def maxDbTimestampParamCondition =
+      if (maxDbTimestampParam) s"AND db_timestamp < ${nextParam()}" else ""
+    def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
-        s"AND db_timestamp < statement_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
+        s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
     s"""SELECT slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload
        |FROM $journalTable
-       |WHERE entity_type_hint = $$1
-       |AND slice BETWEEN $$2 AND $$3
-       |AND db_timestamp >= $$4 $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+       |WHERE entity_type_hint = ${nextParam()}
+       |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
+       |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
        |AND deleted = false
        |ORDER BY db_timestamp, sequence_number
-       |LIMIT $$5
+       |LIMIT ${nextParam()}
        |""".stripMargin
   }
 
@@ -89,8 +94,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(3, fromTimestamp)
         untilTimestamp match {
           case Some(until) =>
-            stmt.bind(4, settings.querySettings.bufferSize)
-            stmt.bind(5, until)
+            stmt.bind(4, until)
+            stmt.bind(5, settings.querySettings.bufferSize)
           case None =>
             stmt.bind(4, settings.querySettings.bufferSize)
         }
