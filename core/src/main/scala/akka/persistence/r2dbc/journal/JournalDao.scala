@@ -87,11 +87,10 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val journalTable = journalSettings.journalTableWithSchema
 
+  // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
+  // always increasing for a pid (time not going backwards).
+  // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
   private val insertEventSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type_hint, persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, db_timestamp) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, transaction_timestamp())"
-
-  private val insertEventGreaterTimestampSql = s"INSERT INTO $journalTable " +
     "(slice, entity_type_hint, persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, db_timestamp) " +
     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, GREATEST(transaction_timestamp(), " +
     s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable WHERE slice = $$11 AND entity_type_hint = $$12 AND persistence_id = $$13 AND sequence_number = $$14)))"
@@ -117,8 +116,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+    val previousSeqNr = events.head.sequenceNr - 1
 
-    def bind(stmt: Statement, write: SerializedJournalRow, previousSeqNr: Long): Statement = {
+    def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
         .bind(0, slice)
         .bind(1, entityTypeHint)
@@ -130,30 +130,23 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(7, write.serId)
         .bind(8, write.serManifest)
         .bind(9, write.payload)
-
-      if (previousSeqNr >= 1)
-        stmt
-          .bind(10, slice)
-          .bind(11, entityTypeHint)
-          .bind(12, write.persistenceId)
-          .bind(13, write.sequenceNr)
-
-      stmt
+        .bind(10, slice)
+        .bind(11, entityTypeHint)
+        .bind(12, write.persistenceId)
+        .bind(13, previousSeqNr)
     }
 
-    val previousSeqNr = events.head.sequenceNr - 1
-    val insertSql = if (previousSeqNr >= 1) insertEventGreaterTimestampSql else insertEventSql
     val result = {
       if (events.size == 1) {
         r2dbcExecutor.updateOne(s"insert [$persistenceId]") { connection =>
           val stmt =
-            connection.createStatement(insertSql)
+            connection.createStatement(insertEventSql)
           if (events.size == 1)
-            bind(stmt, events.head, previousSeqNr)
+            bind(stmt, events.head)
           else
             // TODO this is not used yet, batch statements doesn't work stmt.bind().add().bind().execute()
             events.foldLeft(stmt) { (s, write) =>
-              bind(s, write, previousSeqNr).add()
+              bind(s, write).add()
             }
         }
       } else {
@@ -161,8 +154,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         r2dbcExecutor
           .update(s"insert [$persistenceId]") { connection =>
             events.map { write =>
-              val stmt = connection.createStatement(insertSql)
-              bind(stmt, write, previousSeqNr)
+              val stmt = connection.createStatement(insertEventSql)
+              bind(stmt, write)
             }.toIndexedSeq
           }
           .map(_.sum)
