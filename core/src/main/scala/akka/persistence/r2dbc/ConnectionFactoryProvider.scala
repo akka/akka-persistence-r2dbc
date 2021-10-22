@@ -7,6 +7,12 @@ package akka.persistence.r2dbc
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
+
+import akka.Done
+import akka.actor.CoordinatedShutdown
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
@@ -27,16 +33,27 @@ object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] 
 
 class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
 
-  private val sessions = new ConcurrentHashMap[String, ConnectionFactory]
+  import R2dbcExecutor.PublisherOps
+  private val sessions = new ConcurrentHashMap[String, ConnectionPool]
+
+  CoordinatedShutdown(system)
+    .addTask(CoordinatedShutdown.PhaseBeforeActorSystemTerminate, "close connection pools") { () =>
+      import system.executionContext
+      Future
+        .sequence(sessions.asScala.values.map(_.disposeLater().asFutureDone()))
+        .map(_ => Done)
+    }
 
   def connectionFactoryFor(configLocation: String): ConnectionFactory = {
-    sessions.computeIfAbsent(
-      configLocation,
-      configLocation => {
-        val config = system.settings.config.getConfig(configLocation)
-        val settings = new ConnectionFactorySettings(config)
-        createConnectionPoolFactory(settings)
-      })
+    sessions
+      .computeIfAbsent(
+        configLocation,
+        configLocation => {
+          val config = system.settings.config.getConfig(configLocation)
+          val settings = new ConnectionFactorySettings(config)
+          createConnectionPoolFactory(settings)
+        })
+      .asInstanceOf[ConnectionFactory]
   }
 
   private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
@@ -54,7 +71,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         .build())
   }
 
-  private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
+  private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
     val connectionFactory = createConnectionFactory(settings)
 
     val poolConfiguration = ConnectionPoolConfiguration
@@ -73,7 +90,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
     val pool = new ConnectionPool(poolConfiguration)
 
     // eagerly create initialSize connections
-    import R2dbcExecutor.PublisherOps
+
     pool.warmup().asFutureDone() // don't wait for it
 
     pool
