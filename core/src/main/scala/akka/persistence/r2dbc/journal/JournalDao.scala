@@ -87,9 +87,13 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val journalTable = journalSettings.journalTableWithSchema
 
+  // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
+  // always increasing for a pid (time not going backwards).
+  // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
   private val insertEventSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
-    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
+    "(slice, entity_type_hint, persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, db_timestamp) " +
+    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, GREATEST(transaction_timestamp(), " +
+    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable WHERE slice = $$11 AND entity_type_hint = $$12 AND persistence_id = $$13 AND sequence_number = $$14)))"
 
   private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
     "WHERE persistence_id = $1 AND sequence_number >= $2"
@@ -112,6 +116,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+    val previousSeqNr = events.head.sequenceNr - 1
 
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
@@ -125,6 +130,10 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(7, write.serId)
         .bind(8, write.serManifest)
         .bind(9, write.payload)
+        .bind(10, slice)
+        .bind(11, entityTypeHint)
+        .bind(12, write.persistenceId)
+        .bind(13, previousSeqNr)
     }
 
     val result = {
@@ -145,8 +154,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         r2dbcExecutor
           .update(s"insert [$persistenceId]") { connection =>
             events.map { write =>
-              val stmt =
-                connection.createStatement(insertEventSql)
+              val stmt = connection.createStatement(insertEventSql)
               bind(stmt, write)
             }.toIndexedSeq
           }
