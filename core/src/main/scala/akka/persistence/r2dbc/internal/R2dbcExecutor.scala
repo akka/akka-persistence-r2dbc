@@ -24,8 +24,10 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 
-// FIXME make public?
-@InternalStableApi private[akka] object R2dbcExecutor {
+/**
+ * INTERNAL API
+ */
+@InternalStableApi object R2dbcExecutor {
   final implicit class PublisherOps[T](val publisher: Publisher[T]) extends AnyVal {
     def asFuture(): Future[T] = {
       val promise = Promise[T]()
