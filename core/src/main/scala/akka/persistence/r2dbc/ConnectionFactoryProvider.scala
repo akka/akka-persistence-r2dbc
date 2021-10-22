@@ -7,6 +7,7 @@ package akka.persistence.r2dbc
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
@@ -37,10 +38,10 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
 
   CoordinatedShutdown(system)
     .addTask(CoordinatedShutdown.PhaseBeforeActorSystemTerminate, "close connection pools") { () =>
-      val FutureDone: Future[Done] = Future.successful(Done)
-      sessions.asScala.values.foldLeft(FutureDone) { (acc, pool) =>
-        acc.flatMap(_ => pool.disposeLater().asFutureDone())(system.executionContext)
-      }
+      import system.executionContext
+      Future
+        .sequence(sessions.asScala.values.map(_.disposeLater().asFutureDone()))
+        .map(_ => Done)
     }
 
   def connectionFactoryFor(configLocation: String): ConnectionFactory = {
