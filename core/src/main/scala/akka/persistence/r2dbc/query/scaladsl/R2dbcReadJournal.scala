@@ -27,6 +27,7 @@ import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.TimestampOffset
 import akka.serialization.SerializationExtension
+import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
@@ -66,12 +67,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery {
+
   import R2dbcReadJournal.EventsBySlicesState
 
   private val log = LoggerFactory.getLogger(classOf[R2dbcReadJournal])
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = new R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+
   import settings.maxNumberOfSlices
+
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)
   private val queryDao =
@@ -140,7 +144,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               state.latest.timestamp,
               untilTimestamp = Some(toDbTimestamp),
               behindCurrentTime = Duration.Zero)
-            .statefulMapConcat(deserializeAndAddOffset(state.latest)))
+            .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
           log.debugN(
@@ -168,7 +172,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           ContinuousQuery[EventsBySlicesState, EventEnvelope](
             initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
             updateState = nextOffset,
-            delayNextQuery = state => None,
+            delayNextQuery = _ => None,
             nextQuery = state => nextQuery(state, currentDbTime))
         }
       }
@@ -292,7 +296,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             newState.nextQueryFromTimestamp,
             newState.nextQueryUntilTimestamp,
             behindCurrentTime)
-          .statefulMapConcat(deserializeAndAddOffset(newState.currentOffset)))
+          .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 
     ContinuousQuery[EventsBySlicesState, EventEnvelope](
@@ -304,41 +308,43 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // TODO Unit test in isolation
   private def deserializeAndAddOffset(
-      timestampOffset: TimestampOffset): () => SerializedJournalRow => immutable.Iterable[EventEnvelope] = { () =>
-    var currentTimestamp = timestampOffset.timestamp
-    var currentSequenceNrs: Map[String, Long] = timestampOffset.seen
-    row => {
-      def toEnvelope(offset: TimestampOffset): EventEnvelope = {
-        val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-        val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.timestamp)
-        row.metadata match {
-          case None => envelope
-          case Some(meta) =>
-            envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+      timestampOffset: TimestampOffset): Flow[SerializedJournalRow, EventEnvelope, NotUsed] = {
+    Flow[SerializedJournalRow].statefulMapConcat { () =>
+      var currentTimestamp = timestampOffset.timestamp
+      var currentSequenceNrs: Map[String, Long] = timestampOffset.seen
+      row => {
+        def toEnvelope(offset: TimestampOffset): EventEnvelope = {
+          val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+          val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.timestamp)
+          row.metadata match {
+            case None => envelope
+            case Some(meta) =>
+              envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+          }
         }
-      }
 
-      if (row.dbTimestamp == currentTimestamp) {
-        // has this already been seen?
-        if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.sequenceNr)) {
-          log.debugN(
-            "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
-            row.persistenceId,
-            row.sequenceNr,
-            currentSequenceNrs)
-          Nil
+        if (row.dbTimestamp == currentTimestamp) {
+          // has this already been seen?
+          if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.sequenceNr)) {
+            log.debugN(
+              "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
+              row.persistenceId,
+              row.sequenceNr,
+              currentSequenceNrs)
+            Nil
+          } else {
+            currentSequenceNrs = currentSequenceNrs.updated(row.persistenceId, row.sequenceNr)
+            val offset =
+              TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
+            toEnvelope(offset) :: Nil
+          }
         } else {
-          currentSequenceNrs = currentSequenceNrs.updated(row.persistenceId, row.sequenceNr)
-          val offset =
-            TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
+          // ne timestamp, reset currentSequenceNrs
+          currentTimestamp = row.dbTimestamp
+          currentSequenceNrs = Map(row.persistenceId -> row.sequenceNr)
+          val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
           toEnvelope(offset) :: Nil
         }
-      } else {
-        // ne timestamp, reset currentSequenceNrs
-        currentTimestamp = row.dbTimestamp
-        currentSequenceNrs = Map(row.persistenceId -> row.sequenceNr)
-        val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
-        toEnvelope(offset) :: Nil
       }
     }
   }
