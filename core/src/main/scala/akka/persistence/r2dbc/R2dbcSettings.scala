@@ -58,6 +58,10 @@ final class ConnectionFactorySettings(config: Config) {
   val password: String = config.getString("password")
   val database: String = config.getString("database")
 
+  val sslEnabled: Boolean = config.getBoolean("ssl.enabled")
+  val sslMode: String = config.getString("ssl.mode")
+  val sslRootCert: String = config.getString("ssl.root-cert")
+
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
