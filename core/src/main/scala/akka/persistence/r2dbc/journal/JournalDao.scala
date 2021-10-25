@@ -96,16 +96,16 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable WHERE slice = $$11 AND entity_type_hint = $$12 AND persistence_id = $$13 AND sequence_number = $$14)))"
 
   private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
-    "WHERE persistence_id = $1 AND sequence_number >= $2"
+    "WHERE slice = $1 AND entity_type_hint = $2 AND persistence_id = $3 AND sequence_number >= $4"
 
   private val selectEventsSql = s"SELECT * from $journalTable " +
-    "WHERE persistence_id = $1 AND sequence_number >= $2 AND sequence_number <= $3 " +
+    "WHERE slice = $1 AND entity_type_hint = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
     "AND deleted = false " +
     "ORDER BY sequence_number"
-  private val selectEventsWithLimitSql = selectEventsSql + " LIMIT $4"
+  private val selectEventsWithLimitSql = selectEventsSql + " LIMIT $6"
 
   private val deleteEventsSql = s"DELETE FROM $journalTable " +
-    "WHERE persistence_id = $1 AND sequence_number <= $2"
+    "WHERE slice = $1 AND entity_type_hint = $2 AND persistence_id = $3 AND sequence_number <= $4"
   private val insertDeleteMarkerSql = s"INSERT INTO $journalTable " +
     "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10, $11)"
@@ -170,10 +170,17 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   }
 
   def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
+    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
     val result = r2dbcExecutor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
-          connection.createStatement(selectHighestSequenceNrSql).bind(0, persistenceId).bind(1, fromSequenceNr),
+          connection
+            .createStatement(selectHighestSequenceNrSql)
+            .bind(0, slice)
+            .bind(1, entityTypeHint)
+            .bind(2, persistenceId)
+            .bind(3, fromSequenceNr),
         row => {
           val seqNr = row.get(0, classOf[java.lang.Long])
           if (seqNr eq null) 0L else seqNr.longValue
@@ -198,15 +205,20 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       row
     }
 
+    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+
     val result = r2dbcExecutor.select(s"select replay [$persistenceId]")(
       connection => {
         val stmt = connection
           .createStatement(if (max == Long.MaxValue) selectEventsSql else selectEventsWithLimitSql)
-          .bind(0, persistenceId)
-          .bind(1, fromSequenceNr)
-          .bind(2, toSequenceNr)
+          .bind(0, slice)
+          .bind(1, entityTypeHint)
+          .bind(2, persistenceId)
+          .bind(3, fromSequenceNr)
+          .bind(4, toSequenceNr)
         if (max != Long.MaxValue)
-          stmt.bind("$$4", max)
+          stmt.bind(5, max)
         else
           stmt
       },
@@ -243,6 +255,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   }
 
   def deleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
+    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+
     val deleteMarkerSeqNrFut =
       if (toSequenceNr == Long.MaxValue)
         readHighestSequenceNr(persistenceId, 0L)
@@ -251,8 +266,6 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     deleteMarkerSeqNrFut.flatMap { deleteMarkerSeqNr =>
       def bindDeleteMarker(stmt: Statement): Statement = {
-        val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
-        val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
         stmt
           .bind(0, slice)
           .bind(1, entityTypeHint)
@@ -269,7 +282,12 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
       val result = r2dbcExecutor.update(s"delete [$persistenceId]") { connection =>
         Vector(
-          connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, toSequenceNr),
+          connection
+            .createStatement(deleteEventsSql)
+            .bind(0, slice)
+            .bind(1, entityTypeHint)
+            .bind(2, persistenceId)
+            .bind(3, toSequenceNr),
           bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
       }
 
