@@ -20,6 +20,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
 import io.r2dbc.postgresql.PostgresqlConnectionFactoryProvider
+import io.r2dbc.postgresql.client.SSLMode
 import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
@@ -57,18 +58,28 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   }
 
   private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
-    ConnectionFactories.get(
-      ConnectionFactoryOptions
-        .builder()
-        .option(ConnectionFactoryOptions.DRIVER, settings.driver)
-        .option(ConnectionFactoryOptions.HOST, settings.host)
-        .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
-        .option(ConnectionFactoryOptions.USER, settings.user)
-        .option(ConnectionFactoryOptions.PASSWORD, settings.password)
-        .option(ConnectionFactoryOptions.DATABASE, settings.database)
-        .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
-        .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
-        .build())
+    val options = ConnectionFactoryOptions
+      .builder()
+      .option(ConnectionFactoryOptions.DRIVER, settings.driver)
+      .option(ConnectionFactoryOptions.HOST, settings.host)
+      .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
+      .option(ConnectionFactoryOptions.USER, settings.user)
+      .option(ConnectionFactoryOptions.PASSWORD, settings.password)
+      .option(ConnectionFactoryOptions.DATABASE, settings.database)
+      .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
+      .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
+
+    if (settings.sslEnabled) {
+      options.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
+
+      if (settings.sslMode.nonEmpty)
+        options.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.valueOf(settings.sslMode))
+
+      if (settings.sslRootCert.nonEmpty)
+        options.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
+    }
+
+    ConnectionFactories.get(options.build())
   }
 
   private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
