@@ -68,6 +68,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .option(ConnectionFactoryOptions.DATABASE, settings.database)
       .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
       .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
+      .option(PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES, Integer.valueOf(100))
 
     if (settings.sslEnabled) {
       options.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
