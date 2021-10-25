@@ -85,6 +85,7 @@ import org.slf4j.Logger
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
+    // connection not intended for concurrent calls, make sure statments are executed one at a time
     statements.foldLeft(Future.successful(IndexedSeq.empty[Int])) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
