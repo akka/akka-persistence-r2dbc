@@ -68,8 +68,6 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         .option(ConnectionFactoryOptions.DATABASE, settings.database)
         .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
         .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
-        // FIXME: re-enable cache when issue in driver is solved
-        .option(PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES, Integer.valueOf(0))
         .build())
   }
 

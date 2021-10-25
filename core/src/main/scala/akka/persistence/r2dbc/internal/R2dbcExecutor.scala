@@ -84,14 +84,14 @@ import org.slf4j.Logger
   }
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
-      ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] = {
-    Future.sequence(statements.map { stmt =>
-      // FIXME is it ok to execute next like this before previous has completed?
-      stmt.execute().asFuture().flatMap { result =>
-        result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
+      ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
+    statements.foldLeft(Future.successful(IndexedSeq.empty[Int])) { (acc, stmt) =>
+      acc.flatMap { seq =>
+        stmt.execute().asFuture().flatMap { res =>
+          res.getRowsUpdated.asFuture().map(seq :+ _.intValue())(ExecutionContext.parasitic)
+        }
       }
-    })
-  }
+    }
 
   def selectOneInTx[A](statement: Statement, mapRow: Row => A)(implicit
       ec: ExecutionContext,
