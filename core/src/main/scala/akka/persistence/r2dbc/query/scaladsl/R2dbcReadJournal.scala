@@ -81,9 +81,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val queryDao =
     new QueryDao(
       settings,
-      ConnectionFactoryProvider(typedSystem).connectionFactoryFor(sharedConfigPath + ".connection-factory"))(
-      typedSystem.executionContext,
-      typedSystem)
+      ConnectionFactoryProvider(typedSystem)
+        .connectionFactoryFor(sharedConfigPath + ".connection-factory", -1))(typedSystem.executionContext, typedSystem)
 
   private val backtrackingWindow = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)
   private val halfBacktrackingWindow = backtrackingWindow.dividedBy(2)
