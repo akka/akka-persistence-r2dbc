@@ -33,6 +33,18 @@ AND    pid <> pg_backend_pid()       -- except your current session
 AND    state LIKE 'idle%';
 ```
 
+[exec time from pg_stat_statements](https://www.cybertec-postgresql.com/en/postgresql-detecting-slow-queries-quickly/) :
+```
+SELECT substring(query, 1, 100) AS query,
+      calls,
+      round(total_time::numeric, 2) AS total,
+      round(mean_time::numeric, 2) AS mean,
+      round((100 * total_time / sum(total_time) OVER ())::numeric, 2) AS percentage
+FROM pg_stat_statements
+ORDER BY total DESC
+LIMIT 10;
+```
+
 ## Running the tests with Yugabyte
 
 The tests expect a locally running database.
@@ -44,7 +56,7 @@ docker-compose -f docker/docker-compose-yugabyte.yml up
 ```
 
 ```
-docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_postgres.sql
+docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
 ```
 
 Run tests with:
