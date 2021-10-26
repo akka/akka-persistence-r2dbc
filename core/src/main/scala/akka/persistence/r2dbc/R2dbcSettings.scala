@@ -66,4 +66,6 @@ final class ConnectionFactorySettings(config: Config) {
   val maxSize: Int = config.getInt("max-size")
   val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
+
+  val statementCacheSize: Int = config.getInt("statement-cache-size")
 }

@@ -7,7 +7,6 @@ package akka.persistence.r2dbc
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
@@ -68,6 +67,9 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .option(ConnectionFactoryOptions.DATABASE, settings.database)
       .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
       .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
+      .option(
+        PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
+        Integer.valueOf(settings.statementCacheSize))
 
     if (settings.sslEnabled) {
       options.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
