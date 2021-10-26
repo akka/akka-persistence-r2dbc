@@ -303,7 +303,7 @@ object R2dbcProjection {
   }
 
   private def connectionFactory(system: ActorSystem[_], r2dbcSettings: R2dbcProjectionSettings): ConnectionFactory = {
-    ConnectionFactoryProvider(system).connectionFactoryFor(r2dbcSettings.useConnectionFactory, 100)
+    ConnectionFactoryProvider(system).connectionFactoryFor(r2dbcSettings.useConnectionFactory)
   }
 
 }

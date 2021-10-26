@@ -7,7 +7,6 @@ package akka.persistence.r2dbc
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
@@ -45,19 +44,19 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         .map(_ => Done)
     }
 
-  def connectionFactoryFor(configLocation: String, cacheSize: Int): ConnectionFactory = {
+  def connectionFactoryFor(configLocation: String): ConnectionFactory = {
     sessions
       .computeIfAbsent(
         configLocation,
         configLocation => {
           val config = system.settings.config.getConfig(configLocation)
           val settings = new ConnectionFactorySettings(config)
-          createConnectionPoolFactory(settings, cacheSize)
+          createConnectionPoolFactory(settings)
         })
       .asInstanceOf[ConnectionFactory]
   }
 
-  private def createConnectionFactory(settings: ConnectionFactorySettings, cacheSize: Int): ConnectionFactory = {
+  private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
     val options = ConnectionFactoryOptions
       .builder()
       .option(ConnectionFactoryOptions.DRIVER, settings.driver)
@@ -68,7 +67,9 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .option(ConnectionFactoryOptions.DATABASE, settings.database)
       .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
       .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
-      .option(PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES, Integer.valueOf(cacheSize))
+      .option(
+        PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
+        Integer.valueOf(settings.statementCacheSize))
 
     if (settings.sslEnabled) {
       options.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
@@ -83,8 +84,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
     ConnectionFactories.get(options.build())
   }
 
-  private def createConnectionPoolFactory(settings: ConnectionFactorySettings, cacheSize: Int): ConnectionPool = {
-    val connectionFactory = createConnectionFactory(settings, cacheSize)
+  private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
+    val connectionFactory = createConnectionFactory(settings)
 
     val poolConfiguration = ConnectionPoolConfiguration
       .builder(connectionFactory)

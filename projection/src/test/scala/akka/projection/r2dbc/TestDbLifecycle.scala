@@ -25,7 +25,7 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
 
   lazy val r2dbcExecutor: R2dbcExecutor = {
     new R2dbcExecutor(
-      ConnectionFactoryProvider(typedSystem).connectionFactoryFor(r2dbcProjectionSettings.useConnectionFactory, 100),
+      ConnectionFactoryProvider(typedSystem).connectionFactoryFor(r2dbcProjectionSettings.useConnectionFactory),
       LoggerFactory.getLogger(getClass))(typedSystem.executionContext, typedSystem)
   }
 
