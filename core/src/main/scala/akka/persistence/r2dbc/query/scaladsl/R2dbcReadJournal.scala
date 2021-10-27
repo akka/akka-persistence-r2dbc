@@ -70,7 +70,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   import R2dbcReadJournal.EventsBySlicesState
 
-  private val log = LoggerFactory.getLogger(classOf[R2dbcReadJournal])
+  private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = new R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 

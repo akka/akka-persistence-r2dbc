@@ -1,5 +1,3 @@
---DROP TABLE IF EXISTS event_journal CASCADE;
-
 CREATE TABLE IF NOT EXISTS event_journal(
   slice INT NOT NULL,
   entity_type_hint VARCHAR(255) NOT NULL,
@@ -25,7 +23,20 @@ CREATE TABLE IF NOT EXISTS event_journal(
 
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type_hint ASC, slice ASC, db_timestamp ASC);
 
--- DROP TABLE IF EXISTS akka_projection_offset_store;
+CREATE TABLE IF NOT EXISTS durable_state (
+  slice INT NOT NULL,
+  entity_type_hint VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  revision BIGINT NOT NULL,
+  db_timestamp timestamp with time zone NOT NULL,
+  write_timestamp BIGINT,
+
+  state_ser_id INTEGER NOT NULL,
+  state_ser_manifest VARCHAR(255),
+  state_payload BYTEA NOT NULL,
+
+  PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id, revision ASC)
+);
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,
@@ -36,8 +47,6 @@ CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   last_updated BIGINT NOT NULL,
   PRIMARY KEY(projection_name, projection_key)
 );
-
--- DROP TABLE IF EXISTS akka_projection_timestamp_offset_store;
 
 CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   projection_name VARCHAR(255) NOT NULL,
@@ -51,8 +60,6 @@ CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   last_updated timestamp with time zone NOT NULL,
   PRIMARY KEY((projection_name, projection_key) HASH, persistence_id)
 );
-
--- DROP TABLE IF EXISTS akka_projection_management;
 
 CREATE TABLE IF NOT EXISTS akka_projection_management (
   projection_name VARCHAR(255) NOT NULL,

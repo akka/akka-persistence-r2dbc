@@ -23,6 +23,9 @@ final class R2dbcSettings(config: Config) {
   val snapshotsTable: String = config.getString("snapshot.table")
   val snapshotsTableWithSchema: String = schema.map("." + _).getOrElse("") + snapshotsTable
 
+  val durableStateTable: String = config.getString("state.table")
+  val durableStateTableWithSchema: String = schema.map("." + _).getOrElse("") + durableStateTable
+
   val maxNumberOfSlices = 128 // FIXME config
 
   val dialect: String = config.getString("dialect")
