@@ -14,3 +14,7 @@ Under development.
 ## License
 
 Akka Persistence RD2BC is Open Source and available under the Apache 2 License.
+
+## Support
+
+This project is under development and not ready for production usage yet. The Lightbend subscription does not cover support for this project.
