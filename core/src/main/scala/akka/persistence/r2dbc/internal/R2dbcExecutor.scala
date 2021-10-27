@@ -4,17 +4,20 @@
 
 package akka.persistence.r2dbc.internal
 
+import java.util.function.BiConsumer
+import java.util.function.Supplier
+
 import scala.collection.immutable
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
 
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalStableApi
-import akka.stream.scaladsl.Sink
-import akka.stream.scaladsl.Source
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
@@ -23,6 +26,7 @@ import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
+import reactor.core.publisher.Flux
 
 /**
  * INTERNAL API
@@ -104,9 +108,13 @@ import org.slf4j.Logger
       ec: ExecutionContext,
       system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] = {
     statement.execute().asFuture().flatMap { result =>
-      val resultPublisher: Publisher[A] =
-        result.map((row, _) => mapRow(row))
-      Source.fromPublisher(resultPublisher).runWith(Sink.seq[A]).map(_.toIndexedSeq)(ExecutionContext.parasitic)
+      val consumer: BiConsumer[mutable.Builder[A, IndexedSeq[A]], A] = (builder, elem) => builder += elem
+      Flux
+        .from[A](result.map((row, _) => mapRow(row)))
+        .collect(() => IndexedSeq.newBuilder[A], consumer)
+        .map(_.result())
+        .toFuture
+        .asScala
     }
   }
 }
