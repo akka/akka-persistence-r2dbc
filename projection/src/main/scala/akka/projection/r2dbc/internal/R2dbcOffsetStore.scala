@@ -432,10 +432,11 @@ private[projection] class R2dbcOffsetStore(
     envelope match {
       case eventEnvelope: EventEnvelope[_] if eventEnvelope.offset.isInstanceOf[TimestampOffset] =>
         val currentInflight = getInflight()
-        val updatedInflight = currentInflight.collect {
-          case (eventEnvelope.persistenceId, Processing(eventEnvelope.sequenceNr)) =>
-            eventEnvelope.persistenceId -> Recovering(eventEnvelope.sequenceNr)
-          case kv => kv
+        val updatedInflight = currentInflight.map { case (pid, inflight) =>
+          if (pid == eventEnvelope.persistenceId && inflight.seqNr == eventEnvelope.sequenceNr)
+            pid -> Recovering(inflight.seqNr)
+          else
+            pid -> inflight
         }
         inflight.compareAndSet(currentInflight, updatedInflight)
       case _ => false
