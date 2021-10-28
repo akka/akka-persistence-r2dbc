@@ -21,11 +21,16 @@ import akka.actor.testkit.typed.TestException
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorRef
+import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.persistence.r2dbc.query.TimestampOffset
+import akka.projection.HandlerRecoveryStrategy
 import akka.projection.ProjectionBehavior
 import akka.projection.ProjectionContext
 import akka.projection.ProjectionId
+import akka.projection.TestStatusObserver
+import akka.projection.TestStatusObserver.Err
+import akka.projection.TestStatusObserver.OffsetProgress
 import akka.projection.eventsourced.EventEnvelope
 import akka.projection.r2dbc.internal.R2dbcOffsetStore
 import akka.projection.r2dbc.scaladsl.R2dbcHandler
@@ -43,6 +48,28 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
 
 object R2dbcTimestampOffsetProjectionSpec {
+
+  final case class Envelope(id: String, seqNr: Long, message: String)
+
+  /**
+   * This variant of TestStatusObserver is useful when the incoming envelope is the original akka projection
+   * EventEnvelope, but we want to assert on [[Envelope]]. The original [[EventEnvelope]] has too many params that are
+   * not so interesting for the test including the offset timestamp that would make the it harder to test.
+   */
+  class R2dbcTestStatusObserver(
+      statusProbe: ActorRef[TestStatusObserver.Status],
+      progressProbe: ActorRef[TestStatusObserver.OffsetProgress[Envelope]])
+      extends TestStatusObserver[EventEnvelope[String]](statusProbe.ref) {
+    override def offsetProgress(projectionId: ProjectionId, envelope: EventEnvelope[String]): Unit =
+      progressProbe ! OffsetProgress(Envelope(envelope.persistenceId, envelope.sequenceNr, envelope.event))
+
+    override def error(
+        projectionId: ProjectionId,
+        envelope: EventEnvelope[String],
+        cause: Throwable,
+        recoveryStrategy: HandlerRecoveryStrategy): Unit =
+      statusProbe ! Err(Envelope(envelope.persistenceId, envelope.sequenceNr, envelope.event), cause)
+  }
 
   def sourceProvider(
       envelopes: immutable.IndexedSeq[EventEnvelope[String]],
@@ -285,6 +312,103 @@ class R2dbcTimestampOffsetProjectionSpec
         projectedValueShouldBe("e1|e2|e3|e4|e5|e6")
       }
       offsetShouldBe(envelopes.last.offset)
+    }
+
+    "skip failing events when using RecoveryStrategy.skip" in {
+      implicit val pid1 = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      implicit val offsetStore = createOffsetStore(projectionId)
+
+      val bogusEventHandler = new ConcatHandler(_.sequenceNr == 4)
+
+      val envelopes = createEnvelopes(pid1, 6)
+      val projectionFailing =
+        R2dbcProjection
+          .exactlyOnce(
+            projectionId,
+            Some(settings),
+            sourceProvider = sourceProvider(envelopes),
+            handler = () => bogusEventHandler)
+          .withRecoveryStrategy(HandlerRecoveryStrategy.skip)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projectionFailing) {
+        projectedValueShouldBe("e1|e2|e3|e5|e6")
+      }
+      offsetShouldBe(envelopes.last.offset)
+    }
+
+    "skip failing events after retrying when using RecoveryStrategy.retryAndSkip" in {
+      implicit val pid1 = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      implicit val offsetStore = createOffsetStore(projectionId)
+
+      val statusProbe = createTestProbe[TestStatusObserver.Status]()
+      val progressProbe = createTestProbe[TestStatusObserver.OffsetProgress[Envelope]]()
+      val statusObserver = new R2dbcTestStatusObserver(statusProbe.ref, progressProbe.ref)
+      val bogusEventHandler = new ConcatHandler(_.sequenceNr == 4)
+
+      val envelopes = createEnvelopes(pid1, 6)
+      val projectionFailing =
+        R2dbcProjection
+          .exactlyOnce(
+            projectionId,
+            Some(settings),
+            sourceProvider = sourceProvider(envelopes),
+            handler = () => bogusEventHandler)
+          .withRecoveryStrategy(HandlerRecoveryStrategy.retryAndSkip(3, 10.millis))
+          .withStatusObserver(statusObserver)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projectionFailing) {
+        projectedValueShouldBe("e1|e2|e3|e5|e6")
+      }
+
+      // 1 + 3 => 1 original attempt and 3 retries
+      bogusEventHandler.attempts shouldBe 1 + 3
+
+      val someTestException = TestException("err")
+      statusProbe.expectMessage(TestStatusObserver.Err(Envelope(pid1, 4, "e4"), someTestException))
+      statusProbe.expectMessage(TestStatusObserver.Err(Envelope(pid1, 4, "e4"), someTestException))
+      statusProbe.expectMessage(TestStatusObserver.Err(Envelope(pid1, 4, "e4"), someTestException))
+      statusProbe.expectMessage(TestStatusObserver.Err(Envelope(pid1, 4, "e4"), someTestException))
+      statusProbe.expectNoMessage()
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 1, "e1")))
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 2, "e2")))
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 3, "e3")))
+      // Offset 4 is not stored so it is not reported.
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 5, "e5")))
+
+      offsetShouldBe(envelopes.last.offset)
+    }
+
+    "fail after retrying when using RecoveryStrategy.retryAndFail" in {
+      implicit val pid1 = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      implicit val offsetStore = createOffsetStore(projectionId)
+
+      val bogusEventHandler = new ConcatHandler(_.sequenceNr == 4)
+
+      val envelopes = createEnvelopes(pid1, 6)
+      val projectionFailing =
+        R2dbcProjection
+          .exactlyOnce(
+            projectionId,
+            Some(settings),
+            sourceProvider = sourceProvider(envelopes),
+            handler = () => bogusEventHandler)
+          .withRecoveryStrategy(HandlerRecoveryStrategy.retryAndFail(3, 10.millis))
+
+      offsetShouldBeEmpty()
+      projectionTestKit.runWithTestSink(projectionFailing) { sinkProbe =>
+        sinkProbe.request(1000)
+        eventuallyExpectError(sinkProbe).getMessage should startWith(concatHandlerFail4Msg)
+      }
+      projectedValueShouldBe("e1|e2|e3")
+      // 1 + 3 => 1 original attempt and 3 retries
+      bogusEventHandler.attempts shouldBe 1 + 3
+
+      offsetShouldBe(envelopes(2).offset) // <- offset is from e3
     }
 
     "restart from previous offset - fail with throwing an exception" in {
