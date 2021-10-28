@@ -17,7 +17,6 @@ import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.query.EventEnvelope
-import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.scaladsl._
 import akka.persistence.r2dbc.ConnectionFactoryProvider
@@ -69,6 +68,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with EventsBySliceQuery {
 
   import R2dbcReadJournal.EventsBySlicesState
+  import TimestampOffset.toTimestampOffset
 
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
@@ -89,23 +89,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val firstBacktrackingQueryWindow =
     backtrackingWindow.plus(JDuration.ofMillis(settings.querySettings.backtrackingBehindCurrentTime.toMillis))
 
-  private def toTimestampOffset(offset: Offset): TimestampOffset = {
-    offset match {
-      case t: TimestampOffset => t
-      case NoOffset           => TimestampOffset.Zero
-    }
-  }
-
   def extractEntityTypeHintFromPersistenceId(persistenceId: String): String =
     SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
 
-  def sliceForPersistenceId(persistenceId: String): Int =
+  override def sliceForPersistenceId(persistenceId: String): Int =
     SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
 
-  def sliceRanges(numberOfRanges: Int): immutable.Seq[Range] =
+  override def sliceRanges(numberOfRanges: Int): immutable.Seq[Range] =
     SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
 
-  def currentEventsBySlices(
+  override def currentEventsBySlices(
       entityTypeHint: String,
       minSlice: Int,
       maxSlice: Int,
@@ -178,7 +171,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .mapMaterializedValue(_ => NotUsed)
   }
 
-  def eventsBySlices(
+  override def eventsBySlices(
       entityTypeHint: String,
       minSlice: Int,
       maxSlice: Int,
