@@ -15,6 +15,7 @@ import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.stream.scaladsl.Source
@@ -32,7 +33,8 @@ object QueryDao {
 @InternalApi
 private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
-    system: ActorSystem[_]) {
+    system: ActorSystem[_])
+    extends BySliceQuery.Dao[SerializedJournalRow] {
   import QueryDao.log
 
   private val journalTable = settings.journalTableWithSchema

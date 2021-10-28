@@ -21,6 +21,7 @@ import akka.persistence.query.Offset
 import akka.persistence.query.scaladsl._
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -89,6 +90,22 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val firstBacktrackingQueryWindow =
     backtrackingWindow.plus(JDuration.ofMillis(settings.querySettings.backtrackingBehindCurrentTime.toMillis))
 
+  private val bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope] = {
+    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope = (offset, row) => {
+      val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+      val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.timestamp)
+      row.metadata match {
+        case None => envelope
+        case Some(meta) =>
+          envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+      }
+    }
+
+    val extractOffset: EventEnvelope => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
+
+    new BySliceQuery(queryDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+  }
+
   def extractEntityTypeHintFromPersistenceId(persistenceId: String): String =
     SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
 
@@ -103,72 +120,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed] = {
-    val initialOffset = toTimestampOffset(offset)
-    implicit val ec: ExecutionContext = system.dispatcher
-
-    def nextOffset(state: EventsBySlicesState, eventEnvelope: EventEnvelope): EventsBySlicesState = {
-      state.copy(latest = eventEnvelope.offset.asInstanceOf[TimestampOffset], rowCount = state.rowCount + 1)
-    }
-
-    def nextQuery(
-        state: EventsBySlicesState,
-        toDbTimestamp: Instant): (EventsBySlicesState, Option[Source[EventEnvelope, NotUsed]]) = {
-      // FIXME why is this rowCount -1 of expected?, see test EventsBySliceSpec "read in chunks"
-      if (state.queryCount == 0L || state.rowCount >= settings.querySettings.bufferSize - 1) {
-        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
-
-        if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debugN(
-            "currentEventsBySlices query [{}] from slices [{} - {}], from time [{}] to now [{}]. Found [{}] rows in previous query.",
-            state.queryCount,
-            minSlice,
-            maxSlice,
-            state.latest.timestamp,
-            toDbTimestamp,
-            state.rowCount)
-
-        newState -> Some(
-          queryDao
-            .eventsBySlices(
-              entityTypeHint,
-              minSlice,
-              maxSlice,
-              state.latest.timestamp,
-              untilTimestamp = Some(toDbTimestamp),
-              behindCurrentTime = Duration.Zero)
-            .via(deserializeAndAddOffset(state.latest)))
-      } else {
-        if (log.isDebugEnabled)
-          log.debugN(
-            "currentEventsBySlices query [{}] from slices [{} - {}] completed. Found [{}] rows in previous query.",
-            state.queryCount,
-            minSlice,
-            maxSlice,
-            state.rowCount)
-
-        state -> None
-      }
-    }
-
-    Source
-      .futureSource[EventEnvelope, NotUsed] {
-        queryDao.currentDbTimestamp().map { currentDbTime =>
-          if (log.isDebugEnabled())
-            log.debugN(
-              "currentEventsBySlices query slices [{} - {}], from time [{}] until now [{}].",
-              minSlice,
-              maxSlice,
-              initialOffset.timestamp,
-              currentDbTime)
-
-          ContinuousQuery[EventsBySlicesState, EventEnvelope](
-            initialState = EventsBySlicesState.empty.copy(latest = initialOffset),
-            updateState = nextOffset,
-            delayNextQuery = _ => None,
-            nextQuery = state => nextQuery(state, currentDbTime))
-        }
-      }
-      .mapMaterializedValue(_ => NotUsed)
+    bySlice
+      .currentBySlices("currentEventsBySlices", entityTypeHint, minSlice, maxSlice, offset)
   }
 
   override def eventsBySlices(

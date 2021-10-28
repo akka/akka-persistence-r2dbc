@@ -14,6 +14,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.PersistentRepr
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.serialization.Serialization
@@ -42,6 +43,7 @@ private[r2dbc] object JournalDao {
       timestamp: Long,
       tags: Set[String],
       metadata: Option[SerializedEventMetadata])
+      extends BySliceQuery.SerializedRow
 
   final case class SerializedEventMetadata(serId: Int, serManifest: String, payload: Array[Byte])
 
