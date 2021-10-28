@@ -72,11 +72,13 @@ def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.g
 lazy val core = (project in file("core"))
   .settings(common)
   .settings(name := "akka-persistence-r2dbc", libraryDependencies ++= Dependencies.core)
+  .enablePlugins(AutomateHeaderPlugin)
 
 lazy val projection = (project in file("projection"))
   .dependsOn(core)
   .settings(common)
   .settings(name := "akka-projection-r2dbc", libraryDependencies ++= Dependencies.projection)
+  .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project
   .in(file("docs"))
