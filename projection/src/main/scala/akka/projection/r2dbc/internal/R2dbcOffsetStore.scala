@@ -38,6 +38,12 @@ object R2dbcOffsetStore {
 
   final case class Record(pid: Pid, seqNr: SeqNr, timestamp: Instant)
 
+  sealed trait InflightEntry {
+    def seqNr: SeqNr
+  }
+  case class Processing(seqNr: SeqNr) extends InflightEntry
+  case class Recovering(seqNr: SeqNr) extends InflightEntry
+
   object State {
     val empty: State = State(Map.empty, Vector.empty, Instant.EPOCH)
 
@@ -198,12 +204,6 @@ private[projection] class R2dbcOffsetStore(
 
   // transient state of inflight pid -> seqNr before they have been stored and included in `state`)
   // this can be updated concurrently with CAS retries
-  sealed trait InflightEntry {
-    def seqNr: SeqNr
-  }
-  case class Processing(seqNr: SeqNr) extends InflightEntry
-  case class Recovering(seqNr: SeqNr) extends InflightEntry
-
   private val inflight = new AtomicReference(Map.empty[Pid, InflightEntry])
 
   system.scheduler.scheduleWithFixedDelay(
