@@ -8,13 +8,17 @@ import java.time.Instant
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 import akka.Done
+import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SliceUtils
+import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import org.slf4j.Logger
@@ -70,6 +74,35 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val deleteStateSql: String =
     s"DELETE from $stateTable WHERE slice = $$1 AND entity_type_hint = $$2 AND persistence_id = $$3"
+
+  private val currentDbTimestampSql =
+    "SELECT transaction_timestamp() AS db_timestamp"
+
+  private def stateBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
+    var p = 0
+
+    def nextParam(): String = {
+      p += 1
+      "$" + p
+    }
+
+    def maxDbTimestampParamCondition =
+      if (maxDbTimestampParam) s"AND db_timestamp < ${nextParam()}" else ""
+
+    def behindCurrentTimeIntervalCondition =
+      if (behindCurrentTime > Duration.Zero)
+        s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
+      else ""
+
+    s"""SELECT slice, entity_type_hint, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload
+       |FROM $stateTable
+       |WHERE entity_type_hint = ${nextParam()}
+       |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
+       |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+       |ORDER BY db_timestamp, revision
+       |LIMIT ${nextParam()}
+       |""".stripMargin
+  }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
     val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
@@ -171,6 +204,58 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       result.foreach(_ => log.debug("Deleted durable state for persistenceId [{}]", persistenceId))
 
     result.map(_ => Done)(ExecutionContext.parasitic)
+  }
+
+  def currentDbTimestamp(): Future[Instant] = {
+    r2dbcExecutor
+      .selectOne("select current db timestamp")(
+        connection => connection.createStatement(currentDbTimestampSql),
+        row => row.get("db_timestamp", classOf[Instant]))
+      .map {
+        case Some(time) => time
+        case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
+      }
+  }
+
+  def stateBySlices(
+      entityTypeHint: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant,
+      untilTimestamp: Option[Instant],
+      behindCurrentTime: FiniteDuration): Source[SerializedStateRow, NotUsed] = {
+    val result = r2dbcExecutor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
+      connection => {
+        val stmt = connection
+          .createStatement(stateBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
+          .bind(0, entityTypeHint)
+          .bind(1, minSlice)
+          .bind(2, maxSlice)
+          .bind(3, fromTimestamp)
+        untilTimestamp match {
+          case Some(until) =>
+            stmt.bind(4, until)
+            stmt.bind(5, settings.querySettings.bufferSize)
+          case None =>
+            stmt.bind(4, settings.querySettings.bufferSize)
+        }
+        stmt
+      },
+      row =>
+        SerializedStateRow(
+          persistenceId = row.get("persistence_id", classOf[String]),
+          revision = row.get("revision", classOf[java.lang.Long]),
+          dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+          readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+          payload = row.get("state_payload", classOf[Array[Byte]]),
+          serId = row.get("state_ser_id", classOf[java.lang.Integer]),
+          serManifest = row.get("state_ser_manifest", classOf[String]),
+          timestamp = row.get("write_timestamp", classOf[java.lang.Long])))
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
+
+    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
 }

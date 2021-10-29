@@ -6,6 +6,8 @@ package akka.persistence.r2dbc.query
 
 import java.time.Instant
 
+import akka.annotation.InternalApi
+import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 
 object TimestampOffset {
@@ -13,6 +15,21 @@ object TimestampOffset {
 
   def apply(timestamp: Instant, seen: Map[String, Long]): TimestampOffset =
     TimestampOffset(timestamp, Instant.EPOCH, seen)
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def toTimestampOffset(offset: Offset): TimestampOffset = {
+    offset match {
+      case t: TimestampOffset => t
+      case NoOffset           => TimestampOffset.Zero
+      case null               => throw new IllegalArgumentException("Offset must not be null")
+      case other =>
+        throw new IllegalArgumentException(
+          s"Supported offset types are TimestampOffset and NoOffset, " +
+          s"received ${other.getClass.getName}")
+    }
+  }
 }
 
 /**
