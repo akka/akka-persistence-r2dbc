@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id, revision ASC)
 );
 
-CREATE INDEX IF NOT EXISTS durable_state ON durable_state(entity_type_hint ASC, slice ASC, db_timestamp ASC);
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type_hint ASC, slice ASC, db_timestamp ASC);
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,

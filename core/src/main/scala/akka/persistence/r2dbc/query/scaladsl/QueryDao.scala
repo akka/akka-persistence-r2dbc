@@ -79,7 +79,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       }
   }
 
-  def eventsBySlices(
+  def rowsBySlices(
       entityTypeHint: String,
       minSlice: Int,
       maxSlice: Int,
