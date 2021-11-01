@@ -16,6 +16,7 @@ import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.stream.scaladsl.Source
@@ -40,6 +41,9 @@ import org.slf4j.LoggerFactory
       payload: Array[Byte],
       serId: Int,
       serManifest: String)
+      extends BySliceQuery.SerializedRow {
+    override def sequenceNr: Long = revision
+  }
 }
 
 /**
@@ -50,7 +54,8 @@ import org.slf4j.LoggerFactory
 @InternalApi
 private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
-    system: ActorSystem[_]) {
+    system: ActorSystem[_])
+    extends BySliceQuery.Dao[DurableStateDao.SerializedStateRow] {
   import DurableStateDao._
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
@@ -206,7 +211,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     result.map(_ => Done)(ExecutionContext.parasitic)
   }
 
-  def currentDbTimestamp(): Future[Instant] = {
+  override def currentDbTimestamp(): Future[Instant] = {
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
@@ -217,7 +222,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       }
   }
 
-  def stateBySlices(
+  override def rowsBySlices(
       entityTypeHint: String,
       minSlice: Int,
       maxSlice: Int,
