@@ -197,7 +197,7 @@ private[projection] class R2dbcOffsetStore(
   // we use AtomicReference and fail if the CAS fails.
   private val state = new AtomicReference(State.empty)
 
-  // Transient state of inflight pid -> seqNr before they have been stored and included in `state`), which is
+  // Transient state of inflight pid -> seqNr (before they have been stored and included in `state`), which is
   // needed for at-least-once or other projections where the offset is saved afterwards. Not needed for exactly-once.
   // This can be updated concurrently with CAS retries.
   private val inflight = new AtomicReference(Map.empty[Pid, SeqNr])
