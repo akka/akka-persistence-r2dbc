@@ -7,7 +7,6 @@ package akka.persistence.r2dbc.state
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
@@ -25,7 +24,6 @@ class DurableStateStoreSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private val store = DurableStateStoreRegistry(testKit.system)
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)
