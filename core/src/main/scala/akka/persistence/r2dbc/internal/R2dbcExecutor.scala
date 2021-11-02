@@ -128,6 +128,43 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     connectionFactory.create().asFuture()
 
   /**
+   * Run DDL statement with auto commit.
+   */
+  def executeDdl(logPrefix: String)(statement: Connection => Statement): Future[Done] = {
+    val startTime = System.nanoTime()
+
+    getConnection().flatMap { connection =>
+      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
+        val done =
+          try {
+            val stmt = statement(connection)
+            stmt.execute().asFuture().flatMap { result =>
+              result.getRowsUpdated.asFutureDone()
+            }
+          } catch {
+            case NonFatal(exc) =>
+              // thrown from statement function
+              Future.failed(exc)
+          }
+
+        done.failed.foreach { exc =>
+          log.debug("{} - DDL failed: {}", logPrefix, exc)
+          // auto-commit so nothing to rollback
+          connection.close().asFutureDone()
+        }
+
+        done.flatMap { _ =>
+          connection.close().asFutureDone().map { _ =>
+            if (log.isDebugEnabled())
+              log.debug("{} - DDL in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
+            Done
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * One update statement with auto commit.
    */
   def updateOne(logPrefix: String)(statement: Connection => Statement): Future[Int] = {
