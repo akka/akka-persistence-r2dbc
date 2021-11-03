@@ -15,10 +15,12 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
 import akka.persistence.query.UpdatedDurableState
+import akka.persistence.query.scaladsl.CurrentDurableStatePersistenceIdsQuery
 import akka.persistence.query.scaladsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.query.TimestampOffset
 import akka.persistence.r2dbc.state.scaladsl.DurableStateDao.SerializedStateRow
@@ -32,11 +34,15 @@ import org.slf4j.LoggerFactory
 
 object R2dbcDurableStateStore {
   val Identifier = "akka.persistence.r2dbc.state"
+
+  private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
 }
 
 class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends DurableStateUpdateStore[A]
-    with DurableStateStoreBySliceQuery[A] {
+    with DurableStateStoreBySliceQuery[A]
+    with CurrentDurableStatePersistenceIdsQuery[A] {
+  import R2dbcDurableStateStore.PersistenceIdsQueryState
 
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.state$""", "")
@@ -119,5 +125,46 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
     bySlice.liveBySlices("changesBySlices", entityTypeHint, minSlice, maxSlice, offset)
+
+  override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    stateDao.persistenceIds(afterId, limit)
+
+  def currentPersistenceIds(): Source[String, NotUsed] = {
+    import settings.querySettings.persistenceIdsBufferSize
+    def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
+      state.copy(rowCount = state.rowCount + 1, latestPid = pid)
+
+    def nextQuery(state: PersistenceIdsQueryState): (PersistenceIdsQueryState, Option[Source[String, NotUsed]]) = {
+      if (state.queryCount == 0L || state.rowCount >= persistenceIdsBufferSize) {
+        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+
+        if (state.queryCount != 0 && log.isDebugEnabled())
+          log.debug(
+            "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
+            state.queryCount,
+            state.latestPid,
+            state.rowCount)
+
+        newState -> Some(
+          stateDao
+            .persistenceIds(if (state.latestPid == "") None else Some(state.latestPid), persistenceIdsBufferSize))
+      } else {
+        if (log.isDebugEnabled)
+          log.debug(
+            "persistenceIds query [{}] completed. Found [{}] rows in previous query.",
+            state.queryCount,
+            state.rowCount)
+
+        state -> None
+      }
+    }
+
+    ContinuousQuery[PersistenceIdsQueryState, String](
+      initialState = PersistenceIdsQueryState(0, 0, ""),
+      updateState = updateState,
+      delayNextQuery = _ => None,
+      nextQuery = state => nextQuery(state))
+      .mapMaterializedValue(_ => NotUsed)
+  }
 
 }

@@ -66,6 +66,12 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
        |""".stripMargin
   }
 
+  private val allPersistenceIdsSql =
+    s"SELECT DISTINCT(persistence_id) from $journalTable ORDER BY persistence_id LIMIT $$1"
+
+  private val allPersistenceIdsAfterSql =
+    s"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
+
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
   def currentDbTimestamp(): Future[Instant] = {
@@ -123,4 +129,27 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
+
+  def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val result = r2dbcExecutor.select(s"select persistenceIds")(
+      connection =>
+        afterId match {
+          case Some(after) =>
+            connection
+              .createStatement(allPersistenceIdsAfterSql)
+              .bind(0, after)
+              .bind(1, limit)
+          case None =>
+            connection
+              .createStatement(allPersistenceIdsSql)
+              .bind(0, limit)
+        },
+      row => row.get("persistence_id", classOf[String]))
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
+
+    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
 }

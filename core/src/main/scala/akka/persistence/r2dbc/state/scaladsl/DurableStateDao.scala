@@ -83,6 +83,12 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
+  private val allPersistenceIdsSql =
+    s"SELECT persistence_id from $stateTable ORDER BY persistence_id LIMIT $$1"
+
+  private val allPersistenceIdsAfterSql =
+    s"SELECT persistence_id from $stateTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
+
   private def stateBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
     var p = 0
 
@@ -259,6 +265,28 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
+
+    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
+  def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val result = r2dbcExecutor.select(s"select persistenceIds")(
+      connection =>
+        afterId match {
+          case Some(after) =>
+            connection
+              .createStatement(allPersistenceIdsAfterSql)
+              .bind(0, after)
+              .bind(1, limit)
+          case None =>
+            connection
+              .createStatement(allPersistenceIdsSql)
+              .bind(0, limit)
+        },
+      row => row.get("persistence_id", classOf[String]))
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }

@@ -15,6 +15,7 @@ import akka.persistence.query.scaladsl._
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.TimestampOffset
@@ -25,12 +26,16 @@ import org.slf4j.LoggerFactory
 
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
+
+  private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
 }
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends ReadJournal
     with CurrentEventsBySliceQuery
-    with EventsBySliceQuery {
+    with EventsBySliceQuery
+    with CurrentPersistenceIdsQuery {
+  import R2dbcReadJournal.PersistenceIdsQueryState
 
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
@@ -86,4 +91,45 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed] =
     bySlice.liveBySlices("eventsBySlices", entityTypeHint, minSlice, maxSlice, offset)
+
+  def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    queryDao.persistenceIds(afterId, limit)
+
+  override def currentPersistenceIds(): Source[String, NotUsed] = {
+    import settings.querySettings.persistenceIdsBufferSize
+    def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
+      state.copy(rowCount = state.rowCount + 1, latestPid = pid)
+
+    def nextQuery(state: PersistenceIdsQueryState): (PersistenceIdsQueryState, Option[Source[String, NotUsed]]) = {
+      if (state.queryCount == 0L || state.rowCount >= persistenceIdsBufferSize) {
+        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+
+        if (state.queryCount != 0 && log.isDebugEnabled())
+          log.debug(
+            "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
+            state.queryCount,
+            state.latestPid,
+            state.rowCount)
+
+        newState -> Some(
+          queryDao
+            .persistenceIds(if (state.latestPid == "") None else Some(state.latestPid), persistenceIdsBufferSize))
+      } else {
+        if (log.isDebugEnabled)
+          log.debug(
+            "persistenceIds query [{}] completed. Found [{}] rows in previous query.",
+            state.queryCount,
+            state.rowCount)
+
+        state -> None
+      }
+    }
+
+    ContinuousQuery[PersistenceIdsQueryState, String](
+      initialState = PersistenceIdsQueryState(0, 0, ""),
+      updateState = updateState,
+      delayNextQuery = _ => None,
+      nextQuery = state => nextQuery(state))
+      .mapMaterializedValue(_ => NotUsed)
+  }
 }
