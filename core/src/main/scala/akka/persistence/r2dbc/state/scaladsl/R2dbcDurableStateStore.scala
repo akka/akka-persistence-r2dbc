@@ -129,7 +129,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     stateDao.persistenceIds(afterId, limit)
 
-  def persistenceIds(): Source[String, NotUsed] = {
+  def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
       state.copy(rowCount = state.rowCount + 1, latestPid = pid)

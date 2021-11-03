@@ -34,7 +34,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
-    with PersistenceIdsQuery {
+    with CurrentPersistenceIdsQuery {
   import R2dbcReadJournal.PersistenceIdsQueryState
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -95,7 +95,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(afterId, limit)
 
-  override def persistenceIds(): Source[String, NotUsed] = {
+  override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
       state.copy(rowCount = state.rowCount + 1, latestPid = pid)
