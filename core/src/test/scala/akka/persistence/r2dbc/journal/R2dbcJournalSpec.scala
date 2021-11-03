@@ -37,10 +37,8 @@ class R2dbcJournalSpec extends JournalSpec(R2dbcJournalSpec.config) with TestDbL
   override def typedSystem: ActorSystem[_] = system.toTyped
 }
 
-/* FIXME meta for replicated event sourcing
 class R2dbcJournalWithMetaSpec extends JournalSpec(R2dbcJournalSpec.configWithMeta) with TestDbLifecycle {
   override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
   protected override def supportsMetadata: CapabilityFlag = CapabilityFlag.on()
   override def typedSystem: ActorSystem[_] = system.toTyped
 }
- */
