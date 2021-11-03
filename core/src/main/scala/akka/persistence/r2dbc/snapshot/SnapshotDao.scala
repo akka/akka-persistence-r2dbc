@@ -9,13 +9,13 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.{R2dbcExecutor, SliceUtils}
-import akka.persistence.{SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria}
-import akka.serialization.{Serialization, Serializers}
-import io.r2dbc.spi.{ConnectionFactory, Row}
-import org.slf4j.{Logger, LoggerFactory}
+import akka.persistence.r2dbc.internal.{ R2dbcExecutor, SliceUtils }
+import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
+import akka.serialization.{ Serialization, Serializers }
+import io.r2dbc.spi.{ ConnectionFactory, Row }
+import org.slf4j.{ Logger, LoggerFactory }
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ ExecutionContext, Future }
 import scala.util.Failure
 
 /**
