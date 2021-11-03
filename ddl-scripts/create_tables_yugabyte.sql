@@ -70,10 +70,3 @@ CREATE TABLE IF NOT EXISTS akka_projection_management (
   last_updated BIGINT NOT NULL,
   PRIMARY KEY(projection_name, projection_key)
 );
-
--- FIXME this is only for AkkaProjectionSpec, problem creating it from the test
-CREATE table IF NOT EXISTS projection_spec_model (
-  id VARCHAR(255) NOT NULL,
-  concatenated VARCHAR(255) NOT NULL,
-  PRIMARY KEY(id)
-);
