@@ -14,6 +14,10 @@ import com.typesafe.config.Config
 
 import scala.concurrent.{ ExecutionContext, Future }
 
+/**
+ * Note: differs from other snapshot stores in that in does not retain old snapshots but keeps a single snapshot per
+ * entity that is updated.
+ */
 final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) extends SnapshotStore {
 
   private implicit val ec: ExecutionContext = context.dispatcher

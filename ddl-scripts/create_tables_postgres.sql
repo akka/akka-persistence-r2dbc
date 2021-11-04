@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS snapshot(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY(slice, entity_type_hint, persistence_id, sequence_number)
+  PRIMARY KEY(slice, entity_type_hint, persistence_id)
 );
 
 CREATE TABLE IF NOT EXISTS durable_state (

@@ -92,8 +92,9 @@ private[r2dbc] final class SnapshotDao(
           ser_id,
           ser_manifest
         ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8)
-        ON CONFLICT (slice, entity_type_hint, persistence_id, sequence_number)
+        ON CONFLICT (slice, entity_type_hint, persistence_id)
         DO UPDATE SET
+          sequence_number = excluded.sequence_number,
           write_timestamp = excluded.write_timestamp,
           snapshot = excluded.snapshot,
           ser_id = excluded.ser_id,
@@ -117,8 +118,9 @@ private[r2dbc] final class SnapshotDao(
           meta_ser_id,
           meta_ser_manifest
         ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8, $$9, $$10, $$11)
-        ON CONFLICT (slice, entity_type_hint, persistence_id, sequence_number)
+        ON CONFLICT (slice, entity_type_hint, persistence_id)
         DO UPDATE SET
+          sequence_number = excluded.sequence_number,
           write_timestamp = excluded.write_timestamp,
           snapshot = excluded.snapshot,
           ser_id = excluded.ser_id,
