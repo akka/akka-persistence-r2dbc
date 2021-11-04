@@ -17,6 +17,7 @@ import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
+import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestActors.Persister.Persist
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestActors.Persister.Ping
@@ -24,6 +25,8 @@ import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+import akka.persistence.typed.PersistenceId
+import akka.persistence.typed.internal.ReplicatedEventMetadata
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
@@ -156,6 +159,39 @@ class EventsBySliceSpec
         for (i <- 1 to 10; n <- 1 to 10) {
           result.expectNext().event shouldBe s"e-$i-$n"
         }
+        assertFinished(result)
+      }
+
+      "include metadata" in {
+        val probe = testKit.createTestProbe[Done]()
+        val entityTypeHint = nextEntityTypeHint()
+        val entityId = "entity-1"
+        val persistenceId = PersistenceId(entityTypeHint, entityId)
+        val slice = query.sliceForPersistenceId(persistenceId.id)
+
+        val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityTypeHint, entityId))
+        persister ! Persister.PersistWithAck("e-1", probe.ref)
+        probe.expectMessage(Done)
+        persister ! Persister.PersistWithAck("e-2", probe.ref)
+        probe.expectMessage(Done)
+
+        val result: TestSubscriber.Probe[EventEnvelope] =
+          doQuery(entityTypeHint, slice, slice, NoOffset)
+            .runWith(TestSink())
+            .request(21)
+
+        val env1 = result.expectNext()
+        env1.event shouldBe "e-1"
+        val meta1 = env1.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        meta1.originReplica.id shouldBe "dc-1"
+        meta1.originSequenceNr shouldBe 1L
+
+        val env2 = result.expectNext()
+        env2.event shouldBe "e-2"
+        val meta2 = env2.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        meta2.originReplica.id shouldBe "dc-1"
+        meta2.originSequenceNr shouldBe 2L
+
         assertFinished(result)
       }
 

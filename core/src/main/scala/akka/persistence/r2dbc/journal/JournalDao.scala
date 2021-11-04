@@ -20,6 +20,7 @@ import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.serialization.Serialization
 import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -70,6 +71,18 @@ private[r2dbc] object JournalDao {
     reprWithMeta
   }
 
+  def readMetadata(row: Row): Option[SerializedEventMetadata] = {
+    row.get("meta_payload", classOf[Array[Byte]]) match {
+      case null => None
+      case metaPayload =>
+        Some(
+          SerializedEventMetadata(
+            serId = row.get("meta_ser_id", classOf[Integer]),
+            serManifest = row.get("meta_ser_manifest", classOf[String]),
+            metaPayload))
+    }
+  }
+
 }
 
 /**
@@ -84,6 +97,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   import JournalDao.SerializedJournalRow
   import JournalDao.deserializeRow
+  import JournalDao.readMetadata
   import JournalDao.log
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
@@ -241,18 +255,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         else
           stmt
       },
-      row => {
-        val metadata =
-          row.get("meta_payload", classOf[Array[Byte]]) match {
-            case null => None
-            case metaPayload =>
-              Some(
-                SerializedEventMetadata(
-                  serId = row.get("meta_ser_id", classOf[java.lang.Integer]),
-                  serManifest = row.get("meta_ser_manifest", classOf[String]),
-                  metaPayload))
-          }
-
+      row =>
         replayRow(
           SerializedJournalRow(
             persistenceId = persistenceId,
@@ -265,8 +268,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             writerUuid = row.get("writer", classOf[String]),
             timestamp = row.get("write_timestamp", classOf[java.lang.Long]),
             tags = Set.empty, // not needed here
-            metadata = metadata))
-      })
+            metadata = readMetadata(row))))
 
     if (log.isDebugEnabled)
       result.foreach { rows =>
