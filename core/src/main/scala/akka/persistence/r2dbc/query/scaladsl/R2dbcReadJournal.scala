@@ -175,12 +175,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.sequenceNr)
 
     def delayNextQuery(state: ByPersistenceIdState): Option[FiniteDuration] = {
-      val delay =
-        if (0 <= state.rowCount && state.rowCount <= 1) someRefreshInterval
-        else None // immediately if there might be more rows to fetch
-
-      // TODO we could have different delays here depending on how many rows that were found.
-      // e.g. a short delay if rowCount is < some threshold
+      val delay = ContinuousQuery.adjustNextDelay(
+        state.rowCount,
+        settings.querySettings.bufferSize,
+        settings.querySettings.refreshInterval)
 
       delay.foreach { d =>
         log.debug(

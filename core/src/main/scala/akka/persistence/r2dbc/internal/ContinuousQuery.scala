@@ -26,6 +26,14 @@ private[r2dbc] object ContinuousQuery {
     Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery))
 
   private case object NextQuery
+
+  def adjustNextDelay(rowCount: Int, bufferSize: Int, fullDelay: FiniteDuration): Option[FiniteDuration] = {
+    val lowerWatermark = math.max(1, bufferSize / 10)
+    val upperWatermark = math.min(bufferSize - 1, bufferSize - bufferSize / 10)
+    if (rowCount >= upperWatermark) None // immediately
+    else if (rowCount <= lowerWatermark) Some(fullDelay)
+    else Some(fullDelay / 2)
+  }
 }
 
 /**

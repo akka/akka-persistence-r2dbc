@@ -197,19 +197,15 @@ import org.slf4j.Logger
     }
 
     def delayNextQuery(state: QueryState): Option[FiniteDuration] = {
-      // FIXME verify that this is correct
-      // the same row comes back and is filtered due to how the offset works
-      val delay =
-        if (0 <= state.rowCount && state.rowCount <= 1) someRefreshInterval
-        else None // immediately if there might be more rows to fetch
-
-      // TODO we could have different delays here depending on how many rows that were found.
-      // e.g. a short delay if rowCount is < some threshold
+      val delay = ContinuousQuery.adjustNextDelay(
+        state.rowCount,
+        settings.querySettings.bufferSize,
+        settings.querySettings.refreshInterval)
 
       if (log.isDebugEnabled)
         delay.foreach { d =>
           log.debug(
-            "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
+            "{} query [{}] from slices [{} - {}] delay next [{}] ms. xxx",
             logPrefix,
             state.queryCount,
             minSlice,
