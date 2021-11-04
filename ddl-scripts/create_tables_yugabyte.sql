@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS snapshot(
   entity_type_hint VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
   sequence_number BIGINT NOT NULL,
-  db_timestamp timestamp with time zone NOT NULL,
+  write_timestamp BIGINT NOT NULL,
   ser_id INTEGER NOT NULL,
   ser_manifest VARCHAR(255) NOT NULL,
   snapshot BYTEA NOT NULL,
