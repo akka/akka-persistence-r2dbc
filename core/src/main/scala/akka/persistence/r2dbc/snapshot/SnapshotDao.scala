@@ -15,7 +15,6 @@ import io.r2dbc.spi.{ ConnectionFactory, Row }
 import org.slf4j.{ Logger, LoggerFactory }
 
 import scala.concurrent.{ ExecutionContext, Future }
-import scala.util.Failure
 
 /**
  * INTERNAL API
@@ -81,7 +80,7 @@ private[r2dbc] final class SnapshotDao(
   private val snapshotTable = settings.snapshotsTableWithSchema
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
-  private val insertSql =
+  private val upsertSql =
     s"""INSERT INTO $snapshotTable (
           slice,
           entity_type_hint,
@@ -104,7 +103,7 @@ private[r2dbc] final class SnapshotDao(
           meta_ser_manifest = null
         """
 
-  private val insertSqlMeta =
+  private val upsertWithMetaSql =
     s"""INSERT INTO $snapshotTable (
           slice,
           entity_type_hint,
@@ -195,8 +194,8 @@ private[r2dbc] final class SnapshotDao(
     val slice = SliceUtils.sliceForPersistenceId(metadata.persistenceId, settings.maxNumberOfSlices)
 
     val insert =
-      if (metadata.metadata.isEmpty) insertSql
-      else insertSqlMeta
+      if (metadata.metadata.isEmpty) upsertSql
+      else upsertWithMetaSql
 
     val snapshot = value.asInstanceOf[AnyRef]
     val serializedSnapshot = serialization.serialize(snapshot).get

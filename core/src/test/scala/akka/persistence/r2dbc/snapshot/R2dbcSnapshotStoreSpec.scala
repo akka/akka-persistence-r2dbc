@@ -8,7 +8,6 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.CapabilityFlag
 import akka.persistence.DeleteSnapshotSuccess
-import akka.persistence.SelectedSnapshot
 import akka.persistence.SnapshotMetadata
 import akka.persistence.SnapshotProtocol.DeleteSnapshot
 import akka.persistence.SnapshotProtocol.LoadSnapshot
