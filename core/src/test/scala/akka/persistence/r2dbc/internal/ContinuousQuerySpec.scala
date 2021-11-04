@@ -135,5 +135,24 @@ class ContinuousQuerySpec extends ScalaTestWithActorTestKit with AnyWordSpecLike
       sub.expectNext("three")
     }
 
+    "have utility to adjust delay depending on rows from previous query" in {
+      ContinuousQuery.adjustNextDelay(0, 100, 3000.millis) shouldBe Some(3000.millis)
+      ContinuousQuery.adjustNextDelay(3, 100, 3000.millis) shouldBe Some(3000.millis)
+      ContinuousQuery.adjustNextDelay(10, 100, 3000.millis) shouldBe Some(3000.millis)
+      ContinuousQuery.adjustNextDelay(11, 100, 3000.millis) shouldBe Some(1500.millis)
+      ContinuousQuery.adjustNextDelay(50, 100, 3000.millis) shouldBe Some(1500.millis)
+      ContinuousQuery.adjustNextDelay(89, 100, 3000.millis) shouldBe Some(1500.millis)
+      ContinuousQuery.adjustNextDelay(90, 100, 3000.millis) shouldBe None
+      ContinuousQuery.adjustNextDelay(99, 100, 3000.millis) shouldBe None
+      ContinuousQuery.adjustNextDelay(100, 100, 3000.millis) shouldBe None
+
+      // unreasonable small buffer-size
+      ContinuousQuery.adjustNextDelay(0, 5, 3000.millis) shouldBe Some(3000.millis)
+      ContinuousQuery.adjustNextDelay(1, 5, 3000.millis) shouldBe Some(3000.millis)
+      ContinuousQuery.adjustNextDelay(2, 5, 3000.millis) shouldBe Some(1500.millis)
+      ContinuousQuery.adjustNextDelay(4, 5, 3000.millis) shouldBe None
+      ContinuousQuery.adjustNextDelay(5, 5, 3000.millis) shouldBe None
+    }
+
   }
 }
