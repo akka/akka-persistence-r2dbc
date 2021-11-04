@@ -40,6 +40,7 @@ object TestConfig {
     // using load here so that connection-factory can be overridden
     ConfigFactory.load(dialectConfig.withFallback(ConfigFactory.parseString("""
     akka.persistence.journal.plugin = "akka.persistence.r2dbc.journal"
+    akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
     akka.persistence.state.plugin = "akka.persistence.r2dbc.state"
     akka.persistence.r2dbc {
       query {

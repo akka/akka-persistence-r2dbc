@@ -23,6 +23,22 @@ CREATE TABLE IF NOT EXISTS event_journal(
 
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type_hint ASC, slice ASC, db_timestamp ASC);
 
+CREATE TABLE IF NOT EXISTS snapshot(
+  slice INT NOT NULL,
+  entity_type_hint VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  sequence_number BIGINT NOT NULL,
+  write_timestamp BIGINT NOT NULL,
+  ser_id INTEGER NOT NULL,
+  ser_manifest VARCHAR(255) NOT NULL,
+  snapshot BYTEA NOT NULL,
+  meta_ser_id INTEGER,
+  meta_ser_manifest VARCHAR(255),
+  meta_payload BYTEA,
+
+  PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id)
+);
+
 CREATE TABLE IF NOT EXISTS durable_state (
   slice INT NOT NULL,
   entity_type_hint VARCHAR(255) NOT NULL,
