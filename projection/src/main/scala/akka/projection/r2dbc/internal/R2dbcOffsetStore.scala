@@ -18,6 +18,7 @@ import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
+import akka.persistence.query.DurableStateChange
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.query.TimestampOffset
@@ -622,7 +623,10 @@ private[projection] class R2dbcOffsetStore(
             Record(change.persistenceId, change.revision, timestampOffset.timestamp),
             timestampOffset,
             strictSeqNr = false))
-      // FIXME case DeletedDurableState when that is added
+      case change: DurableStateChange[_] if change.offset.isInstanceOf[TimestampOffset] =>
+        // FIXME case DeletedDurableState when that is added
+        throw new IllegalArgumentException(
+          s"DurableStateChange [${change.getClass.getName}] not implemented yet. Please report bug at https://github.com/akka/akka-persistence-r2dbc/issues")
       case _ => None
     }
   }
