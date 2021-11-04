@@ -55,9 +55,10 @@ def common: Seq[Setting[_]] =
       }
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     },
-    projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value))
+    projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value),
+    Global / excludeLintKeys += projectInfoVersion)
 
-lazy val dontPublish = Seq(skip in publish := true, publishArtifact in Compile := false)
+lazy val dontPublish = Seq(publish / skip := true, Compile / publishArtifact := false)
 
 lazy val root = (project in file("."))
   .settings(common)
