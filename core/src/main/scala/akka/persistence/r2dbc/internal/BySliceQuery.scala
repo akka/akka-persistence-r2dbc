@@ -205,7 +205,7 @@ import org.slf4j.Logger
       if (log.isDebugEnabled)
         delay.foreach { d =>
           log.debug(
-            "{} query [{}] from slices [{} - {}] delay next [{}] ms. xxx",
+            "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
             logPrefix,
             state.queryCount,
             minSlice,
