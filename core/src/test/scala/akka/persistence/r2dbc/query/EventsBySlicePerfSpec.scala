@@ -38,11 +38,12 @@ class EventsBySlicePerfSpec
   s"EventsBySlices performance" should {
 
     "retrieve from several slices" in {
-      val numberOfPersisters = 300
-      val numberOfEvents = 10
+      // increase these properties for "real" testing
+      val numberOfPersisters = 30
+      val numberOfEvents = 5
       val writeConcurrency = 10
       val numberOfSliceRanges = 4
-      val iterations = 5
+      val iterations = 3
       val totalNumberOfEvents = numberOfPersisters * numberOfEvents
 
       val entityTypeHint = nextEntityTypeHint()
