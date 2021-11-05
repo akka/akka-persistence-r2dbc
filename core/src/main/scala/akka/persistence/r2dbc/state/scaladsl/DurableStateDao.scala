@@ -63,22 +63,22 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val stateTable = settings.durableStateTableWithSchema
 
   private val selectStateSql: String =
-    s"SELECT * from $stateTable WHERE slice = $$1 AND entity_type_hint = $$2 AND persistence_id = $$3"
+    s"SELECT * from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
 
   private val insertStateSql: String =
     s"INSERT INTO $stateTable " +
-    "(slice, entity_type_hint, persistence_id, revision, write_timestamp, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
+    "(slice, entity_type, persistence_id, revision, write_timestamp, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, transaction_timestamp())"
 
   private val updateStateSql: String =
     s"UPDATE $stateTable " +
     "SET revision = $1, write_timestamp = $2, state_ser_id = $3, state_ser_manifest = $4, state_payload = $5, db_timestamp = " +
     "GREATEST(transaction_timestamp(), " +
-    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$6 AND entity_type_hint = $$7 AND persistence_id = $$8 AND revision = $$9)) " +
-    "WHERE slice = $10 AND entity_type_hint = $11 AND persistence_id = $12 AND revision = $13"
+    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$6 AND entity_type = $$7 AND persistence_id = $$8 AND revision = $$9)) " +
+    "WHERE slice = $10 AND entity_type = $11 AND persistence_id = $12 AND revision = $13"
 
   private val deleteStateSql: String =
-    s"DELETE from $stateTable WHERE slice = $$1 AND entity_type_hint = $$2 AND persistence_id = $$3"
+    s"DELETE from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
 
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
@@ -105,9 +105,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"""SELECT slice, entity_type_hint, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload
+    s"""SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload
        |FROM $stateTable
-       |WHERE entity_type_hint = ${nextParam()}
+       |WHERE entity_type = ${nextParam()}
        |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
        |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
        |ORDER BY db_timestamp, revision
@@ -116,7 +116,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     r2dbcExecutor.selectOne(s"select [$persistenceId]")(
@@ -124,7 +124,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         connection
           .createStatement(selectStateSql)
           .bind(0, slice)
-          .bind(1, entityTypeHint)
+          .bind(1, entityType)
           .bind(2, persistenceId),
       row =>
         SerializedStateRow(
@@ -141,7 +141,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   def writeState(state: SerializedStateRow): Future[Done] = {
     require(state.revision > 0)
 
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(state.persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(state.persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(state.persistenceId, settings.maxNumberOfSlices)
 
     val result = {
@@ -151,7 +151,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             connection
               .createStatement(insertStateSql)
               .bind(0, slice)
-              .bind(1, entityTypeHint)
+              .bind(1, entityType)
               .bind(2, state.persistenceId)
               .bind(3, state.revision)
               .bind(4, state.timestamp)
@@ -176,11 +176,11 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(3, state.serManifest)
             .bind(4, state.payload)
             .bind(5, slice)
-            .bind(6, entityTypeHint)
+            .bind(6, entityType)
             .bind(7, state.persistenceId)
             .bind(8, previousRevision)
             .bind(9, slice)
-            .bind(10, entityTypeHint)
+            .bind(10, entityType)
             .bind(11, state.persistenceId)
             .bind(12, previousRevision)
         }
@@ -199,7 +199,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def deleteState(persistenceId: String): Future[Done] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     val result =
@@ -207,7 +207,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         connection
           .createStatement(deleteStateSql)
           .bind(0, slice)
-          .bind(1, entityTypeHint)
+          .bind(1, entityType)
           .bind(2, persistenceId)
       }
 
@@ -229,7 +229,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   override def rowsBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
@@ -239,7 +239,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       connection => {
         val stmt = connection
           .createStatement(stateBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
-          .bind(0, entityTypeHint)
+          .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
           .bind(3, fromTimestamp)

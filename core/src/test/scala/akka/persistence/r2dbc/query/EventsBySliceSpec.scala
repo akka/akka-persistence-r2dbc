@@ -68,8 +68,8 @@ class EventsBySliceSpec
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
   private class Setup {
-    val entityTypeHint = nextEntityTypeHint
-    val persistenceId = nextPid(entityTypeHint)
+    val entityType = nextEntityType
+    val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
     val probe = createTestProbe[Done]
@@ -78,16 +78,16 @@ class EventsBySliceSpec
 
   List[QueryType](Current, Live).foreach { queryType =>
     def doQuery(
-        entityTypeHint: String,
+        entityType: String,
         minSlice: Int,
         maxSlice: Int,
         offset: Offset,
         queryImpl: R2dbcReadJournal = query): Source[EventEnvelope, NotUsed] =
       queryType match {
         case Live =>
-          queryImpl.eventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.eventsBySlices(entityType, minSlice, maxSlice, offset)
         case Current =>
-          queryImpl.currentEventsBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.currentEventsBySlices(entityType, minSlice, maxSlice, offset)
       }
 
     def assertFinished(probe: TestSubscriber.Probe[EventEnvelope]): Unit =
@@ -106,7 +106,7 @@ class EventsBySliceSpec
           probe.expectMessage(10.seconds, Done)
         }
         val result: TestSubscriber.Probe[EventEnvelope] =
-          doQuery(entityTypeHint, slice, slice, NoOffset)
+          doQuery(entityType, slice, slice, NoOffset)
             .runWith(sinkProbe)
             .request(21)
         for (i <- 1 to 20) {
@@ -122,7 +122,7 @@ class EventsBySliceSpec
         }
 
         val result: TestSubscriber.Probe[EventEnvelope] =
-          doQuery(entityTypeHint, slice, slice, NoOffset)
+          doQuery(entityType, slice, slice, NoOffset)
             .runWith(sinkProbe)
             .request(21)
 
@@ -132,7 +132,7 @@ class EventsBySliceSpec
         result.cancel()
 
         val withOffset =
-          doQuery(entityTypeHint, slice, slice, offset)
+          doQuery(entityType, slice, slice, offset)
             .runWith(TestSink.probe[EventEnvelope](system.classicSystem))
         withOffset.request(12)
         for (i <- 11 to 20) {
@@ -154,7 +154,7 @@ class EventsBySliceSpec
         persister ! Ping(probe.ref)
         probe.expectMessage(10.seconds, Done)
         val result: TestSubscriber.Probe[EventEnvelope] =
-          doQuery(entityTypeHint, slice, slice, NoOffset, queryWithSmallBuffer)
+          doQuery(entityType, slice, slice, NoOffset, queryWithSmallBuffer)
             .runWith(sinkProbe)
             .request(101)
         for (i <- 1 to 10; n <- 1 to 10) {
@@ -165,19 +165,19 @@ class EventsBySliceSpec
 
       "include metadata" in {
         val probe = testKit.createTestProbe[Done]()
-        val entityTypeHint = nextEntityTypeHint()
+        val entityType = nextEntityType()
         val entityId = "entity-1"
-        val persistenceId = PersistenceId(entityTypeHint, entityId)
+        val persistenceId = PersistenceId(entityType, entityId)
         val slice = query.sliceForPersistenceId(persistenceId.id)
 
-        val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityTypeHint, entityId))
+        val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))
         persister ! Persister.PersistWithAck("e-1", probe.ref)
         probe.expectMessage(Done)
         persister ! Persister.PersistWithAck("e-2", probe.ref)
         probe.expectMessage(Done)
 
         val result: TestSubscriber.Probe[EventEnvelope] =
-          doQuery(entityTypeHint, slice, slice, NoOffset)
+          doQuery(entityType, slice, slice, NoOffset)
             .runWith(TestSink())
             .request(21)
 
@@ -203,9 +203,9 @@ class EventsBySliceSpec
         }
 
         val timestampQuery = query.asInstanceOf[EventTimestampQuery]
-        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 2L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 1L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 4L).futureValue.isDefined shouldBe false
+        timestampQuery.timestampOf(entityType, persistenceId, slice, 2L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(entityType, persistenceId, slice, 1L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(entityType, persistenceId, slice, 4L).futureValue.isDefined shouldBe false
       }
 
     }
@@ -217,11 +217,11 @@ class EventsBySliceSpec
       persister ! PersistWithAck(s"e-1", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventEnvelope =
-        query.currentEventsBySlices(entityTypeHint, slice, slice, NoOffset).runWith(Sink.head).futureValue
+        query.currentEventsBySlices(entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
       val offset = singleEvent.offset.asInstanceOf[TimestampOffset]
       offset.seen shouldEqual Map(singleEvent.persistenceId -> singleEvent.sequenceNr)
       query
-        .currentEventsBySlices(entityTypeHint, slice, slice, offset)
+        .currentEventsBySlices(entityType, slice, slice, offset)
         .take(1)
         .runWith(Sink.headOption)
         .futureValue shouldEqual None
@@ -231,13 +231,13 @@ class EventsBySliceSpec
       persister ! PersistWithAck(s"e-1", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventEnvelope =
-        query.currentEventsBySlices(entityTypeHint, slice, slice, NoOffset).runWith(Sink.head).futureValue
+        query.currentEventsBySlices(entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
       val offset = singleEvent.offset.asInstanceOf[TimestampOffset]
       offset.seen shouldEqual Map(singleEvent.persistenceId -> singleEvent.sequenceNr)
 
       val offsetWithoutSeen = TimestampOffset(offset.timestamp, Map.empty)
       val singleEvent2 = query
-        .currentEventsBySlices(entityTypeHint, slice, slice, offsetWithoutSeen)
+        .currentEventsBySlices(entityType, slice, slice, offsetWithoutSeen)
         .runWith(Sink.headOption)
         .futureValue
       singleEvent2.get.event shouldBe "e-1"
@@ -246,7 +246,7 @@ class EventsBySliceSpec
     "retrieve from several slices" in new Setup {
       val numberOfPersisters = 20
       val numberOfEvents = 3
-      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityTypeHint)).toVector
+      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityType)).toVector
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (i <- 1 to numberOfEvents) {
@@ -266,7 +266,7 @@ class EventsBySliceSpec
         (0 until 4).flatMap { rangeIndex =>
           val result =
             query
-              .currentEventsBySlices(entityTypeHint, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
+              .currentEventsBySlices(entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
               .runWith(Sink.seq)
               .futureValue
           result.foreach { env =>
@@ -286,7 +286,7 @@ class EventsBySliceSpec
         probe.expectMessage(Done)
       }
       val result: TestSubscriber.Probe[EventEnvelope] =
-        query.eventsBySlices(entityTypeHint, slice, slice, NoOffset).runWith(sinkProbe).request(21)
+        query.eventsBySlices(entityType, slice, slice, NoOffset).runWith(sinkProbe).request(21)
       for (i <- 1 to 20) {
         result.expectNext().event shouldBe s"e-$i"
       }
@@ -320,7 +320,7 @@ class EventsBySliceSpec
       val queries: Seq[Source[EventEnvelope, NotUsed]] =
         (0 until 4).map { rangeIndex =>
           query
-            .eventsBySlices(entityTypeHint, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
+            .eventsBySlices(entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
             .map { env =>
               ranges(rangeIndex) should contain(query.sliceForPersistenceId(env.persistenceId))
               env
@@ -334,7 +334,7 @@ class EventsBySliceSpec
           .take(numberOfPersisters * numberOfEvents)
           .runWith(Sink.seq[EventEnvelope])
 
-      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityTypeHint)).toVector
+      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityType)).toVector
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (i <- 1 to numberOfEvents) {

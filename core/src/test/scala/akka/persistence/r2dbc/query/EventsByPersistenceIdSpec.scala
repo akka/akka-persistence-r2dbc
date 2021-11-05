@@ -155,7 +155,7 @@ class EventsByPersistenceIdSpec
 
       "include metadata" in {
         val probe = testKit.createTestProbe[Done]()
-        val entityType = nextEntityTypeHint()
+        val entityType = nextEntityType()
         val entityId = "entity-1"
 
         val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))

@@ -80,8 +80,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private val journalDao = new JournalDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
 
-  def extractEntityTypeHintFromPersistenceId(persistenceId: String): String =
-    SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+  def extractEntityTypeFromPersistenceId(persistenceId: String): String =
+    SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
@@ -90,20 +90,20 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
 
   override def currentEventsBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed] = {
     bySlice
-      .currentBySlices("currentEventsBySlices", entityTypeHint, minSlice, maxSlice, offset)
+      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
 
   override def eventsBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed] =
-    bySlice.liveBySlices("eventsBySlices", entityTypeHint, minSlice, maxSlice, offset)
+    bySlice.liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
 
   override def currentEventsByPersistenceId(
       persistenceId: String,
@@ -167,11 +167,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   override def timestampOf(
-      entityTypeHint: String,
+      entityType: String,
       persistenceId: String,
       slice: Int,
       sequenceNumber: Long): Future[Option[Instant]] =
-    queryDao.timestampOfEvent(entityTypeHint, persistenceId, slice, sequenceNumber)
+    queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNumber)
 
   override def eventsByPersistenceId(
       persistenceId: String,

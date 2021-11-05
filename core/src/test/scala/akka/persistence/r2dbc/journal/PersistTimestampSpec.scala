@@ -38,10 +38,10 @@ class PersistTimestampSpec
 
     "be the same for events stored in same transaction" in {
       val numberOfEntities = 20
-      val entityTypeHint = nextEntityTypeHint()
+      val entityType = nextEntityType()
 
       val entities = (0 until numberOfEntities).map { n =>
-        val persistenceId = PersistenceId(entityTypeHint, s"p$n")
+        val persistenceId = PersistenceId(entityType, s"p$n")
         spawn(Persister(persistenceId), s"p$n")
       }
 

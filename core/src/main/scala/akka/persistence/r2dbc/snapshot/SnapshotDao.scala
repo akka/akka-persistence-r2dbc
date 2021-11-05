@@ -83,7 +83,7 @@ private[r2dbc] final class SnapshotDao(
   private val upsertSql =
     s"""INSERT INTO $snapshotTable (
           slice,
-          entity_type_hint,
+          entity_type,
           persistence_id,
           sequence_number,
           write_timestamp,
@@ -91,7 +91,7 @@ private[r2dbc] final class SnapshotDao(
           ser_id,
           ser_manifest
         ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8)
-        ON CONFLICT (slice, entity_type_hint, persistence_id)
+        ON CONFLICT (slice, entity_type, persistence_id)
         DO UPDATE SET
           sequence_number = excluded.sequence_number,
           write_timestamp = excluded.write_timestamp,
@@ -106,7 +106,7 @@ private[r2dbc] final class SnapshotDao(
   private val upsertWithMetaSql =
     s"""INSERT INTO $snapshotTable (
           slice,
-          entity_type_hint,
+          entity_type,
           persistence_id,
           sequence_number,
           write_timestamp,
@@ -117,7 +117,7 @@ private[r2dbc] final class SnapshotDao(
           meta_ser_id,
           meta_ser_manifest
         ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8, $$9, $$10, $$11)
-        ON CONFLICT (slice, entity_type_hint, persistence_id)
+        ON CONFLICT (slice, entity_type, persistence_id)
         DO UPDATE SET
           sequence_number = excluded.sequence_number,
           write_timestamp = excluded.write_timestamp,
@@ -130,12 +130,12 @@ private[r2dbc] final class SnapshotDao(
         """
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     var paramIdx = 3
     val selectSnapshots = s"SELECT * FROM $snapshotTable " +
-      s"WHERE slice = $$1 AND entity_type_hint = $$2 AND persistence_id = $$3" +
+      s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
       (if (criteria.maxSequenceNr != Long.MaxValue) {
          paramIdx += 1
          s" AND sequence_number <= $$$paramIdx"
@@ -160,7 +160,7 @@ private[r2dbc] final class SnapshotDao(
           val statement = connection
             .createStatement(selectSnapshots)
             .bind(0, slice)
-            .bind(1, entityTypeHint)
+            .bind(1, entityType)
             .bind(2, persistenceId)
 
           var bindIdx = 2
@@ -190,7 +190,7 @@ private[r2dbc] final class SnapshotDao(
   }
 
   def store(metadata: SnapshotMetadata, value: Any): Future[Unit] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(metadata.persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(metadata.persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(metadata.persistenceId, settings.maxNumberOfSlices)
 
     val insert =
@@ -217,7 +217,7 @@ private[r2dbc] final class SnapshotDao(
             connection
               .createStatement(insert)
               .bind(0, slice)
-              .bind(1, entityTypeHint)
+              .bind(1, entityType)
               .bind(2, metadata.persistenceId)
               .bind(3, metadata.sequenceNr)
               .bind(4, metadata.timestamp)
@@ -238,12 +238,12 @@ private[r2dbc] final class SnapshotDao(
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     var paramIdx = 3
     val deleteSnapshots = s"DELETE FROM $snapshotTable " +
-      s"WHERE slice = $$1 AND entity_type_hint = $$2 AND persistence_id = $$3" +
+      s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
       (if (criteria.maxSequenceNr != Long.MaxValue) {
          paramIdx += 1
          s" AND sequence_number <= $$$paramIdx"
@@ -265,7 +265,7 @@ private[r2dbc] final class SnapshotDao(
       val statement = connection
         .createStatement(deleteSnapshots)
         .bind(0, slice)
-        .bind(1, entityTypeHint)
+        .bind(1, entityType)
         .bind(2, persistenceId)
 
       var bindIdx = 2

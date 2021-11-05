@@ -67,8 +67,8 @@ class DurableStateBySliceSpec
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)
 
   private class Setup {
-    val entityTypeHint = nextEntityTypeHint
-    val persistenceId = nextPid(entityTypeHint)
+    val entityType = nextEntityType
+    val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.DurableStatePersister(persistenceId))
     val probe = createTestProbe[Done]
@@ -86,16 +86,16 @@ class DurableStateBySliceSpec
 
   List[QueryType](Current, Live).foreach { queryType =>
     def doQuery(
-        entityTypeHint: String,
+        entityType: String,
         minSlice: Int,
         maxSlice: Int,
         offset: Offset,
         queryImpl: R2dbcDurableStateStore[String] = query): Source[DurableStateChange[String], NotUsed] =
       queryType match {
         case Live =>
-          queryImpl.changesBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.changesBySlices(entityType, minSlice, maxSlice, offset)
         case Current =>
-          queryImpl.currentChangesBySlices(entityTypeHint, minSlice, maxSlice, offset)
+          queryImpl.currentChangesBySlices(entityType, minSlice, maxSlice, offset)
       }
 
     def assertFinished(probe: TestProbe[_], streamDone: Future[Done]): Unit =
@@ -115,7 +115,7 @@ class DurableStateBySliceSpec
         }
 
         val done =
-          doQuery(entityTypeHint, slice, slice, NoOffset)
+          doQuery(entityType, slice, slice, NoOffset)
             .collect { case u: UpdatedDurableState[String] => u }
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))
@@ -132,7 +132,7 @@ class DurableStateBySliceSpec
         }
 
         val done =
-          doQuery(entityTypeHint, slice, slice, NoOffset)
+          doQuery(entityType, slice, slice, NoOffset)
             .collect { case u: UpdatedDurableState[String] => u }
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))
@@ -155,7 +155,7 @@ class DurableStateBySliceSpec
         val updatedDurableStateProbe2 = createTestProbe[UpdatedDurableState[String]]()
 
         val withOffsetDone =
-          doQuery(entityTypeHint, slice, slice, offset)
+          doQuery(entityType, slice, slice, offset)
             .collect { case u: UpdatedDurableState[String] => u }
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe2.ref.tell))
@@ -177,14 +177,14 @@ class DurableStateBySliceSpec
       probe.expectMessage(Done)
       val singleState: UpdatedDurableState[String] =
         query
-          .currentChangesBySlices(entityTypeHint, slice, slice, NoOffset)
+          .currentChangesBySlices(entityType, slice, slice, NoOffset)
           .collect { case u: UpdatedDurableState[String] => u }
           .runWith(Sink.head)
           .futureValue
       val offset = singleState.offset.asInstanceOf[TimestampOffset]
       offset.seen shouldEqual Map(singleState.persistenceId -> singleState.revision)
       query
-        .currentChangesBySlices(entityTypeHint, slice, slice, offset)
+        .currentChangesBySlices(entityType, slice, slice, offset)
         .take(1)
         .runWith(Sink.headOption)
         .futureValue shouldEqual None
@@ -195,7 +195,7 @@ class DurableStateBySliceSpec
       probe.expectMessage(Done)
       val singleState: UpdatedDurableState[String] =
         query
-          .currentChangesBySlices(entityTypeHint, slice, slice, NoOffset)
+          .currentChangesBySlices(entityType, slice, slice, NoOffset)
           .collect { case u: UpdatedDurableState[String] => u }
           .runWith(Sink.head)
           .futureValue
@@ -204,7 +204,7 @@ class DurableStateBySliceSpec
 
       val offsetWithoutSeen = TimestampOffset(offset.timestamp, Map.empty)
       val singleState2 = query
-        .currentChangesBySlices(entityTypeHint, slice, slice, offsetWithoutSeen)
+        .currentChangesBySlices(entityType, slice, slice, offsetWithoutSeen)
         .collect { case u: UpdatedDurableState[String] => u }
         .runWith(Sink.headOption)
         .futureValue
@@ -222,7 +222,7 @@ class DurableStateBySliceSpec
       }
       val done =
         query
-          .changesBySlices(entityTypeHint, slice, slice, NoOffset)
+          .changesBySlices(entityType, slice, slice, NoOffset)
           .collect { case u: UpdatedDurableState[String] => u }
           .via(killSwitch.flow)
           .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))

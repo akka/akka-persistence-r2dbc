@@ -59,9 +59,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"""SELECT slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
+    s"""SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
        |FROM $journalTable
-       |WHERE entity_type_hint = ${nextParam()}
+       |WHERE entity_type = ${nextParam()}
        |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
        |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
        |AND deleted = false
@@ -72,12 +72,12 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
   private val selectTimestampOfEventSql =
     s"SELECT db_timestamp from $journalTable " +
-    "WHERE slice = $1 AND entity_type_hint = $2 AND persistence_id = $3 AND sequence_number = $4 AND deleted = false"
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number = $4 AND deleted = false"
 
   private val selectEventsSql =
-    s"SELECT slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"from $journalTable " +
-    "WHERE slice = $1 AND entity_type_hint = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
     "AND deleted = false " +
     "ORDER BY sequence_number " +
     "LIMIT $6"
@@ -102,7 +102,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   }
 
   def rowsBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
@@ -112,7 +112,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       connection => {
         val stmt = connection
           .createStatement(eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
-          .bind(0, entityTypeHint)
+          .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
           .bind(3, fromTimestamp)
@@ -146,7 +146,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   }
 
   def timestampOfEvent(
-      entityTypeHint: String,
+      entityType: String,
       persistenceId: String,
       slice: Int,
       sequenceNumber: Long): Future[Option[Instant]] = {
@@ -155,7 +155,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         connection
           .createStatement(selectTimestampOfEventSql)
           .bind(0, slice)
-          .bind(1, entityTypeHint)
+          .bind(1, entityType)
           .bind(2, persistenceId)
           .bind(3, sequenceNumber),
       row => row.get("db_timestamp", classOf[Instant]))
@@ -165,7 +165,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     val result = r2dbcExecutor.select(s"select eventsByPersistenceId [$persistenceId]")(
@@ -173,7 +173,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         connection
           .createStatement(selectEventsSql)
           .bind(0, slice)
-          .bind(1, entityTypeHint)
+          .bind(1, entityType)
           .bind(2, persistenceId)
           .bind(3, fromSequenceNr)
           .bind(4, toSequenceNr)

@@ -17,7 +17,7 @@ private[akka] object SliceUtils {
   def sliceForPersistenceId(persistenceId: String, maxNumberOfSlices: Int): Int =
     math.abs(persistenceId.hashCode % maxNumberOfSlices)
 
-  def extractEntityTypeHintFromPersistenceId(persistenceId: String): String = {
+  def extractEntityTypeFromPersistenceId(persistenceId: String): String = {
     val i = persistenceId.indexOf(PersistenceId.DefaultSeparator) // TODO configurable separator
     if (i == -1) ""
     else persistenceId.substring(0, i)

@@ -39,10 +39,10 @@ class CurrentPersistenceIdsQuerySpec
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
   private val zeros = "0000"
-  private val entityTypeHint = nextEntityTypeHint()
+  private val entityType = nextEntityType()
   private val numberOfPids = 100
   private val pids =
-    (1 to numberOfPids).map(n => PersistenceId(entityTypeHint, "p" + zeros.drop(n.toString.length) + n))
+    (1 to numberOfPids).map(n => PersistenceId(entityType, "p" + zeros.drop(n.toString.length) + n))
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()

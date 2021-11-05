@@ -113,18 +113,18 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
 
   override def currentChangesBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
-    bySlice.currentBySlices("currentChangesBySlices", entityTypeHint, minSlice, maxSlice, offset)
+    bySlice.currentBySlices("currentChangesBySlices", entityType, minSlice, maxSlice, offset)
 
   override def changesBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
-    bySlice.liveBySlices("changesBySlices", entityTypeHint, minSlice, maxSlice, offset)
+    bySlice.liveBySlices("changesBySlices", entityType, minSlice, maxSlice, offset)
 
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     stateDao.persistenceIds(afterId, limit)

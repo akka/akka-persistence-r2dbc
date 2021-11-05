@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS event_journal(
   slice INT NOT NULL,
-  entity_type_hint VARCHAR(255) NOT NULL,
+  entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
   sequence_number BIGINT NOT NULL,
   db_timestamp timestamp with time zone NOT NULL,
@@ -18,14 +18,14 @@ CREATE TABLE IF NOT EXISTS event_journal(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id, sequence_number ASC)
+  PRIMARY KEY((slice, entity_type) HASH, persistence_id, sequence_number ASC)
 );
 
-CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type_hint ASC, slice ASC, db_timestamp ASC);
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type ASC, slice ASC, db_timestamp ASC);
 
 CREATE TABLE IF NOT EXISTS snapshot(
   slice INT NOT NULL,
-  entity_type_hint VARCHAR(255) NOT NULL,
+  entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
   sequence_number BIGINT NOT NULL,
   write_timestamp BIGINT NOT NULL,
@@ -36,12 +36,12 @@ CREATE TABLE IF NOT EXISTS snapshot(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id)
+  PRIMARY KEY((slice, entity_type) HASH, persistence_id)
 );
 
 CREATE TABLE IF NOT EXISTS durable_state (
   slice INT NOT NULL,
-  entity_type_hint VARCHAR(255) NOT NULL,
+  entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
   revision BIGINT NOT NULL,
   db_timestamp timestamp with time zone NOT NULL,
@@ -51,10 +51,10 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_ser_manifest VARCHAR(255),
   state_payload BYTEA NOT NULL,
 
-  PRIMARY KEY((slice, entity_type_hint) HASH, persistence_id, revision ASC)
+  PRIMARY KEY((slice, entity_type) HASH, persistence_id, revision ASC)
 );
 
-CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type_hint ASC, slice ASC, db_timestamp ASC);
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC);
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,

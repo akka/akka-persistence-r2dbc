@@ -44,15 +44,15 @@ class EventsBySliceBacktrackingSpec
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
     log.debug("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
     val insertEventSql = s"INSERT INTO ${settings.journalTableWithSchema} " +
-      "(slice, entity_type_hint, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
+      "(slice, entity_type, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
       "VALUES ($1, $2, $3, $4, $5, '', $6, '', $7, '', $8)"
-    val entityTypeHint = SliceUtils.extractEntityTypeHintFromPersistenceId(persistenceId)
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
 
     val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
       connection
         .createStatement(insertEventSql)
         .bind(0, slice)
-        .bind(1, entityTypeHint)
+        .bind(1, entityType)
         .bind(2, persistenceId)
         .bind(3, seqNr)
         .bind(4, timestamp)
@@ -67,9 +67,9 @@ class EventsBySliceBacktrackingSpec
 
     "find old events with earlier timestamp" in {
       // this scenario is handled by the backtracking query
-      val entityTypeHint = nextEntityTypeHint()
-      val pid1 = nextPid(entityTypeHint)
-      val pid2 = nextPid(entityTypeHint)
+      val entityType = nextEntityType()
+      val pid1 = nextPid(entityType)
+      val pid2 = nextPid(entityType)
       val slice1 = 1
       val slice2 = 2
       val sinkProbe = TestSink.probe[EventEnvelope](system.classicSystem)
@@ -81,7 +81,7 @@ class EventsBySliceBacktrackingSpec
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
 
       val result: TestSubscriber.Probe[EventEnvelope] =
-        query.eventsBySlices(entityTypeHint, slice1, slice2, NoOffset).runWith(sinkProbe).request(100)
+        query.eventsBySlices(entityType, slice1, slice2, NoOffset).runWith(sinkProbe).request(100)
 
       result.expectNext().event shouldBe s"e1-1"
       result.expectNext().event shouldBe s"e1-2"

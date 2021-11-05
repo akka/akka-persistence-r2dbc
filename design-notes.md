@@ -36,7 +36,7 @@ The range query for `eventsBySlices` would look something like
 
 ```sql
 SELECT * FROM event_journal
-  WHERE entity_type_hint = $1
+  WHERE entity_type = $1
   AND slice BETWEEN $2 AND $2
   AND db_timestamp >= $3
   AND db_timestamp < transaction_timestamp() - interval '200 milliseconds'
@@ -46,7 +46,7 @@ SELECT * FROM event_journal
 That would need a secondary index like:
 
 ```sql
-CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type_hint, db_timestamp)
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type, db_timestamp)
 ```
 
 An alternative to `slice BETWEEN` would be `slice in (0, 1, 2,.., 31)`.
