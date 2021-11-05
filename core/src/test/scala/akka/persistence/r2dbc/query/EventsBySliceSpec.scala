@@ -15,6 +15,7 @@ import akka.persistence.query.EventEnvelope
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
+import akka.persistence.query.scaladsl.EventTimestampQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
@@ -193,6 +194,18 @@ class EventsBySliceSpec
         meta2.originSequenceNr shouldBe 2L
 
         assertFinished(result)
+      }
+
+      "support EventTimestampQuery" in new Setup {
+        for (i <- 1 to 3) {
+          persister ! PersistWithAck(s"e-$i", probe.ref)
+          probe.expectMessage(10.seconds, Done)
+        }
+
+        val timestampQuery = query.asInstanceOf[EventTimestampQuery]
+        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 2L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 1L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(entityTypeHint, persistenceId, slice, 4L).futureValue.isDefined shouldBe false
       }
 
     }

@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.query.scaladsl
 
+import java.time.Instant
+
 import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
@@ -39,6 +41,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
+    with EventTimestampQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
     with CurrentPersistenceIdsQuery {
@@ -162,6 +165,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .map(deserializeRow)
       .mapMaterializedValue(_ => NotUsed)
   }
+
+  override def timestampOf(
+      entityTypeHint: String,
+      persistenceId: String,
+      slice: Int,
+      sequenceNumber: Long): Future[Option[Instant]] =
+    queryDao.timestampOfEvent(entityTypeHint, persistenceId, slice, sequenceNumber)
 
   override def eventsByPersistenceId(
       persistenceId: String,

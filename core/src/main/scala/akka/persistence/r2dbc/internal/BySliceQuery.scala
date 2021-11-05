@@ -219,7 +219,7 @@ import org.slf4j.Logger
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
       val newState =
-        if (settings.querySettings.backtrackingEnabled && !state.backtracking &&
+        if (settings.querySettings.backtrackingEnabled && !state.backtracking && state.latest != TimestampOffset.Zero &&
           (newIdleCount >= 5 || JDuration
             .between(state.latestBacktracking.timestamp, state.latest.timestamp)
             .compareTo(halfBacktrackingWindow) > 0)) {
@@ -227,16 +227,10 @@ import org.slf4j.Logger
 
           // switching to backtracking
           val fromOffset =
-            if (state.latestBacktracking == TimestampOffset.Zero && initialOffset == TimestampOffset.Zero)
-              TimestampOffset.Zero
-            else if (state.latestBacktracking == TimestampOffset.Zero)
-              TimestampOffset.Zero.copy(timestamp = initialOffset.timestamp.minus(firstBacktrackingQueryWindow))
+            if (state.latestBacktracking == TimestampOffset.Zero)
+              TimestampOffset.Zero.copy(timestamp = state.latest.timestamp.minus(firstBacktrackingQueryWindow))
             else
               state.latestBacktracking
-
-          // FIXME the backtracking until offset is state.latest (not equal), but we should probably have an
-          // additional lag to support async (at-least-once) projections without too many duplicates from
-          // backtracking. For exactly-once I think all duplicates are filtered as expected.
 
           state.copy(
             rowCount = 0,
@@ -251,7 +245,6 @@ import org.slf4j.Logger
           state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount)
         }
 
-      // FIXME for backtracking we could consider to use behind latest offset instead of behind current db time
       val behindCurrentTime =
         if (newState.backtracking) settings.querySettings.backtrackingBehindCurrentTime
         else settings.querySettings.behindCurrentTime
