@@ -27,7 +27,6 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.query.scaladsl.QueryDao
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.serialization.Serialization
 import akka.serialization.SerializationExtension
@@ -51,7 +50,7 @@ private[r2dbc] object R2dbcJournal {
       writerUuid = row.writerUuid,
       manifest = "", // FIXME
       deleted = false,
-      sender = ActorRef.noSender).withTimestamp(row.timestamp)
+      sender = ActorRef.noSender)
 
     val reprWithMeta = row.metadata match {
       case None => repr
@@ -96,7 +95,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
     def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
-        var now = 0L
         atomicWrite.payload.map { pr =>
           val (event, tags) = pr.payload match {
             case Tagged(payload, tags) => (payload.asInstanceOf[AnyRef], tags)
@@ -107,13 +105,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
           val manifest = Serializers.manifestFor(serializer, event)
           val id: Int = serializer.identifier
 
-          val timestamp = if (pr.timestamp == 0L) {
-            if (now == 0L) {
-              now = System.currentTimeMillis()
-            }
-            now
-          } else pr.timestamp
-
           val write = SerializedJournalRow(
             pr.persistenceId,
             pr.sequenceNr,
@@ -123,7 +114,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             id,
             manifest,
             pr.writerUuid,
-            timestamp,
             tags,
             None)
 

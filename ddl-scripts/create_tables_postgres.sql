@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS event_journal(
   deleted BOOLEAN DEFAULT FALSE NOT NULL,
 
   writer VARCHAR(255) NOT NULL,
-  write_timestamp BIGINT,
   adapter_manifest VARCHAR(255),
 
   event_ser_id INTEGER NOT NULL,
@@ -45,7 +44,6 @@ CREATE TABLE IF NOT EXISTS durable_state (
   persistence_id VARCHAR(255) NOT NULL,
   revision BIGINT NOT NULL,
   db_timestamp timestamp with time zone NOT NULL,
-  write_timestamp BIGINT,
 
   state_ser_id INTEGER NOT NULL,
   state_ser_manifest VARCHAR(255),

@@ -59,7 +59,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"FROM $journalTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
@@ -74,7 +74,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number = $4 AND deleted = false"
 
   private val selectEventsSql =
-    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"from $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
     "AND deleted = false " +
@@ -134,7 +134,6 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          timestamp = row.get("write_timestamp", classOf[java.lang.Long]),
           tags = Set.empty, // not needed here
           metadata = readMetadata(row)))
 
@@ -187,7 +186,6 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          timestamp = row.get("write_timestamp", classOf[java.lang.Long]),
           tags = Set.empty, // not needed here
           metadata = readMetadata(row)))
 
