@@ -59,15 +59,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"""SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
-       |FROM $journalTable
-       |WHERE entity_type = ${nextParam()}
-       |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
-       |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
-       |AND deleted = false
-       |ORDER BY db_timestamp, sequence_number
-       |LIMIT ${nextParam()}
-       |""".stripMargin
+    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"FROM $journalTable " +
+    s"WHERE entity_type = ${nextParam()} " +
+    s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
+    s"AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
+    s"AND deleted = false " +
+    s"ORDER BY db_timestamp, sequence_number " +
+    s"LIMIT ${nextParam()}"
   }
 
   private val selectTimestampOfEventSql =

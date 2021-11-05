@@ -105,14 +105,13 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"""SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload
-       |FROM $stateTable
-       |WHERE entity_type = ${nextParam()}
-       |AND slice BETWEEN ${nextParam()} AND ${nextParam()}
-       |AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
-       |ORDER BY db_timestamp, revision
-       |LIMIT ${nextParam()}
-       |""".stripMargin
+    s"SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload " +
+    s"FROM $stateTable " +
+    s"WHERE entity_type = ${nextParam()} " +
+    s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
+    s"AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
+    s"ORDER BY db_timestamp, revision " +
+    s"LIMIT ${nextParam()}"
   }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
