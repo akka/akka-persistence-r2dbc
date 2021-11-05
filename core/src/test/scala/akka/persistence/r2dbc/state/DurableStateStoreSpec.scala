@@ -32,7 +32,7 @@ class DurableStateStoreSpec
 
   "The R2DBC durable state store" should {
     "save and retrieve a value" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "my-persistenceId").id
       val value = "Genuinely Collaborative"
 
@@ -41,13 +41,13 @@ class DurableStateStoreSpec
     }
 
     "produce None when fetching a non-existing key" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val key = PersistenceId(entityType, "nonexistent-id").id
       store.getObject(key).futureValue should be(GetObjectResult(None, 0L))
     }
 
     "update a value" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-updated").id
       val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
@@ -59,7 +59,7 @@ class DurableStateStoreSpec
     }
 
     "detect and reject concurrent inserts" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-inserted-concurrently")
       val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId.id, revision = 1L, value, entityType).futureValue
@@ -73,7 +73,7 @@ class DurableStateStoreSpec
     }
 
     "detect and reject concurrent updates" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-updated-concurrently")
       val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId.id, revision = 1L, value, entityType).futureValue
@@ -92,7 +92,7 @@ class DurableStateStoreSpec
     }
 
     "support deletions" in {
-      val entityType = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "to-be-added-and-removed").id
       val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue

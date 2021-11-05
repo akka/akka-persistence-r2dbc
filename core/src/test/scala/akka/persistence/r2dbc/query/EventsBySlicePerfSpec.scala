@@ -46,9 +46,9 @@ class EventsBySlicePerfSpec
       val iterations = 3
       val totalNumberOfEvents = numberOfPersisters * numberOfEvents
 
-      val entityTypeHint = nextEntityTypeHint()
+      val entityType = nextEntityType()
       val probe = createTestProbe[Done]()
-      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityTypeHint)).toVector
+      val persistenceIds = (1 to numberOfPersisters).map(_ => nextPid(entityType)).toVector
       var doneCount = 0
       val t0 = System.nanoTime()
       persistenceIds.zipWithIndex.foreach { case (pid, i) =>
@@ -82,7 +82,7 @@ class EventsBySlicePerfSpec
         val t1 = System.nanoTime()
         val counts: Seq[Future[Int]] = ranges.map { range =>
           query
-            .currentEventsBySlices(entityTypeHint, range.min, range.max, NoOffset)
+            .currentEventsBySlices(entityType, range.min, range.max, NoOffset)
             .runWith(Sink.fold(0) { case (acc, _) =>
               if (acc > 0 && acc % 100 == 0)
                 println(s"#$iteration Reading [$acc] events from slices [${range.min}-${range.max}] " +

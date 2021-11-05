@@ -40,10 +40,10 @@ class CurrentPersistenceIdsQuerySpec
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)
 
   private val zeros = "0000"
-  private val entityTypeHint = nextEntityTypeHint()
+  private val entityType = nextEntityType()
   private val numberOfPids = 100
   private val pids =
-    (1 to numberOfPids).map(n => PersistenceId(entityTypeHint, "p" + zeros.drop(n.toString.length) + n))
+    (1 to numberOfPids).map(n => PersistenceId(entityType, "p" + zeros.drop(n.toString.length) + n))
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()

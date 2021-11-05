@@ -37,7 +37,7 @@ trait DurableStateStoreBySliceQuery[A] extends DurableStateStore[A] {
    * `DeletedDurableState` is not implemented yet, see issue https://github.com/akka/akka/issues/30446.
    */
   def currentChangesBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed]
@@ -59,7 +59,7 @@ trait DurableStateStoreBySliceQuery[A] extends DurableStateStore[A] {
    * `DeletedDurableState` is not implemented yet, see issue https://github.com/akka/akka/issues/30446.
    */
   def changesBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed]

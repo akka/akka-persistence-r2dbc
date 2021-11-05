@@ -64,7 +64,7 @@ import org.slf4j.Logger
     def currentDbTimestamp(): Future[Instant]
 
     def rowsBySlices(
-        entityTypeHint: String,
+        entityType: String,
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
@@ -92,7 +92,7 @@ import org.slf4j.Logger
 
   def currentBySlices(
       logPrefix: String,
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[Envelope, NotUsed] = {
@@ -120,7 +120,7 @@ import org.slf4j.Logger
         newState -> Some(
           dao
             .rowsBySlices(
-              entityTypeHint,
+              entityType,
               minSlice,
               maxSlice,
               state.latest.timestamp,
@@ -165,7 +165,7 @@ import org.slf4j.Logger
 
   def liveBySlices(
       logPrefix: String,
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[Envelope, NotUsed] = {
@@ -266,7 +266,7 @@ import org.slf4j.Logger
       Some(
         dao
           .rowsBySlices(
-            entityTypeHint,
+            entityType,
             minSlice,
             maxSlice,
             newState.nextQueryFromTimestamp,

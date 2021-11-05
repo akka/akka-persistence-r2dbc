@@ -25,7 +25,7 @@ trait CurrentEventsBySliceQuery extends ReadJournal {
    * eventually consistent stores, it may only include all events up to some point before the query is started.
    */
   def currentEventsBySlices(
-      entityTypeHint: String,
+      entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope, NotUsed]
