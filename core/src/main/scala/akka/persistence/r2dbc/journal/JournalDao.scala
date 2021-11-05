@@ -9,16 +9,12 @@ import java.time.Instant
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
-import akka.actor.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
-import akka.persistence.PersistentRepr
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SliceUtils
-import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
-import akka.serialization.Serialization
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
@@ -49,28 +45,6 @@ private[r2dbc] object JournalDao {
 
   final case class SerializedEventMetadata(serId: Int, serManifest: String, payload: Array[Byte])
 
-  def deserializeRow(
-      settings: R2dbcSettings,
-      serialization: Serialization,
-      row: SerializedJournalRow): PersistentRepr = {
-    val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-    val repr = PersistentRepr(
-      payload,
-      row.sequenceNr,
-      row.persistenceId,
-      writerUuid = row.writerUuid,
-      manifest = "", // FIXME
-      deleted = false,
-      sender = ActorRef.noSender).withTimestamp(row.timestamp)
-
-    val reprWithMeta = row.metadata match {
-      case None => repr
-      case Some(meta) =>
-        repr.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-    }
-    reprWithMeta
-  }
-
   def readMetadata(row: Row): Option[SerializedEventMetadata] = {
     row.get("meta_payload", classOf[Array[Byte]]) match {
       case null => None
@@ -96,8 +70,6 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     system: ActorSystem[_]) {
 
   import JournalDao.SerializedJournalRow
-  import JournalDao.deserializeRow
-  import JournalDao.readMetadata
   import JournalDao.log
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
@@ -114,12 +86,6 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4"
-
-  private val selectEventsSql = s"SELECT * from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
-    "AND deleted = false " +
-    "ORDER BY sequence_number"
-  private val selectEventsWithLimitSql = selectEventsSql + " LIMIT $6"
 
   private val deleteEventsSql = s"DELETE FROM $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number <= $4"
@@ -224,66 +190,6 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       result.foreach(seqNr => log.debug("Highest sequence nr for persistenceId [{}]: [{}]", persistenceId, seqNr))
 
     result
-  }
-
-  def replayJournal(
-      serialization: Serialization,
-      persistenceId: String,
-      fromSequenceNr: Long,
-      toSequenceNr: Long,
-      max: Long)(replay: PersistentRepr => Unit): Future[Unit] = {
-    def replayRow(row: SerializedJournalRow): SerializedJournalRow = {
-      val repr = deserializeRow(journalSettings, serialization, row)
-      replay(repr)
-      row
-    }
-
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
-
-    val result = r2dbcExecutor.select(s"select replay [$persistenceId]")(
-      connection => {
-        val stmt = connection
-          .createStatement(if (max == Long.MaxValue) selectEventsSql else selectEventsWithLimitSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
-          .bind(3, fromSequenceNr)
-          .bind(4, toSequenceNr)
-        if (max != Long.MaxValue)
-          stmt.bind(5, max)
-        else
-          stmt
-      },
-      row =>
-        replayRow(
-          SerializedJournalRow(
-            persistenceId = persistenceId,
-            sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
-            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-            readDbTimestamp = Instant.EPOCH, // not needed here
-            payload = row.get("event_payload", classOf[Array[Byte]]),
-            serId = row.get("event_ser_id", classOf[java.lang.Integer]),
-            serManifest = row.get("event_ser_manifest", classOf[String]),
-            writerUuid = row.get("writer", classOf[String]),
-            timestamp = row.get("write_timestamp", classOf[java.lang.Long]),
-            tags = Set.empty, // not needed here
-            metadata = readMetadata(row))))
-
-    if (log.isDebugEnabled)
-      result.foreach { rows =>
-        log.debug("Replayed persistenceId [{}], [{}] events", persistenceId, rows.size)
-        if (log.isTraceEnabled)
-          rows.foreach { row: SerializedJournalRow =>
-            log.debug(
-              "Replayed persistenceId [{}], seqNr [{}], dbTimestamp [{}]",
-              persistenceId,
-              row.sequenceNr,
-              row.dbTimestamp)
-          }
-      }
-
-    result.map(_ => ())(ExecutionContext.parasitic)
   }
 
   def deleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {

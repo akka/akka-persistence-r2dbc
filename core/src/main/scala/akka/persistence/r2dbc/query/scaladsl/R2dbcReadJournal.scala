@@ -13,6 +13,7 @@ import scala.concurrent.duration.FiniteDuration
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.adapter._
+import akka.annotation.InternalApi
 import akka.persistence.query.EventEnvelope
 import akka.persistence.query.Offset
 import akka.persistence.query.scaladsl._
@@ -109,6 +110,27 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[EventEnvelope, NotUsed] = {
+    val highestSeqNrFut =
+      if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+      else Future.successful(toSequenceNr)
+
+    Source
+      .futureSource[SerializedJournalRow, NotUsed] {
+        highestSeqNrFut.map { highestSeqNr =>
+          internalEventsByPersistenceId(persistenceId, fromSequenceNr, highestSeqNr)
+        }
+      }
+      .map(deserializeRow)
+      .mapMaterializedValue(_ => NotUsed)
+  }
+
+  /**
+   * INTERNAL API: Used by both journal replay and currentEventsByPersistenceId
+   */
+  @InternalApi private[r2dbc] def internalEventsByPersistenceId(
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
     def updateState(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.sequenceNr)
 
@@ -141,29 +163,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       }
     }
 
-    val highestSeqNrFut =
-      if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
-      else Future.successful(toSequenceNr)
+    if (log.isDebugEnabled())
+      log.debug(
+        "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].",
+        persistenceId,
+        fromSequenceNr,
+        toSequenceNr)
 
-    Source
-      .futureSource[SerializedJournalRow, NotUsed] {
-        highestSeqNrFut.map { highestSeqNr =>
-          if (log.isDebugEnabled())
-            log.debug(
-              "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].",
-              persistenceId,
-              fromSequenceNr,
-              highestSeqNr)
-
-          ContinuousQuery[ByPersistenceIdState, SerializedJournalRow](
-            initialState = ByPersistenceIdState(0, 0, latestSeqNr = fromSequenceNr - 1),
-            updateState = updateState,
-            delayNextQuery = _ => None,
-            nextQuery = state => nextQuery(state, highestSeqNr))
-        }
-      }
-      .map(deserializeRow)
-      .mapMaterializedValue(_ => NotUsed)
+    ContinuousQuery[ByPersistenceIdState, SerializedJournalRow](
+      initialState = ByPersistenceIdState(0, 0, latestSeqNr = fromSequenceNr - 1),
+      updateState = updateState,
+      delayNextQuery = _ => None,
+      nextQuery = state => nextQuery(state, toSequenceNr))
   }
 
   override def timestampOf(

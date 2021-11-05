@@ -12,6 +12,7 @@ import scala.util.Success
 import scala.util.Try
 
 import akka.Done
+import akka.actor.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
@@ -21,29 +22,53 @@ import akka.persistence.AtomicWrite
 import akka.persistence.PersistentRepr
 import akka.persistence.journal.AsyncWriteJournal
 import akka.persistence.journal.Tagged
+import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.query.scaladsl.QueryDao
+import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.serialization.Serialization
 import akka.serialization.SerializationExtension
 import akka.serialization.Serializers
+import akka.stream.scaladsl.Sink
 import com.typesafe.config.Config
 
 /**
  * INTERNAL API
  */
 @InternalApi
-object R2dbcJournal {
+private[r2dbc] object R2dbcJournal {
   case class WriteFinished(persistenceId: String, done: Future[_])
+
+  def deserializeRow(serialization: Serialization, row: SerializedJournalRow): PersistentRepr = {
+    val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+    val repr = PersistentRepr(
+      payload,
+      row.sequenceNr,
+      row.persistenceId,
+      writerUuid = row.writerUuid,
+      manifest = "", // FIXME
+      deleted = false,
+      sender = ActorRef.noSender).withTimestamp(row.timestamp)
+
+    val reprWithMeta = row.metadata match {
+      case None => repr
+      case Some(meta) =>
+        repr.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+    }
+    reprWithMeta
+  }
 }
 
 /**
  * INTERNAL API
  */
 @InternalApi
-final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
+private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
   import R2dbcJournal.WriteFinished
+  import R2dbcJournal.deserializeRow
 
   implicit val system: ActorSystem[_] = context.system.toTyped
   implicit val ec: ExecutionContext = context.dispatcher
@@ -58,6 +83,7 @@ final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJour
     new JournalDao(
       journalSettings,
       ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
+  private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
 
   // if there are pending writes when an actor restarts we must wait for
   // them to complete before we can read the highest sequence number or we will miss it
@@ -149,7 +175,16 @@ final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJour
   override def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(
       recoveryCallback: PersistentRepr => Unit): Future[Unit] = {
     log.debug("asyncReplayMessages persistenceId [{}], fromSequenceNr [{}]", persistenceId, fromSequenceNr)
-    journalDao.replayJournal(serialization, persistenceId, fromSequenceNr, toSequenceNr, max)(recoveryCallback)
+    val effectiveToSequenceNr =
+      if (max == Long.MaxValue) toSequenceNr
+      else math.min(toSequenceNr, fromSequenceNr + max - 1)
+    query
+      .internalEventsByPersistenceId(persistenceId, fromSequenceNr, effectiveToSequenceNr)
+      .runWith(Sink.foreach { row =>
+        val repr = deserializeRow(serialization, row)
+        recoveryCallback(repr)
+      })
+      .map(_ => ())
   }
 
   override def asyncReadHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
