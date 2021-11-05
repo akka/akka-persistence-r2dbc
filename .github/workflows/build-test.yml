@@ -11,6 +11,7 @@ jobs:
   check-code-style:
     name: Checks
     runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -36,6 +37,7 @@ jobs:
   test-postgres:
     name: Run test with Postgres
     runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -69,6 +71,7 @@ jobs:
   test-yugabyte:
     name: Run tests with Yugabyte
     runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -102,6 +105,7 @@ jobs:
   test-docs:
     name: Docs
     runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
         uses: actions/checkout@v2

@@ -10,6 +10,7 @@ jobs:
   sbt:
     name: sbt publish
     runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -33,6 +34,9 @@ jobs:
   documentation:
     name: Documentation
     runs-on: ubuntu-18.04
+    # FIXME disabled until rsync credentials have been setup
+    #if: github.repository == 'akka/akka-persistence-r2dbc'
+    if: ${{ false }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
