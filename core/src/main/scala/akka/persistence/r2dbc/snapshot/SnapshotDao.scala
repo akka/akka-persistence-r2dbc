@@ -4,17 +4,20 @@
 
 package akka.persistence.r2dbc.snapshot
 
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
+import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.{ R2dbcExecutor, SliceUtils }
-import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
-import akka.serialization.{ Serialization, Serializers }
-import io.r2dbc.spi.{ ConnectionFactory, Row }
-import org.slf4j.{ Logger, LoggerFactory }
-
-import scala.concurrent.{ ExecutionContext, Future }
+import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.SliceUtils
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * INTERNAL API
@@ -22,7 +25,7 @@ import scala.concurrent.{ ExecutionContext, Future }
 private[r2dbc] object SnapshotDao {
   private val log: Logger = LoggerFactory.getLogger(classOf[SnapshotDao])
 
-  private case class SerializedSnapshotRow(
+  final case class SerializedSnapshotRow(
       persistenceId: String,
       sequenceNumber: Long,
       writeTimestamp: Long,
@@ -31,7 +34,7 @@ private[r2dbc] object SnapshotDao {
       serializerManifest: String,
       metadata: Option[SerializedSnapshotMetadata])
 
-  private case class SerializedSnapshotMetadata(payload: Array[Byte], serializerId: Int, serializerManifest: String)
+  final case class SerializedSnapshotMetadata(payload: Array[Byte], serializerId: Int, serializerManifest: String)
 
   private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
     SerializedSnapshotRow(
@@ -51,18 +54,6 @@ private[r2dbc] object SnapshotDao {
               row.get("meta_ser_manifest", classOf[String])))
       })
 
-  private def deserializeSnapshotRow(snap: SerializedSnapshotRow, serialization: Serialization): SelectedSnapshot =
-    SelectedSnapshot(
-      SnapshotMetadata(
-        snap.persistenceId,
-        snap.sequenceNumber,
-        snap.writeTimestamp,
-        snap.metadata.map(serializedMeta =>
-          serialization
-            .deserialize(serializedMeta.payload, serializedMeta.serializerId, serializedMeta.serializerManifest)
-            .get)),
-      serialization.deserialize(snap.snapshot, snap.serializerId, snap.serializerManifest).get)
-
 }
 
 /**
@@ -71,10 +62,9 @@ private[r2dbc] object SnapshotDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] final class SnapshotDao(
-    settings: R2dbcSettings,
-    connectionFactory: ConnectionFactory,
-    serialization: Serialization)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+    ec: ExecutionContext,
+    system: ActorSystem[_]) {
   import SnapshotDao._
 
   private val snapshotTable = settings.snapshotsTableWithSchema
@@ -129,7 +119,7 @@ private[r2dbc] final class SnapshotDao(
           meta_ser_manifest = excluded.meta_ser_manifest
         """
 
-  def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] = {
+  def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
@@ -183,53 +173,40 @@ private[r2dbc] final class SnapshotDao(
           statement
         },
         collectSerializedSnapshot)
-      .map(ss =>
-        // deserialize out of main loop to return connection quickly
-        ss.headOption.map(deserializeSnapshotRow(_, serialization)))
+      .map(_.headOption)(ExecutionContexts.parasitic)
 
   }
 
-  def store(metadata: SnapshotMetadata, value: Any): Future[Unit] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(metadata.persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(metadata.persistenceId, settings.maxNumberOfSlices)
+  def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(serializedRow.persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(serializedRow.persistenceId, settings.maxNumberOfSlices)
 
     val insert =
-      if (metadata.metadata.isEmpty) upsertSql
+      if (serializedRow.metadata.isEmpty) upsertSql
       else upsertWithMetaSql
 
-    val snapshot = value.asInstanceOf[AnyRef]
-    val serializedSnapshot = serialization.serialize(snapshot).get
-    val snapshotSerializer = serialization.findSerializerFor(snapshot)
-    val snapshotManifest = Serializers.manifestFor(snapshotSerializer, snapshot)
-
-    val serializedMeta: Option[(Array[Byte], Int, String)] = metadata.metadata.map { meta =>
-      val metaRef = meta.asInstanceOf[AnyRef]
-      val serializedMeta = serialization.serialize(metaRef).get
-      val metaSerializer = serialization.findSerializerFor(metaRef)
-      val metaManifest = Serializers.manifestFor(metaSerializer, metaRef)
-      (serializedMeta, metaSerializer.identifier, metaManifest)
-    }
-
     r2dbcExecutor
-      .updateOne(s"insert snapshot [${metadata.persistenceId}], sequence number [${metadata.sequenceNr}]") {
+      .updateOne(
+        s"insert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.sequenceNumber}]") {
         connection =>
           val statement =
             connection
               .createStatement(insert)
               .bind(0, slice)
               .bind(1, entityType)
-              .bind(2, metadata.persistenceId)
-              .bind(3, metadata.sequenceNr)
-              .bind(4, metadata.timestamp)
-              .bind(5, serializedSnapshot)
-              .bind(6, snapshotSerializer.identifier)
-              .bind(7, snapshotManifest)
+              .bind(2, serializedRow.persistenceId)
+              .bind(3, serializedRow.sequenceNumber)
+              .bind(4, serializedRow.writeTimestamp)
+              .bind(5, serializedRow.snapshot)
+              .bind(6, serializedRow.serializerId)
+              .bind(7, serializedRow.serializerManifest)
 
-          serializedMeta.foreach { case (serializedMeta, serializerId, serializerManifest) =>
-            statement
-              .bind(8, serializedMeta)
-              .bind(9, serializerId)
-              .bind(10, serializerManifest)
+          serializedRow.metadata.foreach {
+            case SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest) =>
+              statement
+                .bind(8, serializedMeta)
+                .bind(9, serializerId)
+                .bind(10, serializerManifest)
           }
 
           statement
