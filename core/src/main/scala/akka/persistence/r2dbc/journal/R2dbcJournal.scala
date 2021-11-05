@@ -88,6 +88,8 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   // them to complete before we can read the highest sequence number or we will miss it
   private val writesInProgress = new java.util.HashMap[String, Future[_]]()
 
+  private var tagsNotImplementedWarningLogged = false
+
   override def receivePluginInternal: Receive = { case WriteFinished(pid, f) =>
     writesInProgress.remove(pid, f)
   }
@@ -96,9 +98,13 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
-          val (event, tags) = pr.payload match {
-            case Tagged(payload, tags) => (payload.asInstanceOf[AnyRef], tags)
-            case other                 => (other.asInstanceOf[AnyRef], Set.empty[String])
+          val event = pr.payload match {
+            case Tagged(payload, _) =>
+              // tags not implemented, issue #82
+              logTagsNotImplemented()
+              payload.asInstanceOf[AnyRef]
+            case other =>
+              other.asInstanceOf[AnyRef]
           }
           val serialized = serialization.serialize(event).get
           val serializer = serialization.findSerializerFor(event)
@@ -114,7 +120,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             id,
             manifest,
             pr.writerUuid,
-            tags,
             None)
 
           pr.metadata match {
@@ -155,6 +160,17 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       context.self ! WriteFinished(persistenceId, writeResult)
     }
     writeResult
+  }
+
+  private def logTagsNotImplemented(): Unit = {
+    if (!tagsNotImplementedWarningLogged) {
+      tagsNotImplementedWarningLogged = true
+      log.warning(
+        "Tags not implemented by akka-persistence-r2dbc. We recommend using eventsBySlices instead. " +
+        "Tagged events will be stored but the tags are discarded. " +
+        "Tags may be implemented in the future if there is strong demand for it. " +
+        "Let us know in https://github.com/akka/akka-persistence-r2dbc/issues/82")
+    }
   }
 
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {

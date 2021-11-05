@@ -38,7 +38,6 @@ private[r2dbc] object JournalDao {
       serId: Int,
       serManifest: String,
       writerUuid: String,
-      tags: Set[String],
       metadata: Option[SerializedEventMetadata])
       extends BySliceQuery.SerializedRow
 

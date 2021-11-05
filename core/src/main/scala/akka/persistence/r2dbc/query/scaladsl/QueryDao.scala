@@ -134,7 +134,6 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = Set.empty, // not needed here
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -186,7 +185,6 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = Set.empty, // not needed here
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
