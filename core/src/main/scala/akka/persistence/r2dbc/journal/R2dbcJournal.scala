@@ -96,9 +96,9 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
-          val (event, tags) = pr.payload match {
-            case Tagged(payload, tags) => (payload.asInstanceOf[AnyRef], tags)
-            case other                 => (other.asInstanceOf[AnyRef], Set.empty[String])
+          val event = pr.payload match {
+            case Tagged(payload, _) => payload.asInstanceOf[AnyRef] // tags not implemented, issue #82
+            case other              => other.asInstanceOf[AnyRef]
           }
           val serialized = serialization.serialize(event).get
           val serializer = serialization.findSerializerFor(event)
@@ -114,7 +114,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             id,
             manifest,
             pr.writerUuid,
-            tags,
             None)
 
           pr.metadata match {
