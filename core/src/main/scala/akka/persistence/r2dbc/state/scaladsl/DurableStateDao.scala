@@ -37,7 +37,6 @@ import org.slf4j.LoggerFactory
       revision: Long,
       dbTimestamp: Instant,
       readDbTimestamp: Instant,
-      timestamp: Long,
       payload: Array[Byte],
       serId: Int,
       serManifest: String)
@@ -67,15 +66,15 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val insertStateSql: String =
     s"INSERT INTO $stateTable " +
-    "(slice, entity_type, persistence_id, revision, write_timestamp, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, transaction_timestamp())"
+    "(slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
+    "VALUES ($1, $2, $3, $4, $5, $6, $7, transaction_timestamp())"
 
   private val updateStateSql: String =
     s"UPDATE $stateTable " +
-    "SET revision = $1, write_timestamp = $2, state_ser_id = $3, state_ser_manifest = $4, state_payload = $5, db_timestamp = " +
+    "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = " +
     "GREATEST(transaction_timestamp(), " +
-    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$6 AND entity_type = $$7 AND persistence_id = $$8 AND revision = $$9)) " +
-    "WHERE slice = $10 AND entity_type = $11 AND persistence_id = $12 AND revision = $13"
+    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$5 AND entity_type = $$6 AND persistence_id = $$7 AND revision = $$8)) " +
+    "WHERE slice = $9 AND entity_type = $10 AND persistence_id = $11 AND revision = $12"
 
   private val deleteStateSql: String =
     s"DELETE from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
@@ -105,7 +104,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, write_timestamp, state_ser_id, state_ser_manifest, state_payload " +
+    s"SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload " +
     s"FROM $stateTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
@@ -131,7 +130,6 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           revision = row.get("revision", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = Instant.EPOCH, // not needed here
-          timestamp = row.get("write_timestamp", classOf[java.lang.Long]),
           payload = row.get("state_payload", classOf[Array[Byte]]),
           serId = row.get("state_ser_id", classOf[java.lang.Integer]),
           serManifest = row.get("state_ser_manifest", classOf[String])))
@@ -153,10 +151,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(1, entityType)
               .bind(2, state.persistenceId)
               .bind(3, state.revision)
-              .bind(4, state.timestamp)
-              .bind(5, state.serId)
-              .bind(6, state.serManifest)
-              .bind(7, state.payload)
+              .bind(4, state.serId)
+              .bind(5, state.serManifest)
+              .bind(6, state.payload)
           }
           .recoverWith { case _: R2dbcDataIntegrityViolationException =>
             Future.failed(
@@ -170,18 +167,17 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           connection
             .createStatement(updateStateSql)
             .bind(0, state.revision)
-            .bind(1, state.timestamp)
-            .bind(2, state.serId)
-            .bind(3, state.serManifest)
-            .bind(4, state.payload)
-            .bind(5, slice)
-            .bind(6, entityType)
-            .bind(7, state.persistenceId)
-            .bind(8, previousRevision)
-            .bind(9, slice)
-            .bind(10, entityType)
-            .bind(11, state.persistenceId)
-            .bind(12, previousRevision)
+            .bind(1, state.serId)
+            .bind(2, state.serManifest)
+            .bind(3, state.payload)
+            .bind(4, slice)
+            .bind(5, entityType)
+            .bind(6, state.persistenceId)
+            .bind(7, previousRevision)
+            .bind(8, slice)
+            .bind(9, entityType)
+            .bind(10, state.persistenceId)
+            .bind(11, previousRevision)
         }
       }
     }
@@ -259,8 +255,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = row.get("state_payload", classOf[Array[Byte]]),
           serId = row.get("state_ser_id", classOf[java.lang.Integer]),
-          serManifest = row.get("state_ser_manifest", classOf[String]),
-          timestamp = row.get("write_timestamp", classOf[java.lang.Long])))
+          serManifest = row.get("state_ser_manifest", classOf[String])))
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))

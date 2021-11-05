@@ -66,7 +66,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope = (offset, row) => {
       val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-      val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.timestamp)
+      val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.dbTimestamp.toEpochMilli)
       row.metadata match {
         case None => envelope
         case Some(meta) =>
@@ -188,7 +188,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[EventEnvelope, NotUsed] = {
-    val someRefreshInterval = Some(settings.querySettings.refreshInterval)
 
     log.debug("Starting eventsByPersistenceId query for persistenceId [{}], from [{}].", persistenceId, fromSequenceNr)
 
@@ -248,7 +247,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   def deserializeRow(row: SerializedJournalRow): EventEnvelope = {
     val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.sequenceNr))
-    val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.timestamp)
+    val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.dbTimestamp.toEpochMilli)
     row.metadata match {
       case None => envelope
       case Some(meta) =>

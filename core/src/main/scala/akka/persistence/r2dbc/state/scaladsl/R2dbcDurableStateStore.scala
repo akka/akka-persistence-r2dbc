@@ -61,7 +61,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {
       val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get.asInstanceOf[A]
-      new UpdatedDurableState(row.persistenceId, row.revision, payload, offset, row.timestamp)
+      new UpdatedDurableState(row.persistenceId, row.revision, payload, offset, row.dbTimestamp.toEpochMilli)
     }
 
     val extractOffset: DurableStateChange[A] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
@@ -87,14 +87,12 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     val serialized = serialization.serialize(valueAnyRef).get
     val serializer = serialization.findSerializerFor(valueAnyRef)
     val manifest = Serializers.manifestFor(serializer, valueAnyRef)
-    val timestamp = System.currentTimeMillis()
 
     val serializedRow = SerializedStateRow(
       persistenceId,
       revision,
       DurableStateDao.EmptyDbTimestamp,
       DurableStateDao.EmptyDbTimestamp,
-      timestamp,
       serialized,
       serializer.identifier,
       manifest)

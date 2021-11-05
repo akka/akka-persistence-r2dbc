@@ -38,7 +38,6 @@ private[r2dbc] object JournalDao {
       serId: Int,
       serManifest: String,
       writerUuid: String,
-      timestamp: Long,
       tags: Set[String],
       metadata: Option[SerializedEventMetadata])
       extends BySliceQuery.SerializedRow
@@ -80,9 +79,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   // always increasing for a pid (time not going backwards).
   // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
   private val insertEventSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type, persistence_id, sequence_number, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, GREATEST(transaction_timestamp(), " +
-    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable WHERE slice = $$14 AND entity_type = $$15 AND persistence_id = $$16 AND sequence_number = $$17)))"
+    "(slice, entity_type, persistence_id, sequence_number, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
+    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, GREATEST(transaction_timestamp(), " +
+    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable WHERE slice = $$13 AND entity_type = $$14 AND persistence_id = $$15 AND sequence_number = $$16)))"
 
   private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4"
@@ -90,8 +89,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val deleteEventsSql = s"DELETE FROM $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number <= $4"
   private val insertDeleteMarkerSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type, persistence_id, sequence_number, db_timestamp, writer, write_timestamp, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
-    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10, $11)"
+    "(slice, entity_type, persistence_id, sequence_number, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
+    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
 
   def writeEvents(events: Seq[SerializedJournalRow]): Future[Unit] = {
     require(events.nonEmpty)
@@ -108,31 +107,30 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(2, write.persistenceId)
         .bind(3, write.sequenceNr)
         .bind(4, write.writerUuid)
-        .bind(5, write.timestamp)
-        .bind(6, "") // FIXME event adapter
-        .bind(7, write.serId)
-        .bind(8, write.serManifest)
-        .bind(9, write.payload)
+        .bind(5, "") // FIXME event adapter
+        .bind(6, write.serId)
+        .bind(7, write.serManifest)
+        .bind(8, write.payload)
 
       // optional metadata
       write.metadata match {
         case Some(m) =>
           stmt
-            .bind(10, m.serId)
-            .bind(11, m.serManifest)
-            .bind(12, m.payload)
+            .bind(9, m.serId)
+            .bind(10, m.serManifest)
+            .bind(11, m.payload)
         case None =>
           stmt
-            .bindNull(10, classOf[java.lang.Integer])
-            .bindNull(11, classOf[String])
-            .bindNull(12, classOf[Array[Byte]])
+            .bindNull(9, classOf[java.lang.Integer])
+            .bindNull(10, classOf[String])
+            .bindNull(11, classOf[Array[Byte]])
       }
 
       stmt
-        .bind(13, slice)
-        .bind(14, entityType)
-        .bind(15, write.persistenceId)
-        .bind(16, previousSeqNr)
+        .bind(12, slice)
+        .bind(13, entityType)
+        .bind(14, write.persistenceId)
+        .bind(15, previousSeqNr)
     }
 
     val result = {
@@ -210,12 +208,11 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
           .bind(2, persistenceId)
           .bind(3, deleteMarkerSeqNr)
           .bind(4, "")
-          .bind(5, System.currentTimeMillis())
-          .bind(6, "")
-          .bind(7, 0)
-          .bind(8, "")
-          .bind(9, Array.emptyByteArray)
-          .bind(10, true)
+          .bind(5, "")
+          .bind(6, 0)
+          .bind(7, "")
+          .bind(8, Array.emptyByteArray)
+          .bind(9, true)
       }
 
       val result = r2dbcExecutor.update(s"delete [$persistenceId]") { connection =>

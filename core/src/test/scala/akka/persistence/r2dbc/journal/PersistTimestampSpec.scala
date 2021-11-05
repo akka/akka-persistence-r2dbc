@@ -32,7 +32,7 @@ class PersistTimestampSpec
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   private val serialization = SerializationExtension(system)
 
-  case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, writeTimestamp: Long, event: String)
+  case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)
 
   "Persist timestamp" should {
 
@@ -79,7 +79,6 @@ class PersistTimestampSpec
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get("sequence_number", classOf[java.lang.Long]),
                 dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-                writeTimestamp = row.get("write_timestamp", classOf[java.lang.Long]),
                 event)
             })
           .futureValue
@@ -87,7 +86,6 @@ class PersistTimestampSpec
       rows.groupBy(_.event).foreach { case (_, rowsByUniqueEvent) =>
         withClue(s"pid [${rowsByUniqueEvent.head.pid}]: ") {
           rowsByUniqueEvent.map(_.dbTimestamp).toSet shouldBe Set(rowsByUniqueEvent.head.dbTimestamp)
-          rowsByUniqueEvent.map(_.writeTimestamp).toSet shouldBe Set(rowsByUniqueEvent.head.writeTimestamp)
         }
       }
 
