@@ -123,7 +123,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             .bind(12, m.payload)
         case None =>
           stmt
-            .bind(10, 0)
+            .bindNull(10, classOf[java.lang.Integer])
             .bindNull(11, classOf[String])
             .bindNull(12, classOf[Array[Byte]])
       }

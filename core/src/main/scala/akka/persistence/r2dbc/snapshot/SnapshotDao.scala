@@ -79,29 +79,6 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
           write_timestamp,
           snapshot,
           ser_id,
-          ser_manifest
-        ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8)
-        ON CONFLICT (slice, entity_type, persistence_id)
-        DO UPDATE SET
-          sequence_number = excluded.sequence_number,
-          write_timestamp = excluded.write_timestamp,
-          snapshot = excluded.snapshot,
-          ser_id = excluded.ser_id,
-          ser_manifest = excluded.ser_manifest,
-          meta_payload = null,
-          meta_ser_id = null,
-          meta_ser_manifest = null
-        """
-
-  private val upsertWithMetaSql =
-    s"""INSERT INTO $snapshotTable (
-          slice,
-          entity_type,
-          persistence_id,
-          sequence_number,
-          write_timestamp,
-          snapshot,
-          ser_id,
           ser_manifest,
           meta_payload,
           meta_ser_id,
@@ -181,17 +158,13 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(serializedRow.persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(serializedRow.persistenceId, settings.maxNumberOfSlices)
 
-    val insert =
-      if (serializedRow.metadata.isEmpty) upsertSql
-      else upsertWithMetaSql
-
     r2dbcExecutor
       .updateOne(
-        s"insert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.sequenceNumber}]") {
+        s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.sequenceNumber}]") {
         connection =>
           val statement =
             connection
-              .createStatement(insert)
+              .createStatement(upsertSql)
               .bind(0, slice)
               .bind(1, entityType)
               .bind(2, serializedRow.persistenceId)
@@ -201,12 +174,17 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
               .bind(6, serializedRow.serializerId)
               .bind(7, serializedRow.serializerManifest)
 
-          serializedRow.metadata.foreach {
-            case SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest) =>
+          serializedRow.metadata match {
+            case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
               statement
                 .bind(8, serializedMeta)
                 .bind(9, serializerId)
                 .bind(10, serializerManifest)
+            case None =>
+              statement
+                .bindNull(8, classOf[Array[Byte]])
+                .bindNull(9, classOf[java.lang.Integer])
+                .bindNull(10, classOf[String])
           }
 
           statement
