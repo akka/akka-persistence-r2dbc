@@ -5,14 +5,10 @@
 import sbt._
 
 object Dependencies {
-  val Scala212 = "2.12.14"
-  val Scala213 = "2.13.1"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.16")
+  val Scala212 = "2.12.15"
+  val Scala213 = "2.13.6"
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.17")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  // for example
-  val AkkaHttpVersion = "10.2.6"
-  val AkkaManagementVersion = "1.0.6"
-  val R2dbcVersion = "0.9.0.M2"
   val AkkaProjectionVersion = "1.2.2+4-6602699f-SNAPSHOT"
 
   object Compile {
@@ -32,9 +28,6 @@ object Dependencies {
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
     val postgresql = "org.postgresql" % "postgresql" % "42.2.24"
-//    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % R2dbcVersion
-//    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % R2dbcVersion
-//    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % R2dbcVersion
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.8.6.RELEASE"
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.8.7.RELEASE"
@@ -85,4 +78,7 @@ object Dependencies {
     TestDeps.akkaJackson,
     TestDeps.logback,
     TestDeps.scalaTest)
+
+  val migration =
+    Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.logback, TestDeps.scalaTest)
 }

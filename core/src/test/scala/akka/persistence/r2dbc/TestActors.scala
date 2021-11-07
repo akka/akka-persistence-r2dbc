@@ -26,14 +26,24 @@ object TestActors {
     final case class PersistWithAck(payload: Any, replyTo: ActorRef[Done]) extends Command
     final case class PersistAll(payloads: List[Any]) extends Command
     final case class Ping(replyTo: ActorRef[Done]) extends Command
+    final case class GetState(replyTo: ActorRef[String]) extends Command
     final case class Stop(replyTo: ActorRef[Done]) extends Command
 
     def apply(pid: String): Behavior[Command] =
       apply(PersistenceId.ofUniqueId(pid))
 
     def apply(pid: PersistenceId): Behavior[Command] = {
+      apply(pid, "", "")
+    }
+
+    def apply(pid: PersistenceId, journalPluginId: String, snapshotPluginId: String): Behavior[Command] = {
       Behaviors.setup { context =>
         eventSourcedBehavior(pid, context)
+          .withJournalPluginId(journalPluginId)
+          .withSnapshotPluginId(snapshotPluginId)
+          .snapshotWhen { case (_, event, _) =>
+            event.toString.contains("snap")
+          }
       }
     }
 
@@ -43,7 +53,7 @@ object TestActors {
       EventSourcedBehavior[Command, Any, String](
         persistenceId = pid,
         "",
-        { (_, command) =>
+        { (state, command) =>
           command match {
             case command: Persist =>
               context.log.debug(
@@ -70,12 +80,15 @@ object TestActors {
             case Ping(replyTo) =>
               replyTo ! Done
               Effect.none
+            case GetState(replyTo) =>
+              replyTo ! state
+              Effect.none
             case Stop(replyTo) =>
               replyTo ! Done
               Effect.stop()
           }
         },
-        (_, _) => "")
+        (state, event) => if (state == "") event.toString else s"$state|$event")
     }
   }
 

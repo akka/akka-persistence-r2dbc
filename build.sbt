@@ -66,7 +66,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "akka-persistence-r2dbc-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
-  .aggregate(core, projection)
+  .aggregate(core, projection, migration)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 
@@ -81,6 +81,25 @@ lazy val projection = (project in file("projection"))
   .settings(name := "akka-projection-r2dbc", libraryDependencies ++= Dependencies.projection)
   .enablePlugins(AutomateHeaderPlugin)
 
+lazy val migration = (project in file("migration"))
+  .settings(common)
+  .settings(
+    name := "akka-persistence-r2dbc-migration",
+    libraryDependencies ++= Dependencies.migration,
+    Test / mainClass := Some("akka.persistence.r2dbc.migration.MigrationTool"),
+    Test / run / fork := true,
+    Test / run / javaOptions ++= {
+      import scala.collection.JavaConverters._
+      // include all passed -Dakka. properties to the javaOptions for forked tests
+      // useful to switch DB dialects for example
+      val akkaProperties = System.getProperties.stringPropertyNames.asScala.toList.collect {
+        case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
+      }
+      "-Dlogback.configurationFile=logback-main.xml" :: "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
+    })
+  .dependsOn(core % "compile->compile;test->test")
+  .enablePlugins(AutomateHeaderPlugin)
+
 lazy val docs = project
   .in(file("docs"))
   .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PublishRsyncPlugin)
@@ -89,7 +108,6 @@ lazy val docs = project
   .settings(dontPublish)
   .settings(
     name := "Akka Persistence R2DBC",
-    crossScalaVersions := Seq(Dependencies.Scala212),
     previewPath := (Paradox / siteSubdirName).value,
     Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
     paradoxGroups := Map("Language" -> Seq("Java", "Scala")),
