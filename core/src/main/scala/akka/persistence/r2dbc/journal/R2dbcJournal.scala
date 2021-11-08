@@ -139,7 +139,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
       serialized match {
         case Success(writes) =>
-          journalDao.writeEvents(writes, samePersistenceId = true).map(_ => Success(()))(ExecutionContexts.parasitic)
+          journalDao.writeEvents(writes).map(_ => Success(()))(ExecutionContexts.parasitic)
         case Failure(t) =>
           Future.successful(Failure(t))
       }

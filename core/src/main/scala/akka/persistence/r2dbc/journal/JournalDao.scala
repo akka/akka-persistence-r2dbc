@@ -105,27 +105,22 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     "(slice, entity_type, persistence_id, sequence_number, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
 
-  def writeEvents(events: Seq[SerializedJournalRow], samePersistenceId: Boolean): Future[Unit] = {
+  /**
+   * All events must be for the same persistenceId.
+   */
+  def writeEvents(events: Seq[SerializedJournalRow]): Future[Unit] = {
     require(events.nonEmpty)
 
-    // normally it is the same persistenceId for all events, but when used from MigrationTool it can be
-    // a batch including different persistenceIds
-    var persistenceId = events.head.persistenceId
-    var entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    var slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
-    var previousSeqNr = events.head.sequenceNr - 1
+    // it's always the same persistenceId for all events
+    val persistenceId = events.head.persistenceId
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+    val previousSeqNr = events.head.sequenceNr - 1
 
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
     val useTimestampFromDb = events.head.dbTimestamp == Instant.EPOCH
 
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
-      if (!samePersistenceId) {
-        persistenceId = write.persistenceId
-        entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-        slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
-        previousSeqNr = events.head.sequenceNr - 1
-      }
-
       stmt
         .bind(0, slice)
         .bind(1, entityType)
@@ -170,11 +165,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       val insertSql =
         if (useTimestampFromDb) insertEventWithTransactionTimestampSql
         else insertEventWithParameterTimestampSql
-      val logPrefix =
-        if (samePersistenceId) s"insert [$persistenceId]"
-        else "insert events"
       if (events.size == 1) {
-        r2dbcExecutor.updateOne(logPrefix) { connection =>
+        r2dbcExecutor.updateOne(s"insert [$persistenceId]") { connection =>
           val stmt =
             connection.createStatement(insertSql)
           if (events.size == 1)
@@ -188,7 +180,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       } else {
         // TODO batch statements doesn't work, see above
         r2dbcExecutor
-          .update(logPrefix) { connection =>
+          .update(s"insert [$persistenceId]") { connection =>
             events.map { write =>
               val stmt = connection.createStatement(insertSql)
               bind(stmt, write)
@@ -200,10 +192,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     if (log.isDebugEnabled())
       result.foreach { updatedRows =>
-        if (samePersistenceId)
-          log.debug("Wrote [{}] events for persistenceId [{}]", updatedRows, events.head.persistenceId)
-        else
-          log.debug("Wrote [{}] events", updatedRows)
+        log.debug("Wrote [{}] events for persistenceId [{}]", updatedRows, events.head.persistenceId)
       }
 
     result.map(_ => ())(ExecutionContext.parasitic)
