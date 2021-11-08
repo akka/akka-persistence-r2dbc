@@ -146,19 +146,22 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             .bindNull(11, classOf[Array[Byte]])
       }
 
-      val p =
-        if (useTimestampFromDb) {
-          12
-        } else {
-          stmt.bind(12, write.dbTimestamp)
-          13
-        }
+      if (useTimestampFromDb) {
+        stmt
+          .bind(12, slice)
+          .bind(13, entityType)
+          .bind(14, write.persistenceId)
+          .bind(15, previousSeqNr)
+      } else {
+        stmt
+          .bind(12, write.dbTimestamp)
+          .bind(13, slice)
+          .bind(14, entityType)
+          .bind(15, write.persistenceId)
+          .bind(16, previousSeqNr)
+      }
 
       stmt
-        .bind(p, slice)
-        .bind(p + 1, entityType)
-        .bind(p + 2, write.persistenceId)
-        .bind(p + 3, previousSeqNr)
     }
 
     val result = {
