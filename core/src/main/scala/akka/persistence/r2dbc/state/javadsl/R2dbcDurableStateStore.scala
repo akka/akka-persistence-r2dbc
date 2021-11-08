@@ -16,7 +16,7 @@ import akka.persistence.state.javadsl.DurableStateUpdateStore
 import akka.persistence.state.javadsl.GetObjectResult
 
 object R2dbcDurableStateStore {
-  val Identifier = ScalaR2dbcDurableStateStore.Identifier
+  val Identifier: String = ScalaR2dbcDurableStateStore.Identifier
 }
 
 class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(implicit ec: ExecutionContext)
