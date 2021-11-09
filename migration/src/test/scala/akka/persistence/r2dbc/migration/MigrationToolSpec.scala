@@ -67,7 +67,7 @@ class MigrationToolSpec
   override def typedSystem: ActorSystem[_] = system
 
   private val migrationConfig = system.settings.config.getConfig("akka.persistence.r2dbc.migration")
-  private val sourceJournalPluginId = migrationConfig.getString("source.journal-plugin-id")
+  private val sourceJournalPluginId = "jdbc-journal"
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
 
   private val targetPluginId = migrationConfig.getString("target.persistence-plugin-id")
