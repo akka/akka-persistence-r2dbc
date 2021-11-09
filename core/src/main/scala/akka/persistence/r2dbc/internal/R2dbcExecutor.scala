@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.internal
 
 import java.util.function.BiConsumer
-import java.util.function.Supplier
 
 import scala.collection.immutable
 import scala.collection.mutable
@@ -20,6 +19,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalStableApi
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Result
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.reactivestreams.Publisher
@@ -57,6 +57,38 @@ import reactor.core.publisher.Flux
       promise.future
     }
 
+    def asFutureSeq(): Future[immutable.IndexedSeq[T]] =
+      asFutureSeq(identity)
+
+    def asFutureSeq[U](mapFunc: T => U): Future[immutable.IndexedSeq[U]] = {
+      val promise = Promise[immutable.IndexedSeq[U]]
+      val builder = IndexedSeq.newBuilder[U]
+
+      publisher.subscribe(new Subscriber[T] {
+
+        var subscription: Subscription = _
+
+        override def onSubscribe(s: Subscription): Unit = {
+          s.request(1)
+          subscription = s
+        }
+
+        override def onNext(value: T): Unit = {
+          builder += mapFunc(value)
+          subscription.request(1)
+        }
+
+        override def onError(t: Throwable): Unit =
+          promise.tryFailure(t)
+
+        override def onComplete(): Unit =
+          promise.trySuccess(builder.result())
+
+      })
+
+      promise.future
+    }
+
     def asFutureDone(): Future[Done] = {
       val promise = Promise[Done]()
       publisher.subscribe(new Subscriber[Any] {
@@ -81,15 +113,21 @@ import reactor.core.publisher.Flux
     }
   }
 
-  def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
+  def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
     stmt.execute().asFuture().flatMap { result =>
       result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
     }
-  }
+
+  def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
+    Flux
+      .from[Result](stmt.execute())
+      .concatMap(_.getRowsUpdated)
+      .asFutureSeq(_.intValue())
+      .map(_.sum)
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
-    // connection not intended for concurrent calls, make sure statments are executed one at a time
+    // connection not intended for concurrent calls, make sure statements are executed one at a time
     statements.foldLeft(Future.successful(IndexedSeq.empty[Int])) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
@@ -198,6 +236,12 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
       }
     }
   }
+
+  def updateInBatch(logPrefix: String)(statement: Connection => Statement): Future[Int] =
+    withConnection(logPrefix) { connection =>
+      val boundStmt = statement(connection)
+      updateBatchInTx(boundStmt)
+    }
 
   /**
    * Several update statements in the same transaction.

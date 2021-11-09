@@ -401,19 +401,9 @@ private[projection] class R2dbcOffsetStore(
           .bind(5, record.timestamp)
       }
 
-      // FIXME strange that the batch add doesn't work
-      //    val stmt = conn.createStatement(upsertTimestampOffsetSql)
-      //    records.foreach { rec =>
-      //      if (rec ne records.head)
-      //        stmt.add()
-      //      bindRecord(stmt, rec)
-      //    }
-      //    R2dbcExecutor.updateOneInTx(stmt).map(_ => Done)(ExecutionContext.parasitic)
-
-      val stmts =
-        filteredRecords.map { rec =>
-          val stmt = conn.createStatement(upsertTimestampOffsetSql)
-          bindRecord(stmt, rec)
+      val batchStatement =
+        filteredRecords.foldLeft(conn.createStatement(upsertTimestampOffsetSql)) { (stmt, rec) =>
+          bindRecord(stmt, rec).add()
         }
 
       val newState = oldState.add(filteredRecords)
@@ -427,7 +417,7 @@ private[projection] class R2dbcOffsetStore(
         } else
           newState
 
-      R2dbcExecutor.updateInTx(stmts).map { _ =>
+      R2dbcExecutor.updateBatchInTx(batchStatement).map { _ =>
         if (state.compareAndSet(oldState, evictedNewState))
           cleanupInflight(evictedNewState)
         else
