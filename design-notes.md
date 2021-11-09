@@ -40,7 +40,7 @@ SELECT * FROM event_journal
   AND slice BETWEEN $2 AND $2
   AND db_timestamp >= $3
   AND db_timestamp < transaction_timestamp() - interval '200 milliseconds'
-  ORDER BY db_timestamp, sequence_number
+  ORDER BY db_timestamp, seq_nr
 ```
 
 That would need a secondary index like:

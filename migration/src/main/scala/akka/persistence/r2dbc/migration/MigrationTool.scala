@@ -207,15 +207,12 @@ class MigrationTool(system: ActorSystem[_]) {
                 .recoverWith { case _: R2dbcDataIntegrityViolationException =>
                   // ok, already exists
                   log
-                    .debug(
-                      "event already exists, persistenceId [{}], seqNr [{}]",
-                      event.persistenceId,
-                      event.sequenceNr)
+                    .debug("event already exists, persistenceId [{}], seqNr [{}]", event.persistenceId, event.seqNr)
                   Future.successful(())
                 }
             })
           }
-          .map(_ => events.last.sequenceNr -> events.size)
+          .map(_ => events.last.seqNr -> events.size)
       }
       .mapAsync(1) { case (seqNr, count) =>
         migrationDao

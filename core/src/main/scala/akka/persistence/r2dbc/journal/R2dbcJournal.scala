@@ -45,7 +45,7 @@ private[r2dbc] object R2dbcJournal {
     val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
     val repr = PersistentRepr(
       payload,
-      row.sequenceNr,
+      row.seqNr,
       row.persistenceId,
       writerUuid = row.writerUuid,
       manifest = "", // FIXME

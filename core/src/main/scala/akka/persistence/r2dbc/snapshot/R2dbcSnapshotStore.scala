@@ -23,7 +23,7 @@ object R2dbcSnapshotStore {
     SelectedSnapshot(
       SnapshotMetadata(
         snap.persistenceId,
-        snap.sequenceNumber,
+        snap.seqNr,
         snap.writeTimestamp,
         snap.metadata.map(serializedMeta =>
           serialization

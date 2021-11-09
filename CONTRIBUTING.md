@@ -21,7 +21,7 @@ docker exec -it docker_postgres-db_1 psql -U postgres
 ```
 
 ```
-select slice, entity_type, persistence_id, sequence_number, db_timestamp from event_journal;
+select slice, entity_type, persistence_id, seq_nr, db_timestamp from event_journal;
 ```
 
 connections:
