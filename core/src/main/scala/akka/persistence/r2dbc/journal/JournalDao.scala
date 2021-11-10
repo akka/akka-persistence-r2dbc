@@ -165,32 +165,22 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     }
 
     val result = {
+
       val insertSql =
         if (useTimestampFromDb) insertEventWithTransactionTimestampSql
         else insertEventWithParameterTimestampSql
-      if (events.size == 1) {
+
+      val totalEvents = events.size
+      if (totalEvents == 1)
         r2dbcExecutor.updateOne(s"insert [$persistenceId]") { connection =>
-          val stmt =
-            connection.createStatement(insertSql)
-          if (events.size == 1)
-            bind(stmt, events.head)
-          else
-            // TODO this is not used yet, batch statements doesn't work stmt.bind().add().bind().execute()
-            events.foldLeft(stmt) { (s, write) =>
-              bind(s, write).add()
-            }
+          bind(connection.createStatement(insertSql), events.head)
         }
-      } else {
-        // TODO batch statements doesn't work, see above
-        r2dbcExecutor
-          .update(s"insert [$persistenceId]") { connection =>
-            events.map { write =>
-              val stmt = connection.createStatement(insertSql)
-              bind(stmt, write)
-            }.toIndexedSeq
+      else
+        r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events") { connection =>
+          events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
+            bind(stmt, write).add()
           }
-          .map(_.sum)
-      }
+        }
     }
 
     if (log.isDebugEnabled())

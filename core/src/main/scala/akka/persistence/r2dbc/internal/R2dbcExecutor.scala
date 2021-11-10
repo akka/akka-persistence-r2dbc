@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.internal
 
 import java.util.function.BiConsumer
-import java.util.function.Supplier
 
 import scala.collection.immutable
 import scala.collection.mutable
@@ -20,6 +19,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalStableApi
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Result
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.reactivestreams.Publisher
@@ -27,6 +27,7 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
 
 /**
  * INTERNAL API
@@ -81,15 +82,23 @@ import reactor.core.publisher.Flux
     }
   }
 
-  def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
+  def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
     stmt.execute().asFuture().flatMap { result =>
       result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
     }
+
+  def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
+    val consumer: BiConsumer[Int, Integer] = (acc, elem) => acc + elem.intValue()
+    Flux
+      .from[Result](stmt.execute())
+      .concatMap(_.getRowsUpdated)
+      .collect(() => 0, consumer)
+      .asFuture()
   }
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
-    // connection not intended for concurrent calls, make sure statments are executed one at a time
+    // connection not intended for concurrent calls, make sure statements are executed one at a time
     statements.foldLeft(Future.successful(IndexedSeq.empty[Int])) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
@@ -113,8 +122,7 @@ import reactor.core.publisher.Flux
         .from[A](result.map((row, _) => mapRow(row)))
         .collect(() => IndexedSeq.newBuilder[A], consumer)
         .map(_.result())
-        .toFuture
-        .asScala
+        .asFuture()
     }
   }
 }
@@ -199,50 +207,19 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     }
   }
 
+  def updateInBatch(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
+    withConnection(logPrefix) { connection =>
+      updateBatchInTx(statementFactory(connection))
+    }
+
   /**
    * Several update statements in the same transaction.
    */
   def update(logPrefix: String)(
-      statements: Connection => immutable.IndexedSeq[Statement]): Future[immutable.IndexedSeq[Int]] = {
-    val startTime = System.nanoTime()
-
-    getConnection().flatMap { connection =>
-      connection.beginTransaction().asFutureDone().flatMap { _ =>
-        val rowsUpdated =
-          try {
-            val boundStmts = statements(connection)
-            updateInTx(boundStmts)
-          } catch {
-            case NonFatal(exc) =>
-              // thrown from statement function
-              Future.failed(exc)
-          }
-
-        rowsUpdated.failed.foreach { exc =>
-          log.debug("{} - Update failed: {}", logPrefix, exc)
-          // ok to rollback async like this, or should it be before completing the returned Future?
-          rollbackAndClose(connection)
-        }
-
-        rowsUpdated.flatMap { r =>
-          commitAndClose(connection).map { _ =>
-            if (log.isDebugEnabled()) {
-              rowsUpdated.foreach { r =>
-                log.debug(
-                  "{} - Updated [{}] from [{}] statements in [{}] µs",
-                  logPrefix,
-                  r.sum,
-                  r.size,
-                  (System.nanoTime() - startTime) / 1000)
-              }
-            }
-
-            r
-          }
-        }
-      }
+      statementsFactory: Connection => immutable.IndexedSeq[Statement]): Future[immutable.IndexedSeq[Int]] =
+    withConnection(logPrefix) { connection =>
+      updateInTx(statementsFactory(connection))
     }
-  }
 
   def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
     select(logPrefix)(statement, mapRow).map(_.headOption)
