@@ -170,12 +170,13 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         if (useTimestampFromDb) insertEventWithTransactionTimestampSql
         else insertEventWithParameterTimestampSql
 
-      if (events.size == 1)
+      val totalEvents = events.size
+      if (totalEvents == 1)
         r2dbcExecutor.updateOne(s"insert [$persistenceId]") { connection =>
           bind(connection.createStatement(insertSql), events.head)
         }
       else
-        r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId] ") { connection =>
+        r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events") { connection =>
           events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
             bind(stmt, write).add()
           }
