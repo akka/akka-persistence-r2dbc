@@ -34,6 +34,7 @@ import akka.projection.internal.OffsetSerialization.MultipleOffsets
 import akka.projection.internal.OffsetSerialization.SingleOffset
 import akka.projection.r2dbc.R2dbcProjectionSettings
 import io.r2dbc.spi.Connection
+import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.LoggerFactory
 
@@ -151,6 +152,7 @@ private[projection] class R2dbcOffsetStore(
 
   private val timestampOffsetTable = settings.timestampOffsetTableWithSchema
   private val offsetTable = settings.offsetTableWithSchema
+  private val managementTable = settings.managementTableWithSchema
 
   // FIXME define this in akka.persistence.Persistence (not per plugin)
   private val maxNumberOfSlices =
@@ -194,6 +196,44 @@ private[projection] class R2dbcOffsetStore(
 
   private val clearOffsetSql: String =
     s"""DELETE FROM $offsetTable WHERE projection_name = $$1 AND projection_key = $$2"""
+
+  object ReadManagementStateQuery {
+
+    val projectionName: Int = 0
+    val projectionKey: Int = 1
+
+    private def bindParam(i: Int) = "$" + (i + 1)
+
+    val statement: String =
+      s"SELECT paused FROM $managementTable WHERE " +
+      s"projection_name = ${bindParam(projectionName)} and " +
+      s"projection_key = ${bindParam(projectionKey)} "
+
+    /* Map rows retrieved by this query */
+    def mapRow(row: Row) =
+      ManagementState(row.get("paused", classOf[java.lang.Boolean]))
+  }
+
+  object UpdateManagementStateQuery {
+
+    val projectionName: Int = 0
+    val projectionKey: Int = 1
+    val pausedParam: Int = 2
+    val lastUpdate: Int = 3
+
+    private def bindParam(i: Int) = "$" + (i + 1)
+
+    val statement: String = {
+      s"INSERT INTO $managementTable " +
+      "(projection_name, projection_key, paused, last_updated)  " +
+      "VALUES " +
+      s"(${bindParam(projectionName)},${bindParam(projectionKey)}, ${bindParam(pausedParam)}, ${bindParam(lastUpdate)}) " +
+      "ON CONFLICT (projection_name, projection_key)" +
+      "DO UPDATE SET " +
+      "paused = excluded.paused, " +
+      "last_updated = excluded.last_updated"
+    }
+  }
 
   // The OffsetStore instance is used by a single projectionId and there shouldn't be any concurrent
   // calls to methods that access the `state`. To detect any violations of that concurrency assumption
@@ -685,11 +725,36 @@ private[projection] class R2dbcOffsetStore(
   }
 
   def readManagementState(): Future[Option[ManagementState]] = {
-    Future.successful(None) // FIXME not implemented yet
+    import ReadManagementStateQuery._
+
+    def createStatement(connection: Connection) =
+      connection
+        .createStatement(statement)
+        .bind(projectionName, projectionId.name)
+        .bind(projectionKey, projectionId.key)
+
+    r2dbcExecutor
+      .selectOne("read management state")(conn => createStatement(conn), row => mapRow(row))
   }
 
   def savePaused(paused: Boolean): Future[Done] = {
-    Future.successful(Done) // FIXME not implemented yet
+    import UpdateManagementStateQuery._
+
+    r2dbcExecutor
+      .updateOne("update management state") { conn =>
+        conn
+          .createStatement(statement)
+          .bind(projectionName, projectionId.name)
+          .bind(projectionKey, projectionId.key)
+          .bind(pausedParam, paused)
+          .bind(lastUpdate, Instant.now(clock).toEpochMilli)
+      }
+      .flatMap {
+        case i if i == 1 => Future.successful(Done)
+        case n =>
+          Future.failed(
+            new RuntimeException(s"Failed to update management table for ${projectionId.name} and ${projectionId.key}"))
+      }
   }
 
   private def createRecordWithOffset[Envelope](envelope: Envelope): Option[RecordWithOffset] = {
