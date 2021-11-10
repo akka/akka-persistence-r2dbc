@@ -27,6 +27,7 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
 
 /**
  * INTERNAL API
@@ -57,38 +58,6 @@ import reactor.core.publisher.Flux
       promise.future
     }
 
-    def asFutureSeq(): Future[immutable.IndexedSeq[T]] =
-      asFutureSeq(identity)
-
-    def asFutureSeq[U](mapFunc: T => U): Future[immutable.IndexedSeq[U]] = {
-      val promise = Promise[immutable.IndexedSeq[U]]
-      val builder = IndexedSeq.newBuilder[U]
-
-      publisher.subscribe(new Subscriber[T] {
-
-        var subscription: Subscription = _
-
-        override def onSubscribe(s: Subscription): Unit = {
-          s.request(1)
-          subscription = s
-        }
-
-        override def onNext(value: T): Unit = {
-          builder += mapFunc(value)
-          subscription.request(1)
-        }
-
-        override def onError(t: Throwable): Unit =
-          promise.tryFailure(t)
-
-        override def onComplete(): Unit =
-          promise.trySuccess(builder.result())
-
-      })
-
-      promise.future
-    }
-
     def asFutureDone(): Future[Done] = {
       val promise = Promise[Done]()
       publisher.subscribe(new Subscriber[Any] {
@@ -113,6 +82,18 @@ import reactor.core.publisher.Flux
     }
   }
 
+  final implicit class FluxOps[T](val flux: Flux[T]) extends AnyVal {
+
+    def toIndexedSeq: Mono[immutable.IndexedSeq[T]] = toIndexedSeq(identity)
+
+    def toIndexedSeq[U](map: T => U): Mono[immutable.IndexedSeq[U]] = {
+      val consumer: BiConsumer[mutable.Builder[U, IndexedSeq[U]], T] = (builder, elem) => builder += map(elem)
+      flux
+        .collect(() => IndexedSeq.newBuilder[U], consumer)
+        .map(_.result())
+    }
+  }
+
   def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
     stmt.execute().asFuture().flatMap { result =>
       result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
@@ -122,8 +103,9 @@ import reactor.core.publisher.Flux
     Flux
       .from[Result](stmt.execute())
       .concatMap(_.getRowsUpdated)
-      .asFutureSeq(_.intValue())
+      .toIndexedSeq(_.intValue())
       .map(_.sum)
+      .asFuture()
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
@@ -144,17 +126,13 @@ import reactor.core.publisher.Flux
 
   def selectInTx[A](statement: Statement, mapRow: Row => A)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] = {
+      system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] =
     statement.execute().asFuture().flatMap { result =>
-      val consumer: BiConsumer[mutable.Builder[A, IndexedSeq[A]], A] = (builder, elem) => builder += elem
       Flux
         .from[A](result.map((row, _) => mapRow(row)))
-        .collect(() => IndexedSeq.newBuilder[A], consumer)
-        .map(_.result())
-        .toFuture
-        .asScala
+        .toIndexedSeq
+        .asFuture()
     }
-  }
 }
 
 class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(implicit
