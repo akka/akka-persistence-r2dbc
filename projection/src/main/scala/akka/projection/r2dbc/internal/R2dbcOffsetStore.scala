@@ -412,17 +412,18 @@ private[projection] class R2dbcOffsetStore(
         } else
           newState
 
-      val unboundedStatement = conn.createStatement(upsertTimestampOffsetSql)
+      val statement = conn.createStatement(upsertTimestampOffsetSql)
+
       val offsetUpserts =
         if (filteredRecords.size == 1) {
-          val boundedStatement = bindRecord(unboundedStatement, filteredRecords.head)
-          R2dbcExecutor.updateOneInTx(boundedStatement)
+          val boundStatement = bindRecord(statement, filteredRecords.head)
+          R2dbcExecutor.updateOneInTx(boundStatement)
         } else {
-          val boundedStatement =
-            filteredRecords.foldLeft(unboundedStatement) { (stmt, rec) =>
+          val boundStatement =
+            filteredRecords.foldLeft(statement) { (stmt, rec) =>
               bindRecord(stmt, rec).add()
             }
-          R2dbcExecutor.updateBatchInTx(boundedStatement)
+          R2dbcExecutor.updateBatchInTx(boundStatement)
         }
 
       offsetUpserts.map { _ =>
