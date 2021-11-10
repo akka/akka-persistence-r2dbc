@@ -27,7 +27,7 @@ private[r2dbc] object SnapshotDao {
 
   final case class SerializedSnapshotRow(
       persistenceId: String,
-      sequenceNumber: Long,
+      seqNr: Long,
       writeTimestamp: Long,
       snapshot: Array[Byte],
       serializerId: Int,
@@ -39,7 +39,7 @@ private[r2dbc] object SnapshotDao {
   private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
     SerializedSnapshotRow(
       row.get("persistence_id", classOf[String]),
-      row.get("sequence_number", classOf[java.lang.Long]),
+      row.get("seq_nr", classOf[java.lang.Long]),
       row.get("write_timestamp", classOf[java.lang.Long]),
       row.get("snapshot", classOf[Array[Byte]]),
       row.get("ser_id", classOf[java.lang.Integer]),
@@ -71,30 +71,19 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
 
   private val upsertSql =
-    s"""INSERT INTO $snapshotTable (
-          slice,
-          entity_type,
-          persistence_id,
-          sequence_number,
-          write_timestamp,
-          snapshot,
-          ser_id,
-          ser_manifest,
-          meta_payload,
-          meta_ser_id,
-          meta_ser_manifest
-        ) VALUES ($$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8, $$9, $$10, $$11)
-        ON CONFLICT (slice, entity_type, persistence_id)
-        DO UPDATE SET
-          sequence_number = excluded.sequence_number,
-          write_timestamp = excluded.write_timestamp,
-          snapshot = excluded.snapshot,
-          ser_id = excluded.ser_id,
-          ser_manifest = excluded.ser_manifest,
-          meta_payload = excluded.meta_payload,
-          meta_ser_id = excluded.meta_ser_id,
-          meta_ser_manifest = excluded.meta_ser_manifest
-        """
+    s"INSERT INTO $snapshotTable " +
+    "(slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)" +
+    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) " +
+    "ON CONFLICT (slice, entity_type, persistence_id) " +
+    "DO UPDATE SET " +
+    "seq_nr = excluded.seq_nr, " +
+    "write_timestamp = excluded.write_timestamp, " +
+    "snapshot = excluded.snapshot, " +
+    "ser_id = excluded.ser_id, " +
+    "ser_manifest = excluded.ser_manifest, " +
+    "meta_payload = excluded.meta_payload, " +
+    "meta_ser_id = excluded.meta_ser_id, " +
+    "meta_ser_manifest = excluded.meta_ser_manifest"
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
@@ -105,11 +94,11 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
       s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
       (if (criteria.maxSequenceNr != Long.MaxValue) {
          paramIdx += 1
-         s" AND sequence_number <= $$$paramIdx"
+         s" AND seq_nr <= $$$paramIdx"
        } else "") +
       (if (criteria.minSequenceNr > 0L) {
          paramIdx += 1
-         s" AND sequence_number >= $$$paramIdx"
+         s" AND seq_nr >= $$$paramIdx"
        } else "") +
       (if (criteria.maxTimestamp != Long.MaxValue) {
          paramIdx += 1
@@ -119,7 +108,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
          paramIdx += 1
          s" AND write_timestamp >= $$$paramIdx"
        } else "") +
-      " ORDER BY sequence_number DESC LIMIT 1"
+      " ORDER BY seq_nr DESC LIMIT 1"
 
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
@@ -159,8 +148,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     val slice = SliceUtils.sliceForPersistenceId(serializedRow.persistenceId, settings.maxNumberOfSlices)
 
     r2dbcExecutor
-      .updateOne(
-        s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.sequenceNumber}]") {
+      .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
         connection =>
           val statement =
             connection
@@ -168,7 +156,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
               .bind(0, slice)
               .bind(1, entityType)
               .bind(2, serializedRow.persistenceId)
-              .bind(3, serializedRow.sequenceNumber)
+              .bind(3, serializedRow.seqNr)
               .bind(4, serializedRow.writeTimestamp)
               .bind(5, serializedRow.snapshot)
               .bind(6, serializedRow.serializerId)
@@ -201,11 +189,11 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
       s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
       (if (criteria.maxSequenceNr != Long.MaxValue) {
          paramIdx += 1
-         s" AND sequence_number <= $$$paramIdx"
+         s" AND seq_nr <= $$$paramIdx"
        } else "") +
       (if (criteria.minSequenceNr > 0L) {
          paramIdx += 1
-         s" AND sequence_number >= $$$paramIdx"
+         s" AND seq_nr >= $$$paramIdx"
        } else "") +
       (if (criteria.maxTimestamp != Long.MaxValue) {
          paramIdx += 1

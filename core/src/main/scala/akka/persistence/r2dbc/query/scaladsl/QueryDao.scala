@@ -59,26 +59,26 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"FROM $journalTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
     s"AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
     s"AND deleted = false " +
-    s"ORDER BY db_timestamp, sequence_number " +
+    s"ORDER BY db_timestamp, seq_nr " +
     s"LIMIT ${nextParam()}"
   }
 
   private val selectTimestampOfEventSql =
     s"SELECT db_timestamp from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number = $4 AND deleted = false"
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
 
   private val selectEventsSql =
-    s"SELECT slice, entity_type, persistence_id, sequence_number, db_timestamp, statement_timestamp() AS read_db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4 AND sequence_number <= $5 " +
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr >= $4 AND seq_nr <= $5 " +
     "AND deleted = false " +
-    "ORDER BY sequence_number " +
+    "ORDER BY seq_nr " +
     "LIMIT $6"
 
   private val allPersistenceIdsSql =
@@ -127,7 +127,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       row =>
         SerializedJournalRow(
           persistenceId = row.get("persistence_id", classOf[String]),
-          sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
+          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = row.get("event_payload", classOf[Array[Byte]]),
@@ -142,11 +142,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def timestampOfEvent(
-      entityType: String,
-      persistenceId: String,
-      slice: Int,
-      sequenceNumber: Long): Future[Option[Instant]] = {
+  def timestampOfEvent(entityType: String, persistenceId: String, slice: Int, seqNr: Long): Future[Option[Instant]] = {
     r2dbcExecutor.selectOne("select timestampOfEvent")(
       connection =>
         connection
@@ -154,7 +150,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(0, slice)
           .bind(1, entityType)
           .bind(2, persistenceId)
-          .bind(3, sequenceNumber),
+          .bind(3, seqNr),
       row => row.get("db_timestamp", classOf[Instant]))
   }
 
@@ -178,7 +174,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       row =>
         SerializedJournalRow(
           persistenceId = row.get("persistence_id", classOf[String]),
-          sequenceNr = row.get("sequence_number", classOf[java.lang.Long]),
+          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = row.get("event_payload", classOf[Array[Byte]]),

@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory
       serId: Int,
       serManifest: String)
       extends BySliceQuery.SerializedRow {
-    override def sequenceNr: Long = revision
+    override def seqNr: Long = revision
   }
 }
 

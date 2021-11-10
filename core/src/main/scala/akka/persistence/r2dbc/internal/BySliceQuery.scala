@@ -55,7 +55,7 @@ import org.slf4j.Logger
 
   trait SerializedRow {
     def persistenceId: String
-    def sequenceNr: Long
+    def seqNr: Long
     def dbTimestamp: Instant
     def readDbTimestamp: Instant
   }
@@ -290,15 +290,15 @@ import org.slf4j.Logger
       row => {
         if (row.dbTimestamp == currentTimestamp) {
           // has this already been seen?
-          if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.sequenceNr)) {
+          if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.seqNr)) {
             log.debug(
               "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
               row.persistenceId,
-              row.sequenceNr,
+              row.seqNr,
               currentSequenceNrs)
             Nil
           } else {
-            currentSequenceNrs = currentSequenceNrs.updated(row.persistenceId, row.sequenceNr)
+            currentSequenceNrs = currentSequenceNrs.updated(row.persistenceId, row.seqNr)
             val offset =
               TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
             createEnvelope(offset, row) :: Nil
@@ -306,7 +306,7 @@ import org.slf4j.Logger
         } else {
           // ne timestamp, reset currentSequenceNrs
           currentTimestamp = row.dbTimestamp
-          currentSequenceNrs = Map(row.persistenceId -> row.sequenceNr)
+          currentSequenceNrs = Map(row.persistenceId -> row.seqNr)
           val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, currentSequenceNrs)
           createEnvelope(offset, row) :: Nil
         }

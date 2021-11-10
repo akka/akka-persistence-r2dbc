@@ -31,7 +31,7 @@ private[r2dbc] object JournalDao {
 
   final case class SerializedJournalRow(
       persistenceId: String,
-      sequenceNr: Long,
+      seqNr: Long,
       dbTimestamp: Instant,
       readDbTimestamp: Instant,
       payload: Array[Byte],
@@ -77,7 +77,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
-      "(slice, entity_type, persistence_id, sequence_number, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
+      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, "
 
     // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
@@ -85,7 +85,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
     def insertSubSelect(p: Int) =
       s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable " +
-      s"WHERE slice = $$$p AND entity_type = $$${p + 1} AND persistence_id = $$${p + 2} AND sequence_number = $$${p + 3})"
+      s"WHERE slice = $$$p AND entity_type = $$${p + 1} AND persistence_id = $$${p + 2} AND seq_nr = $$${p + 3})"
 
     val insertEventWithParameterTimestampSql =
       baseSql + "GREATEST($13, " + insertSubSelect(p = 14) + "))"
@@ -96,13 +96,13 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
   }
 
-  private val selectHighestSequenceNrSql = s"SELECT MAX(sequence_number) from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number >= $4"
+  private val selectHighestSequenceNrSql = s"SELECT MAX(seq_nr) from $journalTable " +
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr >= $4"
 
   private val deleteEventsSql = s"DELETE FROM $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND sequence_number <= $4"
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr <= $4"
   private val insertDeleteMarkerSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type, persistence_id, sequence_number, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
+    "(slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
     "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
 
   /**
@@ -115,7 +115,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     val persistenceId = events.head.persistenceId
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
-    val previousSeqNr = events.head.sequenceNr - 1
+    val previousSeqNr = events.head.seqNr - 1
 
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
     val useTimestampFromDb = events.head.dbTimestamp == Instant.EPOCH
@@ -125,7 +125,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(0, slice)
         .bind(1, entityType)
         .bind(2, write.persistenceId)
-        .bind(3, write.sequenceNr)
+        .bind(3, write.seqNr)
         .bind(4, write.writerUuid)
         .bind(5, "") // FIXME event adapter
         .bind(6, write.serId)

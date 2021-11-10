@@ -66,7 +66,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope = (offset, row) => {
       val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-      val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.dbTimestamp.toEpochMilli)
+      val envelope = EventEnvelope(offset, row.persistenceId, row.seqNr, payload, row.dbTimestamp.toEpochMilli)
       row.metadata match {
         case None => envelope
         case Some(meta) =>
@@ -132,7 +132,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
     def updateState(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
-      state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.sequenceNr)
+      state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
 
     def nextQuery(
         state: ByPersistenceIdState,
@@ -181,8 +181,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       entityType: String,
       persistenceId: String,
       slice: Int,
-      sequenceNumber: Long): Future[Option[Instant]] =
-    queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNumber)
+      sequenceNr: Long): Future[Option[Instant]] =
+    queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNr)
 
   override def eventsByPersistenceId(
       persistenceId: String,
@@ -192,7 +192,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     log.debug("Starting eventsByPersistenceId query for persistenceId [{}], from [{}].", persistenceId, fromSequenceNr)
 
     def nextOffset(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
-      state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.sequenceNr)
+      state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
 
     def delayNextQuery(state: ByPersistenceIdState): Option[FiniteDuration] = {
       val delay = ContinuousQuery.adjustNextDelay(
@@ -246,8 +246,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   def deserializeRow(row: SerializedJournalRow): EventEnvelope = {
     val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.sequenceNr))
-    val envelope = EventEnvelope(offset, row.persistenceId, row.sequenceNr, payload, row.dbTimestamp.toEpochMilli)
+    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
+    val envelope = EventEnvelope(offset, row.persistenceId, row.seqNr, payload, row.dbTimestamp.toEpochMilli)
     row.metadata match {
       case None => envelope
       case Some(meta) =>

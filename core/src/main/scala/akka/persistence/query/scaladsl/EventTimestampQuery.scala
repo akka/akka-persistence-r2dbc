@@ -13,6 +13,6 @@ import scala.concurrent.Future
  */
 trait EventTimestampQuery {
 
-  def timestampOf(entityType: String, persistenceId: String, slice: Int, sequenceNumber: Long): Future[Option[Instant]]
+  def timestampOf(entityType: String, persistenceId: String, slice: Int, sequenceNr: Long): Future[Option[Instant]]
 
 }
