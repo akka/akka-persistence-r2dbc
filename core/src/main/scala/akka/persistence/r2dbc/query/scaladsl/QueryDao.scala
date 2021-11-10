@@ -19,7 +19,6 @@ import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
@@ -46,20 +45,33 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
 
-  private def eventsBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
+  private def eventsBySlicesRangeSql(
+      maxDbTimestampParam: Boolean,
+      behindCurrentTime: FiniteDuration,
+      backtracking: Boolean): String = {
     var p = 0
+
     def nextParam(): String = {
       p += 1
       "$" + p
     }
+
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < ${nextParam()}" else ""
+
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload " +
+    val selectColumns = {
+      if (backtracking)
+        "SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp "
+      else
+        "SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
+    }
+
+    selectColumns +
     s"FROM $journalTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
@@ -70,7 +82,12 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   }
 
   private val selectTimestampOfEventSql =
-    s"SELECT db_timestamp from $journalTable " +
+    s"SELECT db_timestamp FROM $journalTable " +
+    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
+
+  private val selectOneEventSql =
+    s"SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"FROM $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
 
   private val selectEventsSql =
@@ -106,11 +123,13 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       maxSlice: Int,
       fromTimestamp: Instant,
       untilTimestamp: Option[Instant],
-      behindCurrentTime: FiniteDuration): Source[SerializedJournalRow, NotUsed] = {
+      behindCurrentTime: FiniteDuration,
+      backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
-          .createStatement(eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
+          .createStatement(
+            eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime, backtracking))
           .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
@@ -125,16 +144,28 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         stmt
       },
       row =>
-        SerializedJournalRow(
-          persistenceId = row.get("persistence_id", classOf[String]),
-          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
-          dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-          readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = row.get("event_payload", classOf[Array[Byte]]),
-          serId = row.get("event_ser_id", classOf[java.lang.Integer]),
-          serManifest = row.get("event_ser_manifest", classOf[String]),
-          writerUuid = row.get("writer", classOf[String]),
-          metadata = readMetadata(row)))
+        if (backtracking)
+          SerializedJournalRow(
+            persistenceId = row.get("persistence_id", classOf[String]),
+            seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            payload = null, // lazy loaded for backtracking
+            serId = 0,
+            serManifest = "",
+            writerUuid = "", // not need in this query
+            metadata = None)
+        else
+          SerializedJournalRow(
+            persistenceId = row.get("persistence_id", classOf[String]),
+            seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            payload = row.get("event_payload", classOf[Array[Byte]]),
+            serId = row.get("event_ser_id", classOf[java.lang.Integer]),
+            serManifest = row.get("event_ser_manifest", classOf[String]),
+            writerUuid = "", // not need in this query
+            metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] events from slices [{} - {}]", rows.size, minSlice, maxSlice))
@@ -153,6 +184,31 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(3, seqNr),
       row => row.get("db_timestamp", classOf[Instant]))
   }
+
+  def loadEvent(
+      entityType: String,
+      persistenceId: String,
+      slice: Int,
+      seqNr: Long): Future[Option[SerializedJournalRow]] =
+    r2dbcExecutor.selectOne("select one event")(
+      connection =>
+        connection
+          .createStatement(selectOneEventSql)
+          .bind(0, slice)
+          .bind(1, entityType)
+          .bind(2, persistenceId)
+          .bind(3, seqNr),
+      row =>
+        SerializedJournalRow(
+          persistenceId = row.get("persistence_id", classOf[String]),
+          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+          dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+          readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+          payload = row.get("event_payload", classOf[Array[Byte]]),
+          serId = row.get("event_ser_id", classOf[java.lang.Integer]),
+          serManifest = row.get("event_ser_manifest", classOf[String]),
+          writerUuid = "", // not need in this query
+          metadata = readMetadata(row)))
 
   def eventsByPersistenceId(
       persistenceId: String,

@@ -69,7 +69,8 @@ import org.slf4j.Logger
         maxSlice: Int,
         fromTimestamp: Instant,
         untilTimestamp: Option[Instant],
-        behindCurrentTime: FiniteDuration): Source[SerializedRow, NotUsed]
+        behindCurrentTime: FiniteDuration,
+        backtracking: Boolean): Source[SerializedRow, NotUsed]
   }
 }
 
@@ -125,7 +126,8 @@ import org.slf4j.Logger
               maxSlice,
               state.latest.timestamp,
               untilTimestamp = Some(toDbTimestamp),
-              behindCurrentTime = Duration.Zero)
+              behindCurrentTime = Duration.Zero,
+              backtracking = false)
             .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
@@ -271,7 +273,8 @@ import org.slf4j.Logger
             maxSlice,
             newState.nextQueryFromTimestamp,
             newState.nextQueryUntilTimestamp,
-            behindCurrentTime)
+            behindCurrentTime,
+            backtracking = newState.backtracking)
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 

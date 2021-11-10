@@ -88,7 +88,10 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val allPersistenceIdsAfterSql =
     s"SELECT persistence_id from $stateTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
 
-  private def stateBySlicesRangeSql(maxDbTimestampParam: Boolean, behindCurrentTime: FiniteDuration): String = {
+  private def stateBySlicesRangeSql(
+      maxDbTimestampParam: Boolean,
+      behindCurrentTime: FiniteDuration,
+      backtracking: Boolean): String = {
     var p = 0
 
     def nextParam(): String = {
@@ -104,7 +107,13 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
-    s"SELECT slice, entity_type, persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload " +
+    val selectColumns =
+      if (backtracking)
+        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp "
+      else
+        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
+
+    selectColumns +
     s"FROM $stateTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
@@ -229,11 +238,13 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       maxSlice: Int,
       fromTimestamp: Instant,
       untilTimestamp: Option[Instant],
-      behindCurrentTime: FiniteDuration): Source[SerializedStateRow, NotUsed] = {
+      behindCurrentTime: FiniteDuration,
+      backtracking: Boolean): Source[SerializedStateRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
-          .createStatement(stateBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime))
+          .createStatement(
+            stateBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime, backtracking))
           .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
@@ -248,14 +259,24 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         stmt
       },
       row =>
-        SerializedStateRow(
-          persistenceId = row.get("persistence_id", classOf[String]),
-          revision = row.get("revision", classOf[java.lang.Long]),
-          dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-          readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = row.get("state_payload", classOf[Array[Byte]]),
-          serId = row.get("state_ser_id", classOf[java.lang.Integer]),
-          serManifest = row.get("state_ser_manifest", classOf[String])))
+        if (backtracking)
+          SerializedStateRow(
+            persistenceId = row.get("persistence_id", classOf[String]),
+            revision = row.get("revision", classOf[java.lang.Long]),
+            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            payload = null, // lazy loaded for backtracking
+            serId = 0,
+            serManifest = "")
+        else
+          SerializedStateRow(
+            persistenceId = row.get("persistence_id", classOf[String]),
+            revision = row.get("revision", classOf[java.lang.Long]),
+            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            payload = row.get("state_payload", classOf[Array[Byte]]),
+            serId = row.get("state_ser_id", classOf[java.lang.Integer]),
+            serManifest = row.get("state_ser_manifest", classOf[String])))
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))

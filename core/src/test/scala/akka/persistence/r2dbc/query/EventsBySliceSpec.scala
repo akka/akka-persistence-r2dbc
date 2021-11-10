@@ -16,6 +16,7 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.scaladsl.EventTimestampQuery
+import akka.persistence.query.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
@@ -203,9 +204,21 @@ class EventsBySliceSpec
         }
 
         val timestampQuery = query.asInstanceOf[EventTimestampQuery]
-        timestampQuery.timestampOf(entityType, persistenceId, slice, 2L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(entityType, persistenceId, slice, 1L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(entityType, persistenceId, slice, 4L).futureValue.isDefined shouldBe false
+        timestampQuery.timestampOf(persistenceId, 2L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(persistenceId, 1L).futureValue.isDefined shouldBe true
+        timestampQuery.timestampOf(persistenceId, 4L).futureValue.isDefined shouldBe false
+      }
+
+      "support LoadEventQuery" in new Setup {
+        for (i <- 1 to 3) {
+          persister ! PersistWithAck(s"e-$i", probe.ref)
+          probe.expectMessage(10.seconds, Done)
+        }
+
+        val loadEventQuery = query.asInstanceOf[LoadEventQuery]
+        loadEventQuery.loadEnvelope(persistenceId, 2L).futureValue.get.event shouldBe "e-2"
+        loadEventQuery.loadEnvelope(persistenceId, 1L).futureValue.get.event shouldBe "e-1"
+        loadEventQuery.loadEnvelope(persistenceId, 4L).futureValue.isDefined shouldBe false
       }
 
     }

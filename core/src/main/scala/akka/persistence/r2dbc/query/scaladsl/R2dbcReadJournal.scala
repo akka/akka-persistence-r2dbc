@@ -43,6 +43,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
     with EventTimestampQuery
+    with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
     with CurrentPersistenceIdsQuery {
@@ -99,6 +100,34 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
 
+  /**
+   * Query events for given slices. A slice is deterministically defined based on the persistence id. The purpose is to
+   * evenly distribute all persistence ids over the slices.
+   *
+   * The consumer can keep track of its current position in the event stream by storing the `offset` and restart the
+   * query from a given `offset` after a crash/restart.
+   *
+   * The supported offset is [[TimestampOffset]] and [[Offset.noOffset]].
+   *
+   * The timestamp is based on the database `transaction_timestamp()` when the event was stored.
+   * `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a
+   * "later" event may be visible first and when retrieving events after the previously seen timestamp may miss some
+   * events. In distributed SQL databases there can also be clock skews for the database timestamps. For that reason it
+   * will perform additional backtracking queries to catch missed events. Events from backtracking will typically be
+   * duplicates of previously emitted events. It's the responsibility of the consumer to filter duplicates and make sure
+   * that events are processed in exact sequence number order for each persistence id. Such deduplication is provided by
+   * the R2DBC Projection.
+   *
+   * Events emitted by the backtracking don't contain the event payload (`EventEnvelope.event` is null) and the consumer
+   * can load the full `EventEnvelope` with [[R2dbcReadJournal.loadEnvelope]].
+   *
+   * The events will be emitted in the timestamp order with the caveat of duplicate events as described above. Events
+   * with the same timestamp are ordered by sequence number.
+   *
+   * The stream is not completed when it reaches the end of the currently stored events, but it continues to push new
+   * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
+   * currently stored events is provided by [[R2dbcReadJournal.currentEventsBySlices]].
+   */
   override def eventsBySlices(
       entityType: String,
       minSlice: Int,
@@ -177,12 +206,21 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       nextQuery = state => nextQuery(state, toSequenceNr))
   }
 
-  override def timestampOf(
-      entityType: String,
-      persistenceId: String,
-      slice: Int,
-      sequenceNr: Long): Future[Option[Instant]] =
+  // EventTimestampQuery
+  override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
     queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNr)
+  }
+
+  //LoadEventQuery
+  override def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope]] = {
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
+    queryDao
+      .loadEvent(entityType, persistenceId, slice, sequenceNr)
+      .map(_.map(deserializeRow))
+  }
 
   override def eventsByPersistenceId(
       persistenceId: String,
@@ -245,7 +283,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   def deserializeRow(row: SerializedJournalRow): EventEnvelope = {
-    val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+    val payload = {
+      if (row.payload eq null) null // lazy loaded for backtracking
+      else serialization.deserialize(row.payload, row.serId, row.serManifest).get
+    }
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val envelope = EventEnvelope(offset, row.persistenceId, row.seqNr, payload, row.dbTimestamp.toEpochMilli)
     row.metadata match {

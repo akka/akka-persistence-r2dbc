@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS event_journal(
   PRIMARY KEY((slice, entity_type) HASH, persistence_id, seq_nr ASC)
 );
 
-CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type ASC, slice ASC, db_timestamp ASC);
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type ASC, slice ASC, db_timestamp ASC)
+  INCLUDE (seq_nr, deleted);
 
 CREATE TABLE IF NOT EXISTS snapshot(
   slice INT NOT NULL,
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS durable_state (
   PRIMARY KEY((slice, entity_type) HASH, persistence_id, revision ASC)
 );
 
-CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC);
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC)
+  INCLUDE (revision);
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,
