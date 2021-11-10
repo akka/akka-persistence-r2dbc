@@ -215,56 +215,19 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     }
   }
 
-  def updateInBatch(logPrefix: String)(statement: Connection => Statement): Future[Int] =
+  def updateInBatch(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
     withConnection(logPrefix) { connection =>
-      val boundStmt = statement(connection)
-      updateBatchInTx(boundStmt)
+      updateBatchInTx(statementFactory(connection))
     }
 
   /**
    * Several update statements in the same transaction.
    */
   def update(logPrefix: String)(
-      statements: Connection => immutable.IndexedSeq[Statement]): Future[immutable.IndexedSeq[Int]] = {
-    val startTime = System.nanoTime()
-
-    getConnection().flatMap { connection =>
-      connection.beginTransaction().asFutureDone().flatMap { _ =>
-        val rowsUpdated =
-          try {
-            val boundStmts = statements(connection)
-            updateInTx(boundStmts)
-          } catch {
-            case NonFatal(exc) =>
-              // thrown from statement function
-              Future.failed(exc)
-          }
-
-        rowsUpdated.failed.foreach { exc =>
-          log.debug("{} - Update failed: {}", logPrefix, exc)
-          // ok to rollback async like this, or should it be before completing the returned Future?
-          rollbackAndClose(connection)
-        }
-
-        rowsUpdated.flatMap { r =>
-          commitAndClose(connection).map { _ =>
-            if (log.isDebugEnabled()) {
-              rowsUpdated.foreach { r =>
-                log.debug(
-                  "{} - Updated [{}] from [{}] statements in [{}] µs",
-                  logPrefix,
-                  r.sum,
-                  r.size,
-                  (System.nanoTime() - startTime) / 1000)
-              }
-            }
-
-            r
-          }
-        }
-      }
+      statementsFactory: Connection => immutable.IndexedSeq[Statement]): Future[immutable.IndexedSeq[Int]] =
+    withConnection(logPrefix) { connection =>
+      updateInTx(statementsFactory(connection))
     }
-  }
 
   def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
     select(logPrefix)(statement, mapRow).map(_.headOption)
