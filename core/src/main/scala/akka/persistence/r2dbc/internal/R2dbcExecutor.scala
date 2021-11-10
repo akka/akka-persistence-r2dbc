@@ -82,30 +82,19 @@ import reactor.core.publisher.Mono
     }
   }
 
-  final implicit class FluxOps[T](val flux: Flux[T]) extends AnyVal {
-
-    def toIndexedSeq: Mono[immutable.IndexedSeq[T]] = toIndexedSeq(identity)
-
-    def toIndexedSeq[U](map: T => U): Mono[immutable.IndexedSeq[U]] = {
-      val consumer: BiConsumer[mutable.Builder[U, IndexedSeq[U]], T] = (builder, elem) => builder += map(elem)
-      flux
-        .collect(() => IndexedSeq.newBuilder[U], consumer)
-        .map(_.result())
-    }
-  }
-
   def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
     stmt.execute().asFuture().flatMap { result =>
       result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
     }
 
-  def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
+  def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
+    val consumer: BiConsumer[Int, Integer] = (acc, elem) => acc + elem.intValue()
     Flux
       .from[Result](stmt.execute())
       .concatMap(_.getRowsUpdated)
-      .toIndexedSeq(_.intValue())
-      .map(_.sum)
+      .collect(() => 0, consumer)
       .asFuture()
+  }
 
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
@@ -126,13 +115,16 @@ import reactor.core.publisher.Mono
 
   def selectInTx[A](statement: Statement, mapRow: Row => A)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] =
+      system: ActorSystem[_]): Future[immutable.IndexedSeq[A]] = {
     statement.execute().asFuture().flatMap { result =>
+      val consumer: BiConsumer[mutable.Builder[A, IndexedSeq[A]], A] = (builder, elem) => builder += elem
       Flux
         .from[A](result.map((row, _) => mapRow(row)))
-        .toIndexedSeq
+        .collect(() => IndexedSeq.newBuilder[A], consumer)
+        .map(_.result())
         .asFuture()
     }
+  }
 }
 
 class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(implicit
