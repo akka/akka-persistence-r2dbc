@@ -11,7 +11,6 @@ import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
-import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
 
 import akka.Done
@@ -138,74 +137,21 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
   /**
    * Run DDL statement with auto commit.
    */
-  def executeDdl(logPrefix: String)(statement: Connection => Statement): Future[Done] = {
-    val startTime = System.nanoTime()
-
-    getConnection().flatMap { connection =>
-      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
-        val done =
-          try {
-            val stmt = statement(connection)
-            stmt.execute().asFuture().flatMap { result =>
-              result.getRowsUpdated.asFutureDone()
-            }
-          } catch {
-            case NonFatal(exc) =>
-              // thrown from statement function
-              Future.failed(exc)
-          }
-
-        done.failed.foreach { exc =>
-          log.debug("{} - DDL failed: {}", logPrefix, exc)
-          // auto-commit so nothing to rollback
-          connection.close().asFutureDone()
-        }
-
-        done.flatMap { _ =>
-          connection.close().asFutureDone().map { _ =>
-            if (log.isDebugEnabled())
-              log.debug("{} - DDL in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
-            Done
-          }
-        }
+  def executeDdl(logPrefix: String)(statement: Connection => Statement): Future[Done] =
+    withAutoCommitConnection(logPrefix) { connection =>
+      val stmt = statement(connection)
+      stmt.execute().asFuture().flatMap { result =>
+        result.getRowsUpdated.asFutureDone()
       }
     }
-  }
 
   /**
    * One update statement with auto commit.
    */
-  def updateOne(logPrefix: String)(statement: Connection => Statement): Future[Int] = {
-    val startTime = System.nanoTime()
-
-    getConnection().flatMap { connection =>
-      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
-        val rowsUpdated =
-          try {
-            val boundStmt = statement(connection)
-            updateOneInTx(boundStmt)
-          } catch {
-            case NonFatal(exc) =>
-              // thrown from statement function
-              Future.failed(exc)
-          }
-
-        rowsUpdated.failed.foreach { exc =>
-          log.debug("{} - Update failed: {}", logPrefix, exc)
-          // auto-commit so nothing to rollback
-          connection.close().asFutureDone()
-        }
-
-        rowsUpdated.flatMap { r =>
-          connection.close().asFutureDone().map { _ =>
-            if (log.isDebugEnabled())
-              log.debug("{} - Updated [{}] in [{}] µs", logPrefix, r, (System.nanoTime() - startTime) / 1000)
-            r
-          }
-        }
-      }
+  def updateOne(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
+    withAutoCommitConnection(logPrefix) { connection =>
+      updateOneInTx(statementFactory(connection))
     }
-  }
 
   def updateInBatch(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
     withConnection(logPrefix) { connection =>
@@ -256,6 +202,10 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     }
   }
 
+  /**
+   * Runs the passed function in using a Connection that's participating on a transaction Transaction is commit at the
+   * end or rolled back in case of failures.
+   */
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     val startTime = System.nanoTime()
 
@@ -285,6 +235,40 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
           }
         }
 
+      }
+    }
+  }
+
+  /**
+   * Runs the passed function in using a Connection with auto-commit enable (non-transactional).
+   */
+  def withAutoCommitConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
+    val startTime = System.nanoTime()
+
+    getConnection().flatMap { connection =>
+      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
+        val result =
+          try {
+            fun(connection)
+          } catch {
+            case NonFatal(exc) =>
+              // thrown from statement function
+              Future.failed(exc)
+          }
+
+        result.failed.foreach { exc =>
+          log.debug("{} - DB call failed: {}", logPrefix, exc)
+          // auto-commit so nothing to rollback
+          connection.close().asFutureDone()
+        }
+
+        result.flatMap { r =>
+          connection.close().asFutureDone().map { _ =>
+            if (log.isDebugEnabled())
+              log.debug("{} - DB call completed [{}] in [{}] µs", logPrefix, r, (System.nanoTime() - startTime) / 1000)
+            r
+          }
+        }
       }
     }
   }
