@@ -705,8 +705,8 @@ private[projection] class R2dbcOffsetStore(
     def createStatement(connection: Connection) =
       connection
         .createStatement(readManagementStateSql)
-        .bind("$1", projectionId.name)
-        .bind("$2", projectionId.key)
+        .bind(0, projectionId.name)
+        .bind(1, projectionId.key)
 
     r2dbcExecutor
       .selectOne("read management state")(
@@ -719,10 +719,10 @@ private[projection] class R2dbcOffsetStore(
       .updateOne("update management state") { conn =>
         conn
           .createStatement(updateManagementStateSql)
-          .bind("$1", projectionId.name)
-          .bind("$2", projectionId.key)
-          .bind("$3", paused)
-          .bind("$4", Instant.now(clock).toEpochMilli)
+          .bind(0, projectionId.name)
+          .bind(1, projectionId.key)
+          .bind(2, paused)
+          .bind(3, Instant.now(clock).toEpochMilli)
       }
       .flatMap {
         case i if i == 1 => Future.successful(Done)
