@@ -752,8 +752,7 @@ private[projection] class R2dbcOffsetStore(
       .flatMap {
         case i if i == 1 => Future.successful(Done)
         case n =>
-          Future.failed(
-            new RuntimeException(s"Failed to update management table for $projectionId"))
+          Future.failed(new RuntimeException(s"Failed to update management table for $projectionId"))
       }
   }
 
