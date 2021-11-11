@@ -8,6 +8,7 @@ import java.util
 
 import akka.NotUsed
 import akka.japi.Pair
+import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.EventEnvelope
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl._
@@ -20,8 +21,8 @@ object R2dbcReadJournal {
 
 final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     extends ReadJournal
-    with CurrentEventsBySliceQuery
-    with EventsBySliceQuery
+    with CurrentEventsBySliceQuery[Any]
+    with EventsBySliceQuery[Any]
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
     with CurrentPersistenceIdsQuery {
@@ -33,14 +34,14 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope, NotUsed] =
+      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] =
     delegate.currentEventsBySlices(entityType, minSlice, maxSlice, offset).asJava
 
   override def eventsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope, NotUsed] =
+      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] =
     delegate.eventsBySlices(entityType, minSlice, maxSlice, offset).asJava
 
   override def sliceRanges(numberOfRanges: Int): util.List[Pair[Integer, Integer]] = {

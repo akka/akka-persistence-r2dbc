@@ -140,7 +140,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = Instant.EPOCH, // not needed here
           payload = row.get("state_payload", classOf[Array[Byte]]),
-          serId = row.get("state_ser_id", classOf[java.lang.Integer]),
+          serId = row.get("state_ser_id", classOf[Integer]),
           serManifest = row.get("state_ser_manifest", classOf[String])))
   }
 
@@ -275,7 +275,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = row.get("state_payload", classOf[Array[Byte]]),
-            serId = row.get("state_ser_id", classOf[java.lang.Integer]),
+            serId = row.get("state_ser_id", classOf[Integer]),
             serManifest = row.get("state_ser_manifest", classOf[String])))
 
     if (log.isDebugEnabled)

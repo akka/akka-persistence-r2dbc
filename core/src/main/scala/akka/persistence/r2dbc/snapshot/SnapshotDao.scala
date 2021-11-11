@@ -42,9 +42,9 @@ private[r2dbc] object SnapshotDao {
       row.get("seq_nr", classOf[java.lang.Long]),
       row.get("write_timestamp", classOf[java.lang.Long]),
       row.get("snapshot", classOf[Array[Byte]]),
-      row.get("ser_id", classOf[java.lang.Integer]),
+      row.get("ser_id", classOf[Integer]),
       row.get("ser_manifest", classOf[String]), {
-        val metaSerializerId = row.get("meta_ser_id", classOf[java.lang.Integer])
+        val metaSerializerId = row.get("meta_ser_id", classOf[Integer])
         if (metaSerializerId eq null) None
         else
           Some(
@@ -171,7 +171,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
             case None =>
               statement
                 .bindNull(8, classOf[Array[Byte]])
-                .bindNull(9, classOf[java.lang.Integer])
+                .bindNull(9, classOf[Integer])
                 .bindNull(10, classOf[String])
           }
 

@@ -14,14 +14,13 @@ import scala.concurrent.Future
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.query
+import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.EventTimestampQuery
 import akka.persistence.query.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.query.TimestampOffset
 import akka.projection.ProjectionId
-import akka.projection.eventsourced.EventEnvelope
 import akka.projection.eventsourced.scaladsl.TimestampOffsetBySlicesSourceProvider
 import akka.projection.internal.ManagementState
 import akka.projection.r2dbc.internal.R2dbcOffsetStore
@@ -36,12 +35,12 @@ object R2dbcTimestampOffsetStoreSpec {
   class TestTimestampSourceProvider(override val minSlice: Int, override val maxSlice: Int, clock: TestClock)
       extends TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
-      with LoadEventQuery {
+      with LoadEventQuery[String] {
 
     override def timestampOf(persistenceId: String, sequenceNr: SeqNr): Future[Option[Instant]] =
       Future.successful(Some(clock.instant()))
 
-    override def loadEnvelope(persistenceId: String, sequenceNr: SeqNr): Future[Option[query.EventEnvelope]] =
+    override def loadEnvelope(persistenceId: String, sequenceNr: SeqNr): Future[Option[EventBySliceEnvelope[String]]] =
       throw new IllegalStateException("loadEvent shouldn't be used here")
   }
 }
@@ -74,13 +73,18 @@ class R2dbcTimestampOffsetStoreSpec
       customSettings,
       r2dbcExecutor)
 
-  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventEnvelope[String] =
-    EventEnvelope(
+  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventBySliceEnvelope[String] = {
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(pid)
+    val slice = SliceUtils.sliceForPersistenceId(pid, R2dbcOffsetStore.MaxNumberOfSlices)
+    EventBySliceEnvelope(
       TimestampOffset(timestamp, timestamp.plusMillis(1000), Map(pid -> seqNr)),
       pid,
       seqNr,
       event,
-      timestamp.toEpochMilli)
+      timestamp.toEpochMilli,
+      entityType,
+      slice)
+  }
 
   def createUpdatedDurableState(
       pid: Pid,

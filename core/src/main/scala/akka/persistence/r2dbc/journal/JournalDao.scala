@@ -30,11 +30,13 @@ private[r2dbc] object JournalDao {
   val EmptyDbTimestamp: Instant = Instant.EPOCH
 
   final case class SerializedJournalRow(
+      slice: Int,
+      entityType: String,
       persistenceId: String,
       seqNr: Long,
       dbTimestamp: Instant,
       readDbTimestamp: Instant,
-      payload: Array[Byte],
+      payload: Option[Array[Byte]],
       serId: Int,
       serManifest: String,
       writerUuid: String,
@@ -113,8 +115,6 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
     val previousSeqNr = events.head.seqNr - 1
 
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
@@ -122,15 +122,15 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
-        .bind(0, slice)
-        .bind(1, entityType)
+        .bind(0, write.slice)
+        .bind(1, write.entityType)
         .bind(2, write.persistenceId)
         .bind(3, write.seqNr)
         .bind(4, write.writerUuid)
         .bind(5, "") // FIXME event adapter
         .bind(6, write.serId)
         .bind(7, write.serManifest)
-        .bind(8, write.payload)
+        .bind(8, write.payload.get)
 
       // optional metadata
       write.metadata match {
@@ -141,22 +141,22 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             .bind(11, m.payload)
         case None =>
           stmt
-            .bindNull(9, classOf[java.lang.Integer])
+            .bindNull(9, classOf[Integer])
             .bindNull(10, classOf[String])
             .bindNull(11, classOf[Array[Byte]])
       }
 
       if (useTimestampFromDb) {
         stmt
-          .bind(12, slice)
-          .bind(13, entityType)
+          .bind(12, write.slice)
+          .bind(13, write.entityType)
           .bind(14, write.persistenceId)
           .bind(15, previousSeqNr)
       } else {
         stmt
           .bind(12, write.dbTimestamp)
-          .bind(13, slice)
-          .bind(14, entityType)
+          .bind(13, write.slice)
+          .bind(14, write.entityType)
           .bind(15, write.persistenceId)
           .bind(16, previousSeqNr)
       }

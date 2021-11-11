@@ -25,6 +25,7 @@ import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -42,13 +43,15 @@ private[r2dbc] object R2dbcJournal {
   case class WriteFinished(persistenceId: String, done: Future[_])
 
   def deserializeRow(serialization: Serialization, row: SerializedJournalRow): PersistentRepr = {
-    val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
+    if (row.payload.isEmpty)
+      throw new IllegalStateException("Expected event payload to be loaded.")
+    val payload = serialization.deserialize(row.payload.get, row.serId, row.serManifest).get
     val repr = PersistentRepr(
       payload,
       row.seqNr,
       row.persistenceId,
       writerUuid = row.writerUuid,
-      manifest = "", // FIXME
+      manifest = "", // FIXME issue #84
       deleted = false,
       sender = ActorRef.noSender)
 
@@ -106,34 +109,36 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             case other =>
               other.asInstanceOf[AnyRef]
           }
+
+          val entityType = SliceUtils.extractEntityTypeFromPersistenceId(pr.persistenceId)
+          val slice = SliceUtils.sliceForPersistenceId(pr.persistenceId, journalSettings.maxNumberOfSlices)
+
           val serialized = serialization.serialize(event).get
           val serializer = serialization.findSerializerFor(event)
           val manifest = Serializers.manifestFor(serializer, event)
           val id: Int = serializer.identifier
 
-          val write = SerializedJournalRow(
+          val metadata = pr.metadata.map { meta =>
+            val m = meta.asInstanceOf[AnyRef]
+            val serializedMeta = serialization.serialize(m).get
+            val metaSerializer = serialization.findSerializerFor(m)
+            val metaManifest = Serializers.manifestFor(metaSerializer, m)
+            val id: Int = metaSerializer.identifier
+            SerializedEventMetadata(id, metaManifest, serializedMeta)
+          }
+
+          SerializedJournalRow(
+            slice,
+            entityType,
             pr.persistenceId,
             pr.sequenceNr,
             JournalDao.EmptyDbTimestamp,
             JournalDao.EmptyDbTimestamp,
-            serialized,
+            Some(serialized),
             id,
             manifest,
             pr.writerUuid,
-            None)
-
-          pr.metadata match {
-            case None =>
-              // meta enabled but regular entity
-              write
-            case Some(replicatedMeta) =>
-              val m = replicatedMeta.asInstanceOf[AnyRef]
-              val serializedMeta = serialization.serialize(m).get
-              val metaSerializer = serialization.findSerializerFor(m)
-              val metaManifest = Serializers.manifestFor(metaSerializer, m)
-              val id: Int = metaSerializer.identifier
-              write.copy(metadata = Some(SerializedEventMetadata(id, metaManifest, serializedMeta)))
-          }
+            metadata)
         }
       }
 

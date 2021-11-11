@@ -11,9 +11,11 @@ import scala.concurrent.duration._
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
+import akka.persistence.query.scaladsl.EventsBySliceQuery
+import akka.persistence.query.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
@@ -36,7 +38,8 @@ class EventsBySliceBacktrackingSpec
   override def typedSystem: ActorSystem[_] = system
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
-  private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
+  private val query = PersistenceQuery(testKit.system)
+    .readJournalFor[EventsBySliceQuery[String] with LoadEventQuery[String]](R2dbcReadJournal.Identifier)
   private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -71,7 +74,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventEnvelope](system.classicSystem)
+      val sinkProbe = TestSink.probe[EventBySliceEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
       val startTime = Instant.now().minusSeconds(10 * 60)
@@ -79,18 +82,18 @@ class EventsBySliceBacktrackingSpec
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
 
-      val result: TestSubscriber.Probe[EventEnvelope] =
+      val result: TestSubscriber.Probe[EventBySliceEnvelope[String]] =
         query.eventsBySlices(entityType, 0, settings.maxNumberOfSlices, NoOffset).runWith(sinkProbe).request(100)
 
       val env1 = result.expectNext()
       env1.persistenceId shouldBe pid1
       env1.sequenceNr shouldBe 1L
-      env1.event shouldBe "e1-1"
+      env1.eventOption shouldBe Some("e1-1")
 
       val env2 = result.expectNext()
       env2.persistenceId shouldBe pid1
       env2.sequenceNr shouldBe 2L
-      env2.event shouldBe "e1-2"
+      env2.eventOption shouldBe Some("e1-2")
 
       // first backtracking query kicks in immediately after the first normal query has finished
       // and it also emits duplicates (by design)
@@ -98,9 +101,9 @@ class EventsBySliceBacktrackingSpec
       env3.persistenceId shouldBe pid1
       env3.sequenceNr shouldBe 1L
       // event payload isn't included in backtracking results
-      Option(env3.event) shouldBe None
+      env3.eventOption shouldBe None
       // but it can be lazy loaded
-      query.loadEnvelope(env3.persistenceId, env3.sequenceNr).futureValue.get.event shouldBe "e1-1"
+      query.loadEnvelope(env3.persistenceId, env3.sequenceNr).futureValue.get.eventOption shouldBe Some("e1-1")
       result.expectNoMessage(100.millis) // not e1-2
 
       writeEvent(slice1, pid1, 3L, startTime.plusMillis(3), "e1-3")

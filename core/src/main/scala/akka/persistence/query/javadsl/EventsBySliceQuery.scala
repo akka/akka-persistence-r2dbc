@@ -6,7 +6,7 @@ package akka.persistence.query.javadsl
 
 import akka.NotUsed
 import akka.japi.Pair
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.Offset
 import akka.stream.javadsl.Source
 
@@ -15,7 +15,7 @@ import akka.stream.javadsl.Source
 /**
  * A plugin may optionally support this query by implementing this trait.
  */
-trait EventsBySliceQuery extends ReadJournal {
+trait EventsBySliceQuery[Event] extends ReadJournal {
 
   /**
    * Query events for given slices. A slice is deterministically defined based on the persistence id. The purpose is to
@@ -43,7 +43,11 @@ trait EventsBySliceQuery extends ReadJournal {
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[CurrentEventsBySliceQuery.currentEventsBySlices]].
    */
-  def eventsBySlices(entityType: String, minSlice: Int, maxSlice: Int, offset: Offset): Source[EventEnvelope, NotUsed]
+  def eventsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset): Source[EventBySliceEnvelope[Event], NotUsed]
 
   def sliceForPersistenceId(persistenceId: String): Int
 

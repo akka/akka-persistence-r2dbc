@@ -7,7 +7,7 @@ package akka.persistence.query.scaladsl
 import scala.collection.immutable
 
 import akka.NotUsed
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.Offset
 import akka.stream.scaladsl.Source
 
@@ -19,7 +19,22 @@ import akka.stream.scaladsl.Source
  * `EventsBySliceQuery` that is using a timestamp based offset should also implement [[EventTimestampQuery]] and
  * [[LoadEventQuery]].
  */
-trait EventsBySliceQuery extends ReadJournal {
+trait EventsBySliceQuery[Event] extends ReadJournal {
+
+  // FIXME should we have have the Event type parameter here or on the `def eventsBySlices`.
+  // For example the new DurableState queries have it here.
+  // One drawback of having it here is that this is not possible:
+  //   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
+  //   query.eventsBySlices(...)
+  // one would have to cast it to more specific EventsBySliceQuery[TheEvent]
+  // or use that in the readJournalFor class
+  // on the other hand, the alternative is also defining the type:
+  // query.eventsBySlices[TheEvent](...)
+  //
+  // Maybe it should be on the def because the same R2dbcReadJournal instance can be used for different entityTypes,
+  // i.e. different Event classes
+  //
+  // The original reason I changed it was some trouble with similar param in LoadEventQuery
 
   /**
    * Query events for given slices. A slice is deterministically defined based on the persistence id. The purpose is to
@@ -47,7 +62,11 @@ trait EventsBySliceQuery extends ReadJournal {
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[CurrentEventsBySliceQuery.currentEventsBySlices]].
    */
-  def eventsBySlices(entityType: String, minSlice: Int, maxSlice: Int, offset: Offset): Source[EventEnvelope, NotUsed]
+  def eventsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset): Source[EventBySliceEnvelope[Event], NotUsed]
 
   def sliceForPersistenceId(persistenceId: String): Int
 

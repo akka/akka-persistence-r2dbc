@@ -6,12 +6,12 @@ package akka.persistence.query.scaladsl
 
 import scala.concurrent.Future
 
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.EventBySliceEnvelope
 
 /**
  * [[EventsBySliceQuery]] that is using a timestamp based offset should also implement this query.
  */
-trait LoadEventQuery {
+trait LoadEventQuery[Event] {
 
-  def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope]]
+  def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]]
 }
