@@ -197,43 +197,20 @@ private[projection] class R2dbcOffsetStore(
   private val clearOffsetSql: String =
     s"""DELETE FROM $offsetTable WHERE projection_name = $$1 AND projection_key = $$2"""
 
-  object ReadManagementStateQuery {
+  private val readManagementStateSql =
+    s"SELECT paused FROM $managementTable WHERE " +
+    "projection_name = $1 AND " +
+    "projection_key = $2 "
 
-    val projectionName: Int = 0
-    val projectionKey: Int = 1
-
-    private def bindParam(i: Int) = "$" + (i + 1)
-
-    val statement: String =
-      s"SELECT paused FROM $managementTable WHERE " +
-      s"projection_name = ${bindParam(projectionName)} and " +
-      s"projection_key = ${bindParam(projectionKey)} "
-
-    /* Map rows retrieved by this query */
-    def mapRow(row: Row) =
-      ManagementState(row.get("paused", classOf[java.lang.Boolean]))
-  }
-
-  object UpdateManagementStateQuery {
-
-    val projectionName: Int = 0
-    val projectionKey: Int = 1
-    val pausedParam: Int = 2
-    val lastUpdate: Int = 3
-
-    private def bindParam(i: Int) = "$" + (i + 1)
-
-    val statement: String = {
-      s"INSERT INTO $managementTable " +
-      "(projection_name, projection_key, paused, last_updated)  " +
-      "VALUES " +
-      s"(${bindParam(projectionName)},${bindParam(projectionKey)}, ${bindParam(pausedParam)}, ${bindParam(lastUpdate)}) " +
-      "ON CONFLICT (projection_name, projection_key)" +
-      "DO UPDATE SET " +
-      "paused = excluded.paused, " +
-      "last_updated = excluded.last_updated"
-    }
-  }
+  val updateManagementStateSql: String =
+    s"INSERT INTO $managementTable " +
+    "(projection_name, projection_key, paused, last_updated)  " +
+    "VALUES " +
+    "($1,$2,$3,$4) " +
+    "ON CONFLICT (projection_name, projection_key) " +
+    "DO UPDATE SET " +
+    "paused = excluded.paused, " +
+    "last_updated = excluded.last_updated"
 
   // The OffsetStore instance is used by a single projectionId and there shouldn't be any concurrent
   // calls to methods that access the `state`. To detect any violations of that concurrency assumption
@@ -725,29 +702,27 @@ private[projection] class R2dbcOffsetStore(
   }
 
   def readManagementState(): Future[Option[ManagementState]] = {
-    import ReadManagementStateQuery._
-
     def createStatement(connection: Connection) =
       connection
-        .createStatement(statement)
-        .bind(projectionName, projectionId.name)
-        .bind(projectionKey, projectionId.key)
+        .createStatement(readManagementStateSql)
+        .bind("$1", projectionId.name)
+        .bind("$2", projectionId.key)
 
     r2dbcExecutor
-      .selectOne("read management state")(conn => createStatement(conn), row => mapRow(row))
+      .selectOne("read management state")(
+        conn => createStatement(conn),
+        row => ManagementState(row.get("paused", classOf[java.lang.Boolean])))
   }
 
   def savePaused(paused: Boolean): Future[Done] = {
-    import UpdateManagementStateQuery._
-
     r2dbcExecutor
       .updateOne("update management state") { conn =>
         conn
-          .createStatement(statement)
-          .bind(projectionName, projectionId.name)
-          .bind(projectionKey, projectionId.key)
-          .bind(pausedParam, paused)
-          .bind(lastUpdate, Instant.now(clock).toEpochMilli)
+          .createStatement(updateManagementStateSql)
+          .bind("$1", projectionId.name)
+          .bind("$2", projectionId.key)
+          .bind("$3", paused)
+          .bind("$4", Instant.now(clock).toEpochMilli)
       }
       .flatMap {
         case i if i == 1 => Future.successful(Done)
