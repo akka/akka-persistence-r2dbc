@@ -16,7 +16,8 @@ import akka.stream.scaladsl.Source
 /**
  * A plugin may optionally support this query by implementing this trait.
  *
- * `EventsBySliceQuery` that is using a timestamp based offset should also implement [[EventTimestampQuery]].
+ * `EventsBySliceQuery` that is using a timestamp based offset should also implement [[EventTimestampQuery]] and
+ * [[LoadEventQuery]].
  */
 trait EventsBySliceQuery extends ReadJournal {
 
