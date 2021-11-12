@@ -2,22 +2,17 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.query.scaladsl
-
-import scala.collection.immutable
+package akka.persistence.query.typed.javadsl
 
 import akka.NotUsed
-import akka.persistence.query.EventEnvelope
+import akka.japi.Pair
 import akka.persistence.query.Offset
-import akka.stream.scaladsl.Source
-
-// FIXME include this in Akka
+import akka.persistence.query.javadsl.ReadJournal
+import akka.persistence.query.typed.EventEnvelope
+import akka.stream.javadsl.Source
 
 /**
  * A plugin may optionally support this query by implementing this trait.
- *
- * `EventsBySliceQuery` that is using a timestamp based offset should also implement [[EventTimestampQuery]] and
- * [[LoadEventQuery]].
  */
 trait EventsBySliceQuery extends ReadJournal {
 
@@ -47,10 +42,14 @@ trait EventsBySliceQuery extends ReadJournal {
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[CurrentEventsBySliceQuery.currentEventsBySlices]].
    */
-  def eventsBySlices(entityType: String, minSlice: Int, maxSlice: Int, offset: Offset): Source[EventEnvelope, NotUsed]
+  def eventsBySlices[Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset): Source[EventEnvelope[Event], NotUsed]
 
   def sliceForPersistenceId(persistenceId: String): Int
 
-  def sliceRanges(numberOfRanges: Int): immutable.Seq[Range]
+  def sliceRanges(numberOfRanges: Int): java.util.List[Pair[Integer, Integer]]
 
 }

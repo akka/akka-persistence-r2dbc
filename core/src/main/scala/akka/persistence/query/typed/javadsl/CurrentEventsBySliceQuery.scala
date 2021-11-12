@@ -2,15 +2,14 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.query.javadsl
+package akka.persistence.query.typed.javadsl
 
 import akka.NotUsed
 import akka.japi.Pair
-import akka.persistence.query.EventEnvelope
 import akka.persistence.query.Offset
+import akka.persistence.query.javadsl.ReadJournal
+import akka.persistence.query.typed.EventEnvelope
 import akka.stream.javadsl.Source
-
-// FIXME include this in Akka
 
 /**
  * A plugin may optionally support this query by implementing this trait.
@@ -23,11 +22,11 @@ trait CurrentEventsBySliceQuery extends ReadJournal {
    * query is started, or it may include events that are persisted while the query is still streaming results. For
    * eventually consistent stores, it may only include all events up to some point before the query is started.
    */
-  def currentEventsBySlices(
+  def currentEventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope, NotUsed]
+      offset: Offset): Source[EventEnvelope[Event], NotUsed]
 
   def sliceForPersistenceId(persistenceId: String): Int
 

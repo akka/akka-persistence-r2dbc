@@ -23,13 +23,14 @@ import akka.persistence.SelectedSnapshot
 import akka.persistence.SnapshotProtocol.LoadSnapshot
 import akka.persistence.SnapshotProtocol.LoadSnapshotResult
 import akka.persistence.SnapshotSelectionCriteria
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.scaladsl.CurrentEventsByPersistenceIdQuery
 import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
 import akka.persistence.query.scaladsl.ReadJournal
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -73,6 +74,8 @@ object MigrationTool {
     }
   }
 
+  private val MaxNumberOfSlices = 128 // FIXME define this in akka.persistence.Persistence (not per plugin)
+
 }
 
 /**
@@ -92,6 +95,7 @@ object MigrationTool {
  */
 class MigrationTool(system: ActorSystem[_]) {
   import MigrationTool.Result
+  import MigrationTool.MaxNumberOfSlices
   import system.executionContext
   private implicit val sys: ActorSystem[_] = system
 
@@ -222,7 +226,10 @@ class MigrationTool(system: ActorSystem[_]) {
       .runWith(Sink.fold(0L) { case (acc, count) => acc + count })
   }
 
-  private def serializedJournalRow(env: EventEnvelope): SerializedJournalRow = {
+  private def serializedJournalRow(env: ClassicEventEnvelope): SerializedJournalRow = {
+    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(env.persistenceId)
+    val slice = SliceUtils.sliceForPersistenceId(env.persistenceId, MaxNumberOfSlices)
+
     val event = env.event.asInstanceOf[AnyRef]
     val serialized = serialization.serialize(event).get
     val serializer = serialization.findSerializerFor(event)
@@ -238,14 +245,16 @@ class MigrationTool(system: ActorSystem[_]) {
       }
 
     SerializedJournalRow(
+      slice,
+      entityType,
       env.persistenceId,
       env.sequenceNr,
       Instant.ofEpochMilli(env.timestamp),
       JournalDao.EmptyDbTimestamp,
-      serialized,
+      Some(serialized),
       serializer.identifier,
       manifest,
-      "",
+      "", // writerUuid is discarded, but that is ok
       metadata)
   }
 

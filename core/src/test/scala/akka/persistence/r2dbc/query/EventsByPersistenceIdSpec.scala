@@ -9,8 +9,8 @@ import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventEnvelope
 import akka.persistence.query.PersistenceQuery
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
@@ -20,10 +20,7 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
-import akka.persistence.typed.ReplicaId
-import akka.persistence.typed.ReplicationId
 import akka.persistence.typed.internal.ReplicatedEventMetadata
-import akka.persistence.typed.scaladsl.ReplicatedEventSourcing
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
@@ -49,7 +46,7 @@ class EventsByPersistenceIdSpec
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
   List[QueryType](Live, Current).foreach { queryType =>
-    def doQuery(pid: String, from: Long, to: Long): Source[EventEnvelope, NotUsed] =
+    def doQuery(pid: String, from: Long, to: Long): Source[ClassicEventEnvelope, NotUsed] =
       queryType match {
         case Live =>
           query.eventsByPersistenceId(pid, from, to)
@@ -79,7 +76,7 @@ class EventsByPersistenceIdSpec
           .request(1)
 
         sub.expectNextPF {
-          case EventEnvelope(TimestampOffset(_, _, seen), `pid`, 1, "e-1") if seen == Map(pid -> 1) =>
+          case ClassicEventEnvelope(TimestampOffset(_, _, seen), `pid`, 1, "e-1") if seen == Map(pid -> 1) =>
         }
 
         assertFinished(sub)

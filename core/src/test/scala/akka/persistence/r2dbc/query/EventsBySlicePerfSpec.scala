@@ -82,7 +82,7 @@ class EventsBySlicePerfSpec
         val t1 = System.nanoTime()
         val counts: Seq[Future[Int]] = ranges.map { range =>
           query
-            .currentEventsBySlices(entityType, range.min, range.max, NoOffset)
+            .currentEventsBySlices[String](entityType, range.min, range.max, NoOffset)
             .runWith(Sink.fold(0) { case (acc, _) =>
               if (acc > 0 && acc % 100 == 0)
                 println(s"#$iteration Reading [$acc] events from slices [${range.min}-${range.max}] " +

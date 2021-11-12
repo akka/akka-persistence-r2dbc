@@ -66,9 +66,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
     val selectColumns = {
       if (backtracking)
-        "SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp "
       else
-        "SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
     selectColumns +
@@ -86,7 +86,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
 
   private val selectOneEventSql =
-    s"SELECT persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
+    s"SELECT db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
     s"FROM $journalTable " +
     "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
 
@@ -146,23 +146,27 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       row =>
         if (backtracking)
           SerializedJournalRow(
+            slice = row.get("slice", classOf[Integer]),
+            entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get("seq_nr", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = null, // lazy loaded for backtracking
+            payload = None, // lazy loaded for backtracking
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
             metadata = None)
         else
           SerializedJournalRow(
+            slice = row.get("slice", classOf[Integer]),
+            entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get("seq_nr", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = row.get("event_payload", classOf[Array[Byte]]),
-            serId = row.get("event_ser_id", classOf[java.lang.Integer]),
+            payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+            serId = row.get("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
             metadata = readMetadata(row)))
@@ -200,12 +204,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(3, seqNr),
       row =>
         SerializedJournalRow(
-          persistenceId = row.get("persistence_id", classOf[String]),
-          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+          slice,
+          entityType,
+          persistenceId,
+          seqNr,
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = row.get("event_payload", classOf[Array[Byte]]),
-          serId = row.get("event_ser_id", classOf[java.lang.Integer]),
+          payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+          serId = row.get("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
           metadata = readMetadata(row)))
@@ -229,12 +235,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(5, settings.querySettings.bufferSize),
       row =>
         SerializedJournalRow(
+          slice = row.get("slice", classOf[Integer]),
+          entityType = row.get("entity_type", classOf[String]),
           persistenceId = row.get("persistence_id", classOf[String]),
           seqNr = row.get("seq_nr", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = row.get("event_payload", classOf[Array[Byte]]),
-          serId = row.get("event_ser_id", classOf[java.lang.Integer]),
+          payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+          serId = row.get("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
           metadata = readMetadata(row)))

@@ -14,9 +14,14 @@ import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
 import akka.persistence.query.scaladsl._
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
@@ -64,21 +69,28 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val queryDao =
     new QueryDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
 
-  private val bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope] = {
-    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope = (offset, row) => {
-      val payload = serialization.deserialize(row.payload, row.serId, row.serManifest).get
-      val envelope = EventEnvelope(offset, row.persistenceId, row.seqNr, payload, row.dbTimestamp.toEpochMilli)
-      row.metadata match {
-        case None => envelope
-        case Some(meta) =>
-          envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-      }
+  private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
+    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
+      val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
+      val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+      new EventEnvelope(
+        offset,
+        row.persistenceId,
+        row.seqNr,
+        event,
+        row.dbTimestamp.toEpochMilli,
+        metadata,
+        row.entityType,
+        row.slice)
     }
 
-    val extractOffset: EventEnvelope => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
+    val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
     new BySliceQuery(queryDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
   }
+
+  private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
+    _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
 
   private val journalDao = new JournalDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
 
@@ -91,11 +103,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def sliceRanges(numberOfRanges: Int): immutable.Seq[Range] =
     SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
 
-  override def currentEventsBySlices(
+  override def currentEventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope, NotUsed] = {
+      offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     bySlice
       .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
@@ -118,8 +130,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * that events are processed in exact sequence number order for each persistence id. Such deduplication is provided by
    * the R2DBC Projection.
    *
-   * Events emitted by the backtracking don't contain the event payload (`EventEnvelope.event` is null) and the consumer
-   * can load the full `EventEnvelope` with [[R2dbcReadJournal.loadEnvelope]].
+   * Events emitted by the backtracking don't contain the event payload (`EventBySliceEnvelope.event` is None) and the
+   * consumer can load the full `EventBySliceEnvelope` with [[R2dbcReadJournal.loadEnvelope]].
    *
    * The events will be emitted in the timestamp order with the caveat of duplicate events as described above. Events
    * with the same timestamp are ordered by sequence number.
@@ -128,17 +140,17 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[R2dbcReadJournal.currentEventsBySlices]].
    */
-  override def eventsBySlices(
+  override def eventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope, NotUsed] =
+      offset: Offset): Source[EventEnvelope[Event], NotUsed] =
     bySlice.liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
 
   override def currentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[EventEnvelope, NotUsed] = {
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] = {
     val highestSeqNrFut =
       if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
       else Future.successful(toSequenceNr)
@@ -214,18 +226,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   //LoadEventQuery
-  override def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope]] = {
+  override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope[Event]]] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
     queryDao
       .loadEvent(entityType, persistenceId, slice, sequenceNr)
-      .map(_.map(deserializeRow))
+      .map(_.map(deserializeBySliceRow))
   }
 
   override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[EventEnvelope, NotUsed] = {
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] = {
 
     log.debug("Starting eventsByPersistenceId query for persistenceId [{}], from [{}].", persistenceId, fromSequenceNr)
 
@@ -282,13 +294,28 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .map(deserializeRow)
   }
 
-  def deserializeRow(row: SerializedJournalRow): EventEnvelope = {
-    val payload = {
-      if (row.payload eq null) null // lazy loaded for backtracking
-      else serialization.deserialize(row.payload, row.serId, row.serManifest).get
-    }
+  private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
+    val event =
+      row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
-    val envelope = EventEnvelope(offset, row.persistenceId, row.seqNr, payload, row.dbTimestamp.toEpochMilli)
+    val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+    new EventEnvelope(
+      offset,
+      row.persistenceId,
+      row.seqNr,
+      event,
+      row.dbTimestamp.toEpochMilli,
+      metadata,
+      row.entityType,
+      row.slice)
+  }
+
+  private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
+    val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
+    if (event.isEmpty)
+      throw new IllegalStateException("Expected event payload to be loaded.")
+    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
+    val envelope = ClassicEventEnvelope(offset, row.persistenceId, row.seqNr, event.get, row.dbTimestamp.toEpochMilli)
     row.metadata match {
       case None => envelope
       case Some(meta) =>
