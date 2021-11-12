@@ -14,7 +14,7 @@ import akka.stream.javadsl.Source
 /**
  * A plugin may optionally support this query by implementing this trait.
  */
-trait EventsBySliceQuery[Event] extends ReadJournal {
+trait EventsBySliceQuery extends ReadJournal {
 
   /**
    * Query events for given slices. A slice is deterministically defined based on the persistence id. The purpose is to
@@ -42,7 +42,7 @@ trait EventsBySliceQuery[Event] extends ReadJournal {
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[CurrentEventsBySliceQuery.currentEventsBySlices]].
    */
-  def eventsBySlices(
+  def eventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,

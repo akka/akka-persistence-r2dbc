@@ -14,7 +14,7 @@ import akka.stream.javadsl.Source
 /**
  * A plugin may optionally support this query by implementing this trait.
  */
-trait CurrentEventsBySliceQuery[Event] extends ReadJournal {
+trait CurrentEventsBySliceQuery extends ReadJournal {
 
   /**
    * Same type of query as [[EventsBySliceQuery.eventsBySlices]] but the event stream is completed immediately when it
@@ -22,7 +22,7 @@ trait CurrentEventsBySliceQuery[Event] extends ReadJournal {
    * query is started, or it may include events that are persisted while the query is still streaming results. For
    * eventually consistent stores, it may only include all events up to some point before the query is started.
    */
-  def currentEventsBySlices(
+  def currentEventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
