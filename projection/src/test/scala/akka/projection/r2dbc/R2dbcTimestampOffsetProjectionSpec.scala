@@ -24,9 +24,9 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventBySliceEnvelope
-import akka.persistence.query.scaladsl.EventTimestampQuery
-import akka.persistence.query.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.query.TimestampOffset
 import akka.projection.HandlerRecoveryStrategy
@@ -58,21 +58,20 @@ object R2dbcTimestampOffsetProjectionSpec {
 
   /**
    * This variant of TestStatusObserver is useful when the incoming envelope is the original akka projection
-   * EventBySliceEnvelope, but we want to assert on [[Envelope]]. The original [[EventBySliceEnvelope]] has too many
-   * params that are not so interesting for the test including the offset timestamp that would make the it harder to
-   * test.
+   * EventBySliceEnvelope, but we want to assert on [[Envelope]]. The original [[EventEnvelope]] has too many params
+   * that are not so interesting for the test including the offset timestamp that would make the it harder to test.
    */
   class R2dbcTestStatusObserver(
       statusProbe: ActorRef[TestStatusObserver.Status],
       progressProbe: ActorRef[TestStatusObserver.OffsetProgress[Envelope]])
-      extends TestStatusObserver[EventBySliceEnvelope[String]](statusProbe.ref) {
-    override def offsetProgress(projectionId: ProjectionId, envelope: EventBySliceEnvelope[String]): Unit =
+      extends TestStatusObserver[EventEnvelope[String]](statusProbe.ref) {
+    override def offsetProgress(projectionId: ProjectionId, envelope: EventEnvelope[String]): Unit =
       progressProbe ! OffsetProgress(
         Envelope(envelope.persistenceId, envelope.sequenceNr, envelope.eventOption.getOrElse("None")))
 
     override def error(
         projectionId: ProjectionId,
-        envelope: EventBySliceEnvelope[String],
+        envelope: EventEnvelope[String],
         cause: Throwable,
         recoveryStrategy: HandlerRecoveryStrategy): Unit =
       statusProbe ! Err(
@@ -81,21 +80,20 @@ object R2dbcTimestampOffsetProjectionSpec {
   }
 
   class TestTimestampSourceProvider(
-      envelopes: immutable.IndexedSeq[EventBySliceEnvelope[String]],
-      testSourceProvider: TestSourceProvider[TimestampOffset, EventBySliceEnvelope[String]])
-      extends SourceProvider[TimestampOffset, EventBySliceEnvelope[String]]
+      envelopes: immutable.IndexedSeq[EventEnvelope[String]],
+      testSourceProvider: TestSourceProvider[TimestampOffset, EventEnvelope[String]])
+      extends SourceProvider[TimestampOffset, EventEnvelope[String]]
       with TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
       with LoadEventQuery {
 
-    override def source(
-        offset: () => Future[Option[TimestampOffset]]): Future[Source[EventBySliceEnvelope[String], NotUsed]] =
+    override def source(offset: () => Future[Option[TimestampOffset]]): Future[Source[EventEnvelope[String], NotUsed]] =
       testSourceProvider.source(offset)
 
-    override def extractOffset(envelope: EventBySliceEnvelope[String]): TimestampOffset =
+    override def extractOffset(envelope: EventEnvelope[String]): TimestampOffset =
       testSourceProvider.extractOffset(envelope)
 
-    override def extractCreationTime(envelope: EventBySliceEnvelope[String]): Long =
+    override def extractCreationTime(envelope: EventEnvelope[String]): Long =
       testSourceProvider.extractCreationTime(envelope)
 
     override def minSlice: Int = 0
@@ -111,20 +109,18 @@ object R2dbcTimestampOffsetProjectionSpec {
       })
     }
 
-    override def loadEnvelope[Event](
-        persistenceId: String,
-        sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]] = {
+    override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope[Event]]] = {
       Future.successful(envelopes.collectFirst {
         case env if env.persistenceId == persistenceId && env.sequenceNr == sequenceNr =>
-          env.asInstanceOf[EventBySliceEnvelope[Event]]
+          env.asInstanceOf[EventEnvelope[Event]]
       })
     }
   }
 
   def createSourceProvider(
-      envelopes: immutable.IndexedSeq[EventBySliceEnvelope[String]],
+      envelopes: immutable.IndexedSeq[EventEnvelope[String]],
       complete: Boolean = true): TestTimestampSourceProvider = {
-    val sp = TestSourceProvider[TimestampOffset, EventBySliceEnvelope[String]](
+    val sp = TestSourceProvider[TimestampOffset, EventEnvelope[String]](
       Source(envelopes),
       _.offset.asInstanceOf[TimestampOffset])
       .withStartSourceFrom { (lastProcessedOffset, offset) =>
@@ -137,9 +133,9 @@ object R2dbcTimestampOffsetProjectionSpec {
   }
 
   def createBacktrackingSourceProvider(
-      envelopes: immutable.IndexedSeq[EventBySliceEnvelope[String]],
+      envelopes: immutable.IndexedSeq[EventEnvelope[String]],
       complete: Boolean = true): TestTimestampSourceProvider = {
-    val sp = TestSourceProvider[TimestampOffset, EventBySliceEnvelope[String]](
+    val sp = TestSourceProvider[TimestampOffset, EventEnvelope[String]](
       Source(envelopes),
       _.offset.asInstanceOf[TimestampOffset])
       .withStartSourceFrom { (lastProcessedOffset, offset) => false } // include all
@@ -221,14 +217,14 @@ class R2dbcTimestampOffsetProjectionSpec
     }
   }
 
-  class ConcatHandler(failPredicate: EventBySliceEnvelope[String] => Boolean = _ => false)
-      extends R2dbcHandler[EventBySliceEnvelope[String]] {
+  class ConcatHandler(failPredicate: EventEnvelope[String] => Boolean = _ => false)
+      extends R2dbcHandler[EventEnvelope[String]] {
 
     private val logger = LoggerFactory.getLogger(getClass)
     private val _attempts = new AtomicInteger()
     def attempts: Int = _attempts.get
 
-    override def process(session: R2dbcSession, envelope: EventBySliceEnvelope[String]): Future[Done] = {
+    override def process(session: R2dbcSession, envelope: EventEnvelope[String]): Future[Done] = {
       if (failPredicate(envelope)) {
         _attempts.incrementAndGet()
         throw TestException(concatHandlerFail4Msg + s" after $attempts attempts")
@@ -246,10 +242,10 @@ class R2dbcTimestampOffsetProjectionSpec
     clock
   }
 
-  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventBySliceEnvelope[String] = {
+  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventEnvelope[String] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(pid)
     val slice = SliceUtils.sliceForPersistenceId(pid, R2dbcOffsetStore.MaxNumberOfSlices)
-    EventBySliceEnvelope(
+    EventEnvelope(
       TimestampOffset(timestamp, timestamp.plusMillis(1000), Map(pid -> seqNr)),
       pid,
       seqNr,
@@ -259,13 +255,13 @@ class R2dbcTimestampOffsetProjectionSpec
       slice)
   }
 
-  def createEnvelopes(pid: Pid, numberOfEvents: Int): immutable.IndexedSeq[EventBySliceEnvelope[String]] = {
+  def createEnvelopes(pid: Pid, numberOfEvents: Int): immutable.IndexedSeq[EventEnvelope[String]] = {
     (1 to numberOfEvents).map { n =>
       createEnvelope(pid, n, tick().instant(), s"e$n")
     }
   }
 
-  def createEnvelopesWithDuplicates(pid1: Pid, pid2: Pid): Vector[EventBySliceEnvelope[String]] = {
+  def createEnvelopesWithDuplicates(pid1: Pid, pid2: Pid): Vector[EventEnvelope[String]] = {
     val startTime = Instant.now()
     Vector(
       createEnvelope(pid1, 1, startTime, s"e1-1"),
@@ -285,10 +281,7 @@ class R2dbcTimestampOffsetProjectionSpec
       createEnvelope(pid2, 3, startTime.plusMillis(6), s"e2-3"))
   }
 
-  def createEnvelopesUnknownSequenceNumbers(
-      startTime: Instant,
-      pid1: Pid,
-      pid2: Pid): Vector[EventBySliceEnvelope[String]] = {
+  def createEnvelopesUnknownSequenceNumbers(startTime: Instant, pid1: Pid, pid2: Pid): Vector[EventEnvelope[String]] = {
     Vector(
       createEnvelope(pid1, 1, startTime, s"e1-1"),
       createEnvelope(pid1, 2, startTime.plusMillis(1), s"e1-2"),
@@ -303,7 +296,7 @@ class R2dbcTimestampOffsetProjectionSpec
   def createEnvelopesBacktrackingUnknownSequenceNumbers(
       startTime: Instant,
       pid1: Pid,
-      pid2: Pid): Vector[EventBySliceEnvelope[String]] = {
+      pid2: Pid): Vector[EventEnvelope[String]] = {
     Vector(
       // may also contain some duplicates
       createEnvelope(pid1, 2, startTime.plusMillis(1), s"e1-2"),
@@ -316,8 +309,8 @@ class R2dbcTimestampOffsetProjectionSpec
       createEnvelope(pid1, 6, startTime.plusMillis(9), s"e1-6"))
   }
 
-  def groupedHandler(probe: ActorRef[String]): R2dbcHandler[Seq[EventBySliceEnvelope[String]]] = {
-    R2dbcHandler[immutable.Seq[EventBySliceEnvelope[String]]] { (session, envelopes) =>
+  def groupedHandler(probe: ActorRef[String]): R2dbcHandler[Seq[EventEnvelope[String]]] = {
+    R2dbcHandler[immutable.Seq[EventEnvelope[String]]] { (session, envelopes) =>
       probe ! "called"
       if (envelopes.isEmpty)
         Future.successful(Done)
@@ -463,7 +456,7 @@ class R2dbcTimestampOffsetProjectionSpec
       val sourceProvider = createSourceProvider(envelopes)
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
 
-      def exactlyOnceProjection(failWhen: EventBySliceEnvelope[String] => Boolean = _ => false) = {
+      def exactlyOnceProjection(failWhen: EventEnvelope[String] => Boolean = _ => false) = {
         R2dbcProjection.exactlyOnce(
           projectionId,
           Some(settings),
@@ -649,9 +642,9 @@ class R2dbcTimestampOffsetProjectionSpec
 
       val result = new StringBuffer()
 
-      def handler(): Handler[immutable.Seq[EventBySliceEnvelope[String]]] =
-        new Handler[immutable.Seq[EventBySliceEnvelope[String]]] {
-          override def process(envelopes: immutable.Seq[EventBySliceEnvelope[String]]): Future[Done] = {
+      def handler(): Handler[immutable.Seq[EventEnvelope[String]]] =
+        new Handler[immutable.Seq[EventEnvelope[String]]] {
+          override def process(envelopes: immutable.Seq[EventEnvelope[String]]): Future[Done] = {
             Future {
               envelopes.foreach(env => result.append(env.event).append("|"))
             }.map(_ => Done)
@@ -682,8 +675,8 @@ class R2dbcTimestampOffsetProjectionSpec
       val result1 = new StringBuffer()
       val result2 = new StringBuffer()
 
-      def handler(): Handler[Seq[EventBySliceEnvelope[String]]] = new Handler[Seq[EventBySliceEnvelope[String]]] {
-        override def process(envelopes: Seq[EventBySliceEnvelope[String]]): Future[Done] = {
+      def handler(): Handler[Seq[EventEnvelope[String]]] = new Handler[Seq[EventEnvelope[String]]] {
+        override def process(envelopes: Seq[EventEnvelope[String]]): Future[Done] = {
           Future
             .successful {
               envelopes.foreach { envelope =>
@@ -720,8 +713,8 @@ class R2dbcTimestampOffsetProjectionSpec
       val result1 = new StringBuffer()
       val result2 = new StringBuffer()
 
-      def handler(): Handler[Seq[EventBySliceEnvelope[String]]] = new Handler[Seq[EventBySliceEnvelope[String]]] {
-        override def process(envelopes: Seq[EventBySliceEnvelope[String]]): Future[Done] = {
+      def handler(): Handler[Seq[EventEnvelope[String]]] = new Handler[Seq[EventEnvelope[String]]] {
+        override def process(envelopes: Seq[EventEnvelope[String]]): Future[Done] = {
           Future
             .successful {
               envelopes.foreach { envelope =>
@@ -839,7 +832,7 @@ class R2dbcTimestampOffsetProjectionSpec
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
 
       val failOnce = new AtomicBoolean(true)
-      val failPredicate = (ev: EventBySliceEnvelope[String]) => {
+      val failPredicate = (ev: EventEnvelope[String]) => {
         // fail on first call for event 4, let it pass afterwards
         ev.sequenceNr == 4 && failOnce.compareAndSet(true, false)
       }
@@ -870,8 +863,8 @@ class R2dbcTimestampOffsetProjectionSpec
 
       val result = new StringBuffer()
 
-      def handler(): Handler[EventBySliceEnvelope[String]] = new Handler[EventBySliceEnvelope[String]] {
-        override def process(envelope: EventBySliceEnvelope[String]): Future[Done] = {
+      def handler(): Handler[EventEnvelope[String]] = new Handler[EventEnvelope[String]] {
+        override def process(envelope: EventEnvelope[String]): Future[Done] = {
           Future
             .successful {
               result.append(envelope.event).append("|")
@@ -897,14 +890,14 @@ class R2dbcTimestampOffsetProjectionSpec
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
 
       val failOnce = new AtomicBoolean(true)
-      val failPredicate = (ev: EventBySliceEnvelope[String]) => {
+      val failPredicate = (ev: EventEnvelope[String]) => {
         // fail on first call for event 4, let it pass afterwards
         ev.sequenceNr == 4 && failOnce.compareAndSet(true, false)
       }
 
       val result = new StringBuffer()
-      def handler(): Handler[EventBySliceEnvelope[String]] = new Handler[EventBySliceEnvelope[String]] {
-        override def process(envelope: EventBySliceEnvelope[String]): Future[Done] = {
+      def handler(): Handler[EventEnvelope[String]] = new Handler[EventEnvelope[String]] {
+        override def process(envelope: EventEnvelope[String]): Future[Done] = {
           if (failPredicate(envelope)) {
             throw TestException(s"failed to process event '${envelope.sequenceNr}'")
           } else {
@@ -942,8 +935,8 @@ class R2dbcTimestampOffsetProjectionSpec
       val result1 = new StringBuffer()
       val result2 = new StringBuffer()
 
-      def handler(): Handler[EventBySliceEnvelope[String]] = new Handler[EventBySliceEnvelope[String]] {
-        override def process(envelope: EventBySliceEnvelope[String]): Future[Done] = {
+      def handler(): Handler[EventEnvelope[String]] = new Handler[EventEnvelope[String]] {
+        override def process(envelope: EventEnvelope[String]): Future[Done] = {
           Future
             .successful {
               if (envelope.persistenceId == pid1)
@@ -977,8 +970,8 @@ class R2dbcTimestampOffsetProjectionSpec
       val result1 = new StringBuffer()
       val result2 = new StringBuffer()
 
-      def handler(): Handler[EventBySliceEnvelope[String]] = new Handler[EventBySliceEnvelope[String]] {
-        override def process(envelope: EventBySliceEnvelope[String]): Future[Done] = {
+      def handler(): Handler[EventEnvelope[String]] = new Handler[EventEnvelope[String]] {
+        override def process(envelope: EventEnvelope[String]): Future[Done] = {
           Future
             .successful {
               if (envelope.persistenceId == pid1)
@@ -1026,7 +1019,7 @@ class R2dbcTimestampOffsetProjectionSpec
       offsetShouldBeEmpty()
 
       val flowHandler =
-        FlowWithContext[EventBySliceEnvelope[String], ProjectionContext]
+        FlowWithContext[EventEnvelope[String], ProjectionContext]
           .mapAsync(1) { env =>
             withRepo(_.concatToText(env.persistenceId, env.event))
           }
@@ -1051,7 +1044,7 @@ class R2dbcTimestampOffsetProjectionSpec
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
 
       val flowHandler =
-        FlowWithContext[EventBySliceEnvelope[String], ProjectionContext]
+        FlowWithContext[EventEnvelope[String], ProjectionContext]
           .mapAsync(1) { env =>
             withRepo(_.concatToText(env.persistenceId, env.event))
           }
@@ -1079,7 +1072,7 @@ class R2dbcTimestampOffsetProjectionSpec
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider1)
 
       val flowHandler =
-        FlowWithContext[EventBySliceEnvelope[String], ProjectionContext]
+        FlowWithContext[EventEnvelope[String], ProjectionContext]
           .mapAsync(1) { env =>
             withRepo(_.concatToText(env.persistenceId, env.event))
           }
@@ -1129,7 +1122,7 @@ class R2dbcTimestampOffsetProjectionSpec
             Some(settings),
             sourceProvider,
             handler = () =>
-              R2dbcHandler[EventBySliceEnvelope[String]] { (session, envelope) =>
+              R2dbcHandler[EventEnvelope[String]] { (session, envelope) =>
                 TestRepository(session).concatToText(envelope.persistenceId, envelope.event)
               })
 
@@ -1164,7 +1157,7 @@ class R2dbcTimestampOffsetProjectionSpec
             Some(settings),
             sourceProvider,
             handler = () =>
-              R2dbcHandler[EventBySliceEnvelope[String]] { (session, envelope) =>
+              R2dbcHandler[EventEnvelope[String]] { (session, envelope) =>
                 TestRepository(session).concatToText(envelope.persistenceId, envelope.event)
               })
 

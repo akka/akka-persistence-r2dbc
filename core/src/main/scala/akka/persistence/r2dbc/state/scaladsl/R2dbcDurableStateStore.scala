@@ -16,7 +16,7 @@ import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.CurrentDurableStatePersistenceIdsQuery
-import akka.persistence.query.scaladsl.DurableStateStoreBySliceQuery
+import akka.persistence.query.typed.scaladsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery

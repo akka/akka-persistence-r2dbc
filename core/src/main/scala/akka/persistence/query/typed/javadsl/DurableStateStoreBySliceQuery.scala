@@ -2,22 +2,19 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.query.scaladsl
-
-import scala.collection.immutable
+package akka.persistence.query.typed.javadsl
 
 import akka.NotUsed
+import akka.japi.Pair
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
-import akka.persistence.state.scaladsl.DurableStateStore
-import akka.stream.scaladsl.Source
-
-// FIXME include this in Akka
+import akka.persistence.state.javadsl.DurableStateStore
+import akka.stream.javadsl.Source
 
 /**
  * Query API for reading durable state objects.
  *
- * For Java API see [[akka.persistence.query.javadsl.DurableStateStoreBySliceQuery]].
+ * For Scala API see [[DurableStateStoreBySliceQuery]].
  */
 trait DurableStateStoreBySliceQuery[A] extends DurableStateStore[A] {
 
@@ -66,6 +63,6 @@ trait DurableStateStoreBySliceQuery[A] extends DurableStateStore[A] {
 
   def sliceForPersistenceId(persistenceId: String): Int
 
-  def sliceRanges(numberOfRanges: Int): immutable.Seq[Range]
+  def sliceRanges(numberOfRanges: Int): java.util.List[Pair[Integer, Integer]]
 
 }

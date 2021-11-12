@@ -18,7 +18,7 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventBySliceEnvelope
+import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.projection.ProjectionBehavior
@@ -64,10 +64,10 @@ object EventSourcedChaosSpec {
       projectionId: ProjectionId,
       probe: ActorRef[Processed],
       failEvents: ConcurrentHashMap[String, Int])
-      extends R2dbcHandler[EventBySliceEnvelope[String]] {
+      extends R2dbcHandler[EventEnvelope[String]] {
     private val log = LoggerFactory.getLogger(getClass)
 
-    override def process(session: R2dbcSession, envelope: EventBySliceEnvelope[String]): Future[Done] = {
+    override def process(session: R2dbcSession, envelope: EventEnvelope[String]): Future[Done] = {
       val failCount = failEvents.getOrDefault(envelope.eventOption, 0)
       if (failCount > 0) {
         failEvents.put(envelope.event, failCount - 1)

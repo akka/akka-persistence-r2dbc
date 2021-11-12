@@ -23,7 +23,7 @@ import akka.persistence.SelectedSnapshot
 import akka.persistence.SnapshotProtocol.LoadSnapshot
 import akka.persistence.SnapshotProtocol.LoadSnapshotResult
 import akka.persistence.SnapshotSelectionCriteria
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.scaladsl.CurrentEventsByPersistenceIdQuery
 import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
@@ -226,7 +226,7 @@ class MigrationTool(system: ActorSystem[_]) {
       .runWith(Sink.fold(0L) { case (acc, count) => acc + count })
   }
 
-  private def serializedJournalRow(env: EventEnvelope): SerializedJournalRow = {
+  private def serializedJournalRow(env: ClassicEventEnvelope): SerializedJournalRow = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(env.persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(env.persistenceId, MaxNumberOfSlices)
 

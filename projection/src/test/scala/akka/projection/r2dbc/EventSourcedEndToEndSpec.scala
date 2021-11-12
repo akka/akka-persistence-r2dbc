@@ -18,7 +18,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.persistence.query.EventBySliceEnvelope
+import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -103,13 +103,13 @@ object EventSourcedEndToEndSpec {
     }
   }
 
-  final case class Processed(projectionId: ProjectionId, envelope: EventBySliceEnvelope[String])
+  final case class Processed(projectionId: ProjectionId, envelope: EventEnvelope[String])
 
   class TestHandler(projectionId: ProjectionId, probe: ActorRef[Processed])
-      extends R2dbcHandler[EventBySliceEnvelope[String]] {
+      extends R2dbcHandler[EventEnvelope[String]] {
     private val log = LoggerFactory.getLogger(getClass)
 
-    override def process(session: R2dbcSession, envelope: EventBySliceEnvelope[String]): Future[Done] = {
+    override def process(session: R2dbcSession, envelope: EventEnvelope[String]): Future[Done] = {
       log.debug("{} Processed {}", projectionId.key, envelope.event)
       probe ! Processed(projectionId, envelope)
       Future.successful(Done)

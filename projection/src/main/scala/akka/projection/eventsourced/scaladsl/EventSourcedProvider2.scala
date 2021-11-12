@@ -13,13 +13,13 @@ import scala.concurrent.Future
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
-import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
-import akka.persistence.query.scaladsl.EventTimestampQuery
-import akka.persistence.query.scaladsl.LoadEventQuery
-import akka.persistence.query.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.projection.scaladsl.SourceProvider
 import akka.stream.scaladsl.Source
 
@@ -33,7 +33,7 @@ object EventSourcedProvider2 {
       readJournalPluginId: String,
       entityType: String,
       minSlice: Int,
-      maxSlice: Int): SourceProvider[Offset, EventBySliceEnvelope[Event]] = {
+      maxSlice: Int): SourceProvider[Offset, EventEnvelope[Event]] = {
 
     val eventsBySlicesQuery =
       PersistenceQuery(system).readJournalFor[EventsBySliceQuery](readJournalPluginId)
@@ -65,22 +65,22 @@ object EventSourcedProvider2 {
       override val minSlice: Int,
       override val maxSlice: Int,
       system: ActorSystem[_])
-      extends SourceProvider[Offset, EventBySliceEnvelope[Event]]
+      extends SourceProvider[Offset, EventEnvelope[Event]]
       with TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
       with LoadEventQuery {
     implicit val executionContext: ExecutionContext = system.executionContext
 
-    override def source(offset: () => Future[Option[Offset]]): Future[Source[EventBySliceEnvelope[Event], NotUsed]] =
+    override def source(offset: () => Future[Option[Offset]]): Future[Source[EventEnvelope[Event], NotUsed]] =
       offset().map { offsetOpt =>
         val offset = offsetOpt.getOrElse(NoOffset)
         eventsBySlicesQuery
           .eventsBySlices(entityType, minSlice, maxSlice, offset)
       }
 
-    override def extractOffset(envelope: EventBySliceEnvelope[Event]): Offset = envelope.offset
+    override def extractOffset(envelope: EventEnvelope[Event]): Offset = envelope.offset
 
-    override def extractCreationTime(envelope: EventBySliceEnvelope[Event]): Long = envelope.timestamp
+    override def extractCreationTime(envelope: EventEnvelope[Event]): Long = envelope.timestamp
 
     override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] =
       eventsBySlicesQuery match {
@@ -92,7 +92,7 @@ object EventSourcedProvider2 {
               s"[${eventsBySlicesQuery.getClass.getName}] must implement [${classOf[EventTimestampQuery].getName}]"))
       }
 
-    override def loadEnvelope[Evt](persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Evt]]] =
+    override def loadEnvelope[Evt](persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope[Evt]]] =
       eventsBySlicesQuery match {
         case laodEventQuery: LoadEventQuery =>
           laodEventQuery.loadEnvelope(persistenceId, sequenceNr)

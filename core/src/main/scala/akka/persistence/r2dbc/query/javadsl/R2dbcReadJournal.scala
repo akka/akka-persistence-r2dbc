@@ -8,10 +8,12 @@ import java.util
 
 import akka.NotUsed
 import akka.japi.Pair
-import akka.persistence.query.EventBySliceEnvelope
-import akka.persistence.query.EventEnvelope
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl._
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.javadsl.CurrentEventsBySliceQuery
+import akka.persistence.query.typed.javadsl.EventsBySliceQuery
 import akka.persistence.r2dbc.query.scaladsl
 import akka.stream.javadsl.Source
 
@@ -35,14 +37,14 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] =
+      offset: Offset): Source[EventEnvelope[Any], NotUsed] =
     delegate.currentEventsBySlices(entityType, minSlice, maxSlice, offset).asJava
 
   override def eventsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] =
+      offset: Offset): Source[EventEnvelope[Any], NotUsed] =
     delegate.eventsBySlices(entityType, minSlice, maxSlice, offset).asJava
 
   override def sliceRanges(numberOfRanges: Int): util.List[Pair[Integer, Integer]] = {
@@ -56,13 +58,13 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
   override def currentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[EventEnvelope, NotUsed] =
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] =
     delegate.currentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr).asJava
 
   override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[EventEnvelope, NotUsed] =
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] =
     delegate.eventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr).asJava
 
   override def currentPersistenceIds(): Source[String, NotUsed] =

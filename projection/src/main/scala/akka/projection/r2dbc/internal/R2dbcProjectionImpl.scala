@@ -15,9 +15,9 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.event.Logging
 import akka.event.LoggingAdapter
-import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.UpdatedDurableState
-import akka.persistence.query.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.state.scaladsl.DurableStateStore
 import akka.persistence.state.scaladsl.GetObjectResult
@@ -77,7 +77,7 @@ private[projection] object R2dbcProjectionImpl {
   def loadEnvelope[Envelope](env: Envelope, sourceProvider: SourceProvider[_, Envelope])(implicit
       ec: ExecutionContext): Future[Envelope] = {
     env match {
-      case eventEnvelope: EventBySliceEnvelope[_] if eventEnvelope.eventOption.isEmpty =>
+      case eventEnvelope: EventEnvelope[_] if eventEnvelope.eventOption.isEmpty =>
         val pid = eventEnvelope.persistenceId
         val seqNr = eventEnvelope.sequenceNr
         sourceProvider match {

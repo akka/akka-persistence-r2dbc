@@ -11,11 +11,11 @@ import scala.concurrent.duration._
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
-import akka.persistence.query.scaladsl.EventsBySliceQuery
-import akka.persistence.query.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
@@ -74,7 +74,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventBySliceEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
       val startTime = Instant.now().minusSeconds(10 * 60)
@@ -82,7 +82,7 @@ class EventsBySliceBacktrackingSpec
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
 
-      val result: TestSubscriber.Probe[EventBySliceEnvelope[String]] =
+      val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query
           .eventsBySlices[String](entityType, 0, settings.maxNumberOfSlices, NoOffset)
           .runWith(sinkProbe)

@@ -2,13 +2,16 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.query
+package akka.persistence.query.typed
 
 import java.util.Optional
 
+import akka.persistence.query.Offset
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.util.HashCode
 
-object EventBySliceEnvelope {
+object EventEnvelope {
   def apply[Event](
       offset: Offset,
       persistenceId: String,
@@ -16,8 +19,8 @@ object EventBySliceEnvelope {
       event: Event,
       timestamp: Long,
       entityType: String,
-      slice: Int): EventBySliceEnvelope[Event] =
-    new EventBySliceEnvelope(offset, persistenceId, sequenceNr, Option(event), timestamp, None, entityType, slice)
+      slice: Int): EventEnvelope[Event] =
+    new EventEnvelope(offset, persistenceId, sequenceNr, Option(event), timestamp, None, entityType, slice)
 
   def create[Event](
       offset: Offset,
@@ -26,24 +29,25 @@ object EventBySliceEnvelope {
       event: Event,
       timestamp: Long,
       entityType: String,
-      slice: Int): EventBySliceEnvelope[Event] =
+      slice: Int): EventEnvelope[Event] =
     apply(offset, persistenceId, sequenceNr, event, timestamp, entityType, slice)
 
-  def unapply[Event](arg: EventBySliceEnvelope[Event]): Option[(Offset, String, Long, Option[Event], Long)] =
+  def unapply[Event](arg: EventEnvelope[Event]): Option[(Offset, String, Long, Option[Event], Long)] =
     Some((arg.offset, arg.persistenceId, arg.sequenceNr, arg.eventOption, arg.timestamp))
 }
 
 /**
- * Event wrapper adding meta data for the events in the result stream of
- * [[akka.persistence.query.scaladsl.EventsBySliceQuery]] query, or similar queries.
+ * Event wrapper adding meta data for the events in the result stream of [[EventsBySliceQuery]] query, or similar
+ * queries.
  *
- * If the `event` is not defined it has not been loaded yet. It can be loaded with the
- * [[akka.persistence.query.scaladsl.LoadEventQuery]].
+ * If the `event` is not defined it has not been loaded yet. It can be loaded with the [[LoadEventQuery]].
  *
  * The `timestamp` is the time the event was stored, in milliseconds since midnight, January 1, 1970 UTC (same as
  * `System.currentTimeMillis`).
+ *
+ * It is an improved `EventEnvelope` compared to [[akka.persistence.query.EventEnvelope]].
  */
-final class EventBySliceEnvelope[Event](
+final class EventEnvelope[Event](
     val offset: Offset,
     val persistenceId: String,
     val sequenceNr: Long,
@@ -92,7 +96,7 @@ final class EventBySliceEnvelope[Event](
   }
 
   override def equals(obj: Any): Boolean = obj match {
-    case other: EventBySliceEnvelope[_] =>
+    case other: EventEnvelope[_] =>
       offset == other.offset && persistenceId == other.persistenceId && sequenceNr == other.sequenceNr &&
         eventOption == other.eventOption && timestamp == other.timestamp && eventMetadata == other.eventMetadata &&
         entityType == other.entityType && slice == other.slice

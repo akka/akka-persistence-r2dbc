@@ -14,11 +14,11 @@ import scala.concurrent.Future
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.query.EventBySliceEnvelope
 import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.query.UpdatedDurableState
-import akka.persistence.query.scaladsl.EventTimestampQuery
-import akka.persistence.query.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.query.TimestampOffset
 import akka.projection.ProjectionId
 import akka.projection.eventsourced.scaladsl.TimestampOffsetBySlicesSourceProvider
@@ -40,9 +40,7 @@ object R2dbcTimestampOffsetStoreSpec {
     override def timestampOf(persistenceId: String, sequenceNr: SeqNr): Future[Option[Instant]] =
       Future.successful(Some(clock.instant()))
 
-    override def loadEnvelope[Event](
-        persistenceId: String,
-        sequenceNr: SeqNr): Future[Option[EventBySliceEnvelope[Event]]] =
+    override def loadEnvelope[Event](persistenceId: String, sequenceNr: SeqNr): Future[Option[EventEnvelope[Event]]] =
       throw new IllegalStateException("loadEvent shouldn't be used here")
   }
 }
@@ -75,10 +73,10 @@ class R2dbcTimestampOffsetStoreSpec
       customSettings,
       r2dbcExecutor)
 
-  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventBySliceEnvelope[String] = {
+  def createEnvelope(pid: Pid, seqNr: SeqNr, timestamp: Instant, event: String): EventEnvelope[String] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(pid)
     val slice = SliceUtils.sliceForPersistenceId(pid, R2dbcOffsetStore.MaxNumberOfSlices)
-    EventBySliceEnvelope(
+    EventEnvelope(
       TimestampOffset(timestamp, timestamp.plusMillis(1000), Map(pid -> seqNr)),
       pid,
       seqNr,

@@ -2,7 +2,7 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.query.scaladsl
+package akka.persistence.query.typed.scaladsl
 
 import java.time.Instant
 
