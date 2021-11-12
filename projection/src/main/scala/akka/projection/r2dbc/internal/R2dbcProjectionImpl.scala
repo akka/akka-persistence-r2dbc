@@ -81,9 +81,9 @@ private[projection] object R2dbcProjectionImpl {
         val pid = eventEnvelope.persistenceId
         val seqNr = eventEnvelope.sequenceNr
         sourceProvider match {
-          case loadEventQuery: LoadEventQuery[_] =>
+          case loadEventQuery: LoadEventQuery =>
             loadEventQuery
-              .loadEnvelope(pid, seqNr)
+              .loadEnvelope[Any](pid, seqNr)
               .map {
                 case Some(loadedEnv) =>
                   log.debug("Loaded event lazily, persistenceId [{}], seqNr [{}]", pid, seqNr)

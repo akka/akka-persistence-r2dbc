@@ -36,31 +36,31 @@ object EventSourcedProvider2 {
       maxSlice: Int): SourceProvider[Offset, EventBySliceEnvelope[Event]] = {
 
     val eventsBySlicesQuery =
-      PersistenceQuery(system).readJournalFor[EventsBySliceQuery[Event]](readJournalPluginId)
+      PersistenceQuery(system).readJournalFor[EventsBySliceQuery](readJournalPluginId)
 
     if (!eventsBySlicesQuery.isInstanceOf[EventTimestampQuery])
       throw new IllegalArgumentException(
         s"[${eventsBySlicesQuery.getClass.getName}] with readJournalPluginId " +
         s"[$readJournalPluginId] must implement [${classOf[EventTimestampQuery].getName}]")
 
-    if (!eventsBySlicesQuery.isInstanceOf[LoadEventQuery[_]])
+    if (!eventsBySlicesQuery.isInstanceOf[LoadEventQuery])
       throw new IllegalArgumentException(
         s"[${eventsBySlicesQuery.getClass.getName}] with readJournalPluginId " +
-        s"[$readJournalPluginId] must implement [${classOf[LoadEventQuery[_]].getName}]")
+        s"[$readJournalPluginId] must implement [${classOf[LoadEventQuery].getName}]")
 
     new EventsBySlicesSourceProvider(eventsBySlicesQuery, entityType, minSlice, maxSlice, system)
   }
 
   def sliceForPersistenceId(system: ActorSystem[_], readJournalPluginId: String, persistenceId: String): Int =
     PersistenceQuery(system)
-      .readJournalFor[EventsBySliceQuery[Any]](readJournalPluginId)
+      .readJournalFor[EventsBySliceQuery](readJournalPluginId)
       .sliceForPersistenceId(persistenceId)
 
   def sliceRanges(system: ActorSystem[_], readJournalPluginId: String, numberOfRanges: Int): immutable.Seq[Range] =
-    PersistenceQuery(system).readJournalFor[EventsBySliceQuery[Any]](readJournalPluginId).sliceRanges(numberOfRanges)
+    PersistenceQuery(system).readJournalFor[EventsBySliceQuery](readJournalPluginId).sliceRanges(numberOfRanges)
 
   private class EventsBySlicesSourceProvider[Event](
-      eventsBySlicesQuery: EventsBySliceQuery[Event],
+      eventsBySlicesQuery: EventsBySliceQuery,
       entityType: String,
       override val minSlice: Int,
       override val maxSlice: Int,
@@ -68,7 +68,7 @@ object EventSourcedProvider2 {
       extends SourceProvider[Offset, EventBySliceEnvelope[Event]]
       with TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
-      with LoadEventQuery[Event] {
+      with LoadEventQuery {
     implicit val executionContext: ExecutionContext = system.executionContext
 
     override def source(offset: () => Future[Option[Offset]]): Future[Source[EventBySliceEnvelope[Event], NotUsed]] =
@@ -92,14 +92,14 @@ object EventSourcedProvider2 {
               s"[${eventsBySlicesQuery.getClass.getName}] must implement [${classOf[EventTimestampQuery].getName}]"))
       }
 
-    override def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]] =
+    override def loadEnvelope[Evt](persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Evt]]] =
       eventsBySlicesQuery match {
-        case laodEventQuery: LoadEventQuery[Event] =>
+        case laodEventQuery: LoadEventQuery =>
           laodEventQuery.loadEnvelope(persistenceId, sequenceNr)
         case _ =>
           Future.failed(
             new IllegalStateException(
-              s"[${eventsBySlicesQuery.getClass.getName}] must implement [${classOf[LoadEventQuery[_]].getName}]"))
+              s"[${eventsBySlicesQuery.getClass.getName}] must implement [${classOf[LoadEventQuery].getName}]"))
       }
   }
 }

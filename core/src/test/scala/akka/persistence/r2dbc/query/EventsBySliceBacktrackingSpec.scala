@@ -39,7 +39,7 @@ class EventsBySliceBacktrackingSpec
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private val query = PersistenceQuery(testKit.system)
-    .readJournalFor[EventsBySliceQuery[String] with LoadEventQuery[String]](R2dbcReadJournal.Identifier)
+    .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
   private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -83,7 +83,10 @@ class EventsBySliceBacktrackingSpec
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
 
       val result: TestSubscriber.Probe[EventBySliceEnvelope[String]] =
-        query.eventsBySlices(entityType, 0, settings.maxNumberOfSlices, NoOffset).runWith(sinkProbe).request(100)
+        query
+          .eventsBySlices[String](entityType, 0, settings.maxNumberOfSlices, NoOffset)
+          .runWith(sinkProbe)
+          .request(100)
 
       val env1 = result.expectNext()
       env1.persistenceId shouldBe pid1
@@ -103,7 +106,7 @@ class EventsBySliceBacktrackingSpec
       // event payload isn't included in backtracking results
       env3.eventOption shouldBe None
       // but it can be lazy loaded
-      query.loadEnvelope(env3.persistenceId, env3.sequenceNr).futureValue.get.eventOption shouldBe Some("e1-1")
+      query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.get.eventOption shouldBe Some("e1-1")
       result.expectNoMessage(100.millis) // not e1-2
 
       writeEvent(slice1, pid1, 3L, startTime.plusMillis(3), "e1-3")

@@ -11,7 +11,7 @@ import akka.persistence.query.EventBySliceEnvelope
 /**
  * [[EventsBySliceQuery]] that is using a timestamp based offset should also implement this query.
  */
-trait LoadEventQuery[Event] {
+trait LoadEventQuery {
 
-  def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]]
+  def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]]
 }

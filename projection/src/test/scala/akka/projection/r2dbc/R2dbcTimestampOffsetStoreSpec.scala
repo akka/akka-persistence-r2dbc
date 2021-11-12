@@ -35,12 +35,14 @@ object R2dbcTimestampOffsetStoreSpec {
   class TestTimestampSourceProvider(override val minSlice: Int, override val maxSlice: Int, clock: TestClock)
       extends TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
-      with LoadEventQuery[String] {
+      with LoadEventQuery {
 
     override def timestampOf(persistenceId: String, sequenceNr: SeqNr): Future[Option[Instant]] =
       Future.successful(Some(clock.instant()))
 
-    override def loadEnvelope(persistenceId: String, sequenceNr: SeqNr): Future[Option[EventBySliceEnvelope[String]]] =
+    override def loadEnvelope[Event](
+        persistenceId: String,
+        sequenceNr: SeqNr): Future[Option[EventBySliceEnvelope[Event]]] =
       throw new IllegalStateException("loadEvent shouldn't be used here")
   }
 }

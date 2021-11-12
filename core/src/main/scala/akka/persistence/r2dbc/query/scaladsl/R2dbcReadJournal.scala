@@ -41,10 +41,10 @@ object R2dbcReadJournal {
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends ReadJournal
-    with CurrentEventsBySliceQuery[Any]
-    with EventsBySliceQuery[Any]
+    with CurrentEventsBySliceQuery
+    with EventsBySliceQuery
     with EventTimestampQuery
-    with LoadEventQuery[Any]
+    with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
     with CurrentPersistenceIdsQuery {
@@ -99,11 +99,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def sliceRanges(numberOfRanges: Int): immutable.Seq[Range] =
     SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
 
-  override def currentEventsBySlices(
+  override def currentEventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] = {
+      offset: Offset): Source[EventBySliceEnvelope[Event], NotUsed] = {
     bySlice
       .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
@@ -136,11 +136,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[R2dbcReadJournal.currentEventsBySlices]].
    */
-  override def eventsBySlices(
+  override def eventsBySlices[Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventBySliceEnvelope[Any], NotUsed] =
+      offset: Offset): Source[EventBySliceEnvelope[Event], NotUsed] =
     bySlice.liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
 
   override def currentEventsByPersistenceId(
@@ -222,7 +222,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   //LoadEventQuery
-  override def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[Any]]] = {
+  override def loadEnvelope[Event](
+      persistenceId: String,
+      sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
     queryDao

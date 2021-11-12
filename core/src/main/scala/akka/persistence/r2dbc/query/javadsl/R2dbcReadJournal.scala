@@ -23,6 +23,7 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     extends ReadJournal
     with CurrentEventsBySliceQuery[Any]
     with EventsBySliceQuery[Any]
+    // FIXME with javadsl.LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
     with CurrentPersistenceIdsQuery {

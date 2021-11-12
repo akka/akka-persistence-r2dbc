@@ -69,8 +69,6 @@ class EventsBySliceSpec
   import settings.maxNumberOfSlices
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
-  private def liveQuery: EventsBySliceQuery[String] = query.asInstanceOf[EventsBySliceQuery[String]]
-  private def currentQuery: CurrentEventsBySliceQuery[String] = query.asInstanceOf[CurrentEventsBySliceQuery[String]]
 
   private class Setup {
     val entityType = nextEntityType
@@ -90,11 +88,9 @@ class EventsBySliceSpec
         queryImpl: R2dbcReadJournal = query): Source[EventBySliceEnvelope[String], NotUsed] =
       queryType match {
         case Live =>
-          val liveQuery = queryImpl.asInstanceOf[EventsBySliceQuery[String]]
-          liveQuery.eventsBySlices(entityType, minSlice, maxSlice, offset)
+          queryImpl.eventsBySlices[String](entityType, minSlice, maxSlice, offset)
         case Current =>
-          val currentQuery = queryImpl.asInstanceOf[CurrentEventsBySliceQuery[String]]
-          currentQuery.currentEventsBySlices(entityType, minSlice, maxSlice, offset)
+          queryImpl.currentEventsBySlices[String](entityType, minSlice, maxSlice, offset)
       }
 
     def assertFinished(probe: TestSubscriber.Probe[EventBySliceEnvelope[String]]): Unit =
@@ -209,10 +205,10 @@ class EventsBySliceSpec
           probe.expectMessage(10.seconds, Done)
         }
 
-        val timestampQuery = query.asInstanceOf[EventTimestampQuery]
-        timestampQuery.timestampOf(persistenceId, 2L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(persistenceId, 1L).futureValue.isDefined shouldBe true
-        timestampQuery.timestampOf(persistenceId, 4L).futureValue.isDefined shouldBe false
+        query.isInstanceOf[EventTimestampQuery] shouldBe true
+        query.timestampOf(persistenceId, 2L).futureValue.isDefined shouldBe true
+        query.timestampOf(persistenceId, 1L).futureValue.isDefined shouldBe true
+        query.timestampOf(persistenceId, 4L).futureValue.isDefined shouldBe false
       }
 
       "support LoadEventQuery" in new Setup {
@@ -221,10 +217,10 @@ class EventsBySliceSpec
           probe.expectMessage(10.seconds, Done)
         }
 
-        val loadEventQuery = query.asInstanceOf[LoadEventQuery[String]]
-        loadEventQuery.loadEnvelope(persistenceId, 2L).futureValue.get.event shouldBe "e-2"
-        loadEventQuery.loadEnvelope(persistenceId, 1L).futureValue.get.event shouldBe "e-1"
-        loadEventQuery.loadEnvelope(persistenceId, 4L).futureValue.isDefined shouldBe false
+        query.isInstanceOf[LoadEventQuery] shouldBe true
+        query.loadEnvelope[String](persistenceId, 2L).futureValue.get.event shouldBe "e-2"
+        query.loadEnvelope[String](persistenceId, 1L).futureValue.get.event shouldBe "e-1"
+        query.loadEnvelope[String](persistenceId, 4L).futureValue.isDefined shouldBe false
       }
 
     }
@@ -236,11 +232,11 @@ class EventsBySliceSpec
       persister ! PersistWithAck(s"e-1", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventBySliceEnvelope[String] =
-        currentQuery.currentEventsBySlices(entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
+        query.currentEventsBySlices[String](entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
       val offset = singleEvent.offset.asInstanceOf[TimestampOffset]
       offset.seen shouldEqual Map(singleEvent.persistenceId -> singleEvent.sequenceNr)
       query
-        .currentEventsBySlices(entityType, slice, slice, offset)
+        .currentEventsBySlices[String](entityType, slice, slice, offset)
         .take(1)
         .runWith(Sink.headOption)
         .futureValue shouldEqual None
@@ -250,13 +246,13 @@ class EventsBySliceSpec
       persister ! PersistWithAck(s"e-1", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventBySliceEnvelope[String] =
-        currentQuery.currentEventsBySlices(entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
+        query.currentEventsBySlices[String](entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
       val offset = singleEvent.offset.asInstanceOf[TimestampOffset]
       offset.seen shouldEqual Map(singleEvent.persistenceId -> singleEvent.sequenceNr)
 
       val offsetWithoutSeen = TimestampOffset(offset.timestamp, Map.empty)
       val singleEvent2 = query
-        .currentEventsBySlices(entityType, slice, slice, offsetWithoutSeen)
+        .currentEventsBySlices[String](entityType, slice, slice, offsetWithoutSeen)
         .runWith(Sink.headOption)
         .futureValue
       singleEvent2.get.event shouldBe "e-1"
@@ -285,7 +281,7 @@ class EventsBySliceSpec
         (0 until 4).flatMap { rangeIndex =>
           val result =
             query
-              .currentEventsBySlices(entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
+              .currentEventsBySlices[String](entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
               .runWith(Sink.seq)
               .futureValue
           result.foreach { env =>
@@ -305,7 +301,7 @@ class EventsBySliceSpec
         probe.expectMessage(Done)
       }
       val result: TestSubscriber.Probe[EventBySliceEnvelope[String]] =
-        liveQuery.eventsBySlices(entityType, slice, slice, NoOffset).runWith(sinkProbe).request(21)
+        query.eventsBySlices[String](entityType, slice, slice, NoOffset).runWith(sinkProbe).request(21)
       for (i <- 1 to 20) {
         result.expectNext().event shouldBe s"e-$i"
       }
@@ -338,8 +334,8 @@ class EventsBySliceSpec
 
       val queries: Seq[Source[EventBySliceEnvelope[String], NotUsed]] =
         (0 until 4).map { rangeIndex =>
-          liveQuery
-            .eventsBySlices(entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
+          query
+            .eventsBySlices[String](entityType, ranges(rangeIndex).min, ranges(rangeIndex).max, NoOffset)
             .map { env =>
               ranges(rangeIndex) should contain(query.sliceForPersistenceId(env.persistenceId))
               env

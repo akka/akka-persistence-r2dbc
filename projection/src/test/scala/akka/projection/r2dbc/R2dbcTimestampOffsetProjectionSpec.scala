@@ -86,7 +86,7 @@ object R2dbcTimestampOffsetProjectionSpec {
       extends SourceProvider[TimestampOffset, EventBySliceEnvelope[String]]
       with TimestampOffsetBySlicesSourceProvider
       with EventTimestampQuery
-      with LoadEventQuery[String] {
+      with LoadEventQuery {
 
     override def source(
         offset: () => Future[Option[TimestampOffset]]): Future[Source[EventBySliceEnvelope[String], NotUsed]] =
@@ -111,17 +111,12 @@ object R2dbcTimestampOffsetProjectionSpec {
       })
     }
 
-    override def loadEnvelope(persistenceId: String, sequenceNr: Long): Future[Option[EventBySliceEnvelope[String]]] = {
+    override def loadEnvelope[Event](
+        persistenceId: String,
+        sequenceNr: Long): Future[Option[EventBySliceEnvelope[Event]]] = {
       Future.successful(envelopes.collectFirst {
         case env if env.persistenceId == persistenceId && env.sequenceNr == sequenceNr =>
-          EventBySliceEnvelope(
-            env.offset,
-            env.persistenceId,
-            env.sequenceNr,
-            env.event,
-            env.timestamp,
-            env.entityType,
-            env.slice)
+          env.asInstanceOf[EventBySliceEnvelope[Event]]
       })
     }
   }
