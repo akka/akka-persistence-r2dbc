@@ -120,10 +120,6 @@ class EventsBySliceBacktrackingSpec
       // no backtracking yet
       result.expectNoMessage(settings.querySettings.refreshInterval + 100.millis)
 
-      // FIXME one case that isn't covered yet is if there is no progress (no more events) then
-      // there will not be any new backtracking query and missed events will not be found (until there are
-      // new events that move the latest offset forward)
-
       // after 1/2 of the backtracking widow, to kick off a backtracking query
       writeEvent(
         slice1,

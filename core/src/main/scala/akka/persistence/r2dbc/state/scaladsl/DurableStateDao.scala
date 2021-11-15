@@ -237,19 +237,19 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      untilTimestamp: Option[Instant],
+      toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedStateRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
           .createStatement(
-            stateBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime, backtracking))
+            stateBySlicesRangeSql(maxDbTimestampParam = toTimestamp.isDefined, behindCurrentTime, backtracking))
           .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
           .bind(3, fromTimestamp)
-        untilTimestamp match {
+        toTimestamp match {
           case Some(until) =>
             stmt.bind(4, until)
             stmt.bind(5, settings.querySettings.bufferSize)

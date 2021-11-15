@@ -46,7 +46,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     "SELECT transaction_timestamp() AS db_timestamp"
 
   private def eventsBySlicesRangeSql(
-      maxDbTimestampParam: Boolean,
+      toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): String = {
     var p = 0
@@ -56,8 +56,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       "$" + p
     }
 
-    def maxDbTimestampParamCondition =
-      if (maxDbTimestampParam) s"AND db_timestamp < ${nextParam()}" else ""
+    def toDbTimestampParamCondition =
+      if (toDbTimestampParam) s"AND db_timestamp <= ${nextParam()}" else ""
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
@@ -75,7 +75,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     s"FROM $journalTable " +
     s"WHERE entity_type = ${nextParam()} " +
     s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
-    s"AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
+    s"AND db_timestamp >= ${nextParam()} $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
     s"AND deleted = false " +
     s"ORDER BY db_timestamp, seq_nr " +
     s"LIMIT ${nextParam()}"
@@ -122,19 +122,19 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      untilTimestamp: Option[Instant],
+      toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
           .createStatement(
-            eventsBySlicesRangeSql(maxDbTimestampParam = untilTimestamp.isDefined, behindCurrentTime, backtracking))
+            eventsBySlicesRangeSql(toDbTimestampParam = toTimestamp.isDefined, behindCurrentTime, backtracking))
           .bind(0, entityType)
           .bind(1, minSlice)
           .bind(2, maxSlice)
           .bind(3, fromTimestamp)
-        untilTimestamp match {
+        toTimestamp match {
           case Some(until) =>
             stmt.bind(4, until)
             stmt.bind(5, settings.querySettings.bufferSize)
