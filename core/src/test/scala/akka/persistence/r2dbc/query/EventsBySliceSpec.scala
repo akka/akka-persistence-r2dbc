@@ -15,9 +15,7 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
-import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
@@ -47,6 +45,9 @@ object EventsBySliceSpec {
   def config: Config =
     TestConfig.backtrackingDisabledConfig
       .withFallback(ConfigFactory.parseString(s"""
+    # This test is not using backtracking, so increase behind-current-time to
+    # reduce risk of missing events
+    akka.persistence.r2dbc.query.behind-current-time = 500 millis
     akka.persistence.r2dbc-small-buffer = $${akka.persistence.r2dbc}
     akka.persistence.r2dbc-small-buffer.query {
       buffer-size = 3
@@ -147,10 +148,6 @@ class EventsBySliceSpec
       "read in chunks" in new Setup {
         val queryWithSmallBuffer = PersistenceQuery(testKit.system)
           .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
-        // FIXME this doesn't work for PersistAll (same transaction_timestamp
-//        for (i <- 1 to 10) {
-//          persister ! PersistAll((1 to 10).map(n => s"e-$i-$n").toList)
-//        }
         for (i <- 1 to 10; n <- 1 to 10) {
           persister ! Persist(s"e-$i-$n")
         }
@@ -319,6 +316,8 @@ class EventsBySliceSpec
       for (i <- 21 to 40) {
         result.expectNext().event shouldBe s"e-$i"
       }
+
+      result.cancel()
     }
 
     "retrieve from several slices" in new Setup {

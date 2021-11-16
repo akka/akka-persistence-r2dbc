@@ -14,8 +14,6 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
-import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
