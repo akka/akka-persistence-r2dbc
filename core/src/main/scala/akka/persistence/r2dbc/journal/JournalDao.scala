@@ -89,11 +89,19 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable " +
       s"WHERE slice = $$$p AND entity_type = $$${p + 1} AND persistence_id = $$${p + 2} AND seq_nr = $$${p + 3})"
 
-    val insertEventWithParameterTimestampSql =
-      baseSql + "GREATEST($13, " + insertSubSelect(p = 14) + "))"
+    val insertEventWithParameterTimestampSql = {
+      if (journalSettings.dbTimestampMonotonicIncreasing)
+        baseSql + " $13)"
+      else
+        baseSql + "GREATEST($13, " + insertSubSelect(p = 14) + "))"
+    }
 
-    val insertEventWithTransactionTimestampSql =
-      baseSql + "GREATEST(transaction_timestamp(), " + insertSubSelect(p = 13) + "))"
+    val insertEventWithTransactionTimestampSql = {
+      if (journalSettings.dbTimestampMonotonicIncreasing)
+        baseSql + " transaction_timestamp())"
+      else
+        baseSql + "GREATEST(transaction_timestamp(), " + insertSubSelect(p = 13) + "))"
+    }
 
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
   }
@@ -147,18 +155,23 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       }
 
       if (useTimestampFromDb) {
-        stmt
-          .bind(12, write.slice)
-          .bind(13, write.entityType)
-          .bind(14, write.persistenceId)
-          .bind(15, previousSeqNr)
+        if (!journalSettings.dbTimestampMonotonicIncreasing)
+          stmt
+            .bind(12, write.slice)
+            .bind(13, write.entityType)
+            .bind(14, write.persistenceId)
+            .bind(15, previousSeqNr)
       } else {
-        stmt
-          .bind(12, write.dbTimestamp)
-          .bind(13, write.slice)
-          .bind(14, write.entityType)
-          .bind(15, write.persistenceId)
-          .bind(16, previousSeqNr)
+        if (journalSettings.dbTimestampMonotonicIncreasing)
+          stmt
+            .bind(12, write.dbTimestamp)
+        else
+          stmt
+            .bind(12, write.dbTimestamp)
+            .bind(13, write.slice)
+            .bind(14, write.entityType)
+            .bind(15, write.persistenceId)
+            .bind(16, previousSeqNr)
       }
 
       stmt

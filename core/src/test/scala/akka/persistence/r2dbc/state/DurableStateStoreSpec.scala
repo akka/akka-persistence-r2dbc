@@ -73,6 +73,9 @@ class DurableStateStoreSpec
     }
 
     "detect and reject concurrent updates" in {
+      if (!r2dbcSettings.durableStateAssertSingleWriter)
+        pending
+
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-updated-concurrently")
       val value = "Genuinely Collaborative"
