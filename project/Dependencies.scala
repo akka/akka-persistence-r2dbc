@@ -15,13 +15,7 @@ object Dependencies {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
     val akkaStream = "com.typesafe.akka" %% "akka-stream" % AkkaVersion
     val akkaPersistence = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion
-    val akkaPersistenceTyped = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
-    val akkaClusterTyped = "com.typesafe.akka" %% "akka-cluster-typed" % AkkaVersion
-    val akkaClusterShardingTyped = "com.typesafe.akka" %% "akka-cluster-sharding-typed" % AkkaVersion
-    val akkaSerializationJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion
-    val akkaSlf4j = "com.typesafe.akka" %% "akka-slf4j" % AkkaVersion
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" // EPL 1.0 / LGPL 2.1
 
     // FIXME remove when EventSourcedProvider2 has been incorporated in Akka Projection
     val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion
@@ -35,6 +29,7 @@ object Dependencies {
   }
 
   object TestDeps {
+    val akkaPersistenceTyped = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion % Test
     val akkaPersistenceTck = "com.typesafe.akka" %% "akka-persistence-tck" % AkkaVersion % Test
     val akkaTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
@@ -42,7 +37,7 @@ object Dependencies {
 
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val logback = Compile.logback % Test
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
@@ -81,4 +76,7 @@ object Dependencies {
 
   val migration =
     Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.logback, TestDeps.scalaTest)
+
+  val docs =
+    Seq(TestDeps.akkaPersistenceTyped)
 }
