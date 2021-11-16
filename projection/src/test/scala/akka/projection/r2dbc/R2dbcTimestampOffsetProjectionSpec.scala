@@ -751,7 +751,9 @@ class R2dbcTimestampOffsetProjectionSpec
         result2.toString shouldBe "e2-1|e2-2|e2-3|e2-4|"
       }
 
-      offsetShouldBe(envelopes2.last.offset)
+      eventually {
+        offsetShouldBe(envelopes2.last.offset)
+      }
       projectionRef ! ProjectionBehavior.Stop
     }
   }
