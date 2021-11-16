@@ -48,7 +48,7 @@ import org.slf4j.Logger
       if (backtracking) latestBacktracking.timestamp
       else latest.timestamp
 
-    def nextQueryUntilTimestamp: Option[Instant] =
+    def nextQueryToTimestamp: Option[Instant] =
       if (backtracking) Some(latest.timestamp)
       else None
   }
@@ -68,7 +68,7 @@ import org.slf4j.Logger
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
-        untilTimestamp: Option[Instant],
+        toTimestamp: Option[Instant],
         behindCurrentTime: FiniteDuration,
         backtracking: Boolean): Source[SerializedRow, NotUsed]
   }
@@ -125,7 +125,7 @@ import org.slf4j.Logger
               minSlice,
               maxSlice,
               state.latest.timestamp,
-              untilTimestamp = Some(toDbTimestamp),
+              toTimestamp = Some(toDbTimestamp),
               behindCurrentTime = Duration.Zero,
               backtracking = false)
             .via(deserializeAndAddOffset(state.latest)))
@@ -272,7 +272,7 @@ import org.slf4j.Logger
             minSlice,
             maxSlice,
             newState.nextQueryFromTimestamp,
-            newState.nextQueryUntilTimestamp,
+            newState.nextQueryToTimestamp,
             behindCurrentTime,
             backtracking = newState.backtracking)
           .via(deserializeAndAddOffset(newState.currentOffset)))

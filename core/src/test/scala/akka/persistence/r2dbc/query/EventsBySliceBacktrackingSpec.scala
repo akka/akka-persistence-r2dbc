@@ -105,22 +105,24 @@ class EventsBySliceBacktrackingSpec
       env3.eventOption shouldBe None
       // but it can be lazy loaded
       query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.get.eventOption shouldBe Some("e1-1")
+      // backtracking up to (and equal to) the same offset
+      val env4 = result.expectNext()
+      env4.persistenceId shouldBe pid1
+      env4.sequenceNr shouldBe 2L
+      env4.eventOption shouldBe None
+
       result.expectNoMessage(100.millis) // not e1-2
 
       writeEvent(slice1, pid1, 3L, startTime.plusMillis(3), "e1-3")
-      val env4 = result.expectNext()
-      env4.persistenceId shouldBe pid1
-      env4.sequenceNr shouldBe 3L
+      val env5 = result.expectNext()
+      env5.persistenceId shouldBe pid1
+      env5.sequenceNr shouldBe 3L
 
       // before e1-3 so it will not be found by the normal query
       writeEvent(slice2, pid2, 1L, startTime.plusMillis(2), "e2-1")
 
       // no backtracking yet
       result.expectNoMessage(settings.querySettings.refreshInterval + 100.millis)
-
-      // FIXME one case that isn't covered yet is if there is no progress (no more events) then
-      // there will not be any new backtracking query and missed events will not be found (until there are
-      // new events that move the latest offset forward)
 
       // after 1/2 of the backtracking widow, to kick off a backtracking query
       writeEvent(
@@ -129,16 +131,12 @@ class EventsBySliceBacktrackingSpec
         4L,
         startTime.plusMillis(settings.querySettings.backtrackingWindow.toMillis / 2).plusMillis(4),
         "e1-4")
-      val env5 = result.expectNext()
-      env5.persistenceId shouldBe pid1
-      env5.sequenceNr shouldBe 4L
-
-      // backtracking finds it,  and it also emits duplicates (by design)
-      // e1-1 was already handled by previous backtracking query
       val env6 = result.expectNext()
       env6.persistenceId shouldBe pid1
-      env6.sequenceNr shouldBe 2L
+      env6.sequenceNr shouldBe 4L
 
+      // backtracking finds it,  and it also emits duplicates (by design)
+      // e1-1 and e1-2 were already handled by previous backtracking query
       val env7 = result.expectNext()
       env7.persistenceId shouldBe pid2
       env7.sequenceNr shouldBe 1L
@@ -146,8 +144,10 @@ class EventsBySliceBacktrackingSpec
       val env8 = result.expectNext()
       env8.persistenceId shouldBe pid1
       env8.sequenceNr shouldBe 3L
-      result.expectNoMessage(100.millis) // not e1-4
-      result.expectNoMessage(settings.querySettings.refreshInterval)
+
+      val env9 = result.expectNext()
+      env9.persistenceId shouldBe pid1
+      env9.sequenceNr shouldBe 4L
     }
   }
 
