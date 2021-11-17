@@ -71,8 +71,9 @@ query from a given `offset` after a crash/restart.
 
 The offset is a `TimestampOffset` and it is based on the database `transaction_timestamp()` when the event was stored.
 `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a
-"later" event may be visible first and when retrieving events after the previously seen timestamp may miss some
-events. In distributed SQL databases there can also be clock skews for the database timestamps. For that reason
+"later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some
+events and emit event with a later sequence number for a persistence id without emitting all preceding events.
+In distributed SQL databases there can also be clock skews for the database timestamps. For that reason
 `eventsBySlices` will perform additional backtracking queries to catch missed events. Events from backtracking
 will typically be duplicates of previously emitted events. It's the responsibility of the consumer to filter
 duplicates and make sure that events are processed in exact sequence number order for each persistence id.
@@ -118,7 +119,7 @@ Scala
 
 The emitted `DurableStateChange` can be a `UpdatedDurableState` or `DeletedDurableState`, but `DeletedDurableState` is not implemented yet.
 
-It will emit an `UpdatedDurableState` that when the durable state is updated. When the state is updated again another
+It will emit an `UpdatedDurableState` when the durable state is updated. When the state is updated again another
 `UpdatedDurableState` is emitted. It will always emit an `UpdatedDurableState` for the latest revision of the state,
 but there is no guarantee that all intermediate changes are emitted if the state is updated several times. Note that
 `UpdatedDurableState` contains the full current state, and it is not a delta from previous revision of state.

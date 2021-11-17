@@ -6,7 +6,7 @@ The journal plugin enables storing and loading events for @extref:[event sourced
 
 The `event_journal` table and `event_journal_slice_idx` index need to be created in the configured database, see schema definition in @ref:[Creating the schema](getting-started.md#schema).
 
-The `event_journal_slice_idx` is only needed if the slice based @ref:[queries](query.md) are used.
+The `event_journal_slice_idx` index is only needed if the slice based @ref:[queries](query.md) are used.
 
 ## Configuration
 

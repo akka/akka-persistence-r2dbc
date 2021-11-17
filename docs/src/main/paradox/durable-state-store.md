@@ -6,7 +6,7 @@ The durable state plugin enables storing and loading key-value entries for @extr
 
 The `durable_state` table and `durable_state_slice_idx` index need to be created in the configured database, see schema definition in @ref:[Creating the schema](getting-started.md#schema).
 
-The `durable_state_slice_idx` is only needed if the slice based @ref:[queries](query.md) are used.
+The `durable_state_slice_idx` index is only needed if the slice based @ref:[queries](query.md) are used.
 
 ## Configuration
 

@@ -24,7 +24,7 @@ With such sequence number tracking in place the `eventsBySlices` query can use a
 
 Using `transaction_timestamp()` as this timestamp based offset has a few challenges:
 
-* The `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a "later" event may be visible first and when retrieving events after the previously seen timestamp may miss some events.
+* The `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some events.
 * In distributed SQL databases there can also be clock skews for the database timestamps.
 * There can be more than one event per timestamp.
 
