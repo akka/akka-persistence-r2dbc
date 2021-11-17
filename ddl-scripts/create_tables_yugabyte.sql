@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
   PRIMARY KEY((slice, entity_type) HASH, persistence_id, seq_nr ASC)
 );
 
+-- `event_journal_slice_idx` is only needed if the slice based queries are used
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type ASC, slice ASC, db_timestamp ASC)
   INCLUDE (seq_nr, deleted);
 
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   PRIMARY KEY((slice, entity_type) HASH, persistence_id, revision ASC)
 );
 
+-- `durable_state_slice_idx` is only needed if the slice based queries are used
 CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC)
   INCLUDE (revision);
 

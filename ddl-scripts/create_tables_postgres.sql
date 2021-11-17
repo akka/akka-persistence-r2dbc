@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
   PRIMARY KEY(slice, entity_type, persistence_id, seq_nr)
 );
 
+-- `event_journal_slice_idx` is only needed if the slice based queries are used
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type, db_timestamp);
 
 CREATE TABLE IF NOT EXISTS snapshot(
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   PRIMARY KEY(slice, entity_type, persistence_id, revision)
 );
 
+-- `durable_state_slice_idx` is only needed if the slice based queries are used
 CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp);
 
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (

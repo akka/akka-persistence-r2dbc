@@ -1,6 +1,12 @@
 # Overview
 
-The Akka Persistence R2DBC plugin allows for using SQL database with R2DBC as a backend for Akka Persistence. 
+The Akka Persistence R2DBC plugin allows for using SQL database with R2DBC as a backend for Akka Persistence.
+
+Currently, the R2DBC plugin has support for [PostgreSQL](https://www.postgresql.org) and [Yugabyte](https://www.yugabyte.com).
+It is specifically designed to work well for distributed SQL databases.
+
+[Create an issue](https://github.com/akka/akka-persistence-r2dbc/issues) if you would like to @ref[contribute](contributing.md)
+support for other databases that has a [R2DBC driver](https://r2dbc.io/drivers/).
 
 @@@ warning
 

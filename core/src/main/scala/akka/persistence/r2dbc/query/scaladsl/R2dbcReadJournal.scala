@@ -123,7 +123,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * The timestamp is based on the database `transaction_timestamp()` when the event was stored.
    * `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a
-   * "later" event may be visible first and when retrieving events after the previously seen timestamp may miss some
+   * "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some
    * events. In distributed SQL databases there can also be clock skews for the database timestamps. For that reason it
    * will perform additional backtracking queries to catch missed events. Events from backtracking will typically be
    * duplicates of previously emitted events. It's the responsibility of the consumer to filter duplicates and make sure

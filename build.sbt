@@ -103,11 +103,12 @@ lazy val migration = (project in file("migration"))
 lazy val docs = project
   .in(file("docs"))
   .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PublishRsyncPlugin)
-  .dependsOn(core)
+  .dependsOn(core, projection, migration)
   .settings(common)
   .settings(dontPublish)
   .settings(
     name := "Akka Persistence R2DBC",
+    libraryDependencies ++= Dependencies.docs,
     previewPath := (Paradox / siteSubdirName).value,
     Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
     paradoxGroups := Map("Language" -> Seq("Java", "Scala")),
@@ -115,6 +116,8 @@ lazy val docs = project
       "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
       "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
       "akka.version" -> Dependencies.AkkaVersion,
+      "scala.version" -> scalaVersion.value,
+      "scala.binary.version" -> scalaBinaryVersion.value,
       "extref.akka.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",
       "extref.akka-docs.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",
       "extref.java-docs.base_url" -> "https://docs.oracle.com/en/java/javase/11/%s",
