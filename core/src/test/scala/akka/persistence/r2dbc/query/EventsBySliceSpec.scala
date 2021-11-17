@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.query
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 import akka.Done
@@ -215,9 +216,11 @@ class EventsBySliceSpec
         }
 
         query.isInstanceOf[LoadEventQuery] shouldBe true
-        query.loadEnvelope[String](persistenceId, 2L).futureValue.get.event shouldBe "e-2"
-        query.loadEnvelope[String](persistenceId, 1L).futureValue.get.event shouldBe "e-1"
-        query.loadEnvelope[String](persistenceId, 4L).futureValue.isDefined shouldBe false
+        query.loadEnvelope[String](persistenceId, 2L).futureValue.event shouldBe "e-2"
+        query.loadEnvelope[String](persistenceId, 1L).futureValue.event shouldBe "e-1"
+        intercept[NoSuchElementException] {
+          Await.result(query.loadEnvelope[String](persistenceId, 4L), patience.timeout)
+        }
       }
 
     }

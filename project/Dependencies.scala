@@ -7,9 +7,9 @@ import sbt._
 object Dependencies {
   val Scala212 = "2.12.15"
   val Scala213 = "2.13.6"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.17")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.17+55-bdb46d16-SNAPSHOT")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.2.2+4-6602699f-SNAPSHOT"
+  val AkkaProjectionVersion = "1.2.2+5-5b69dba3-SNAPSHOT"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -17,8 +17,6 @@ object Dependencies {
     val akkaPersistence = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
 
-    // FIXME remove when EventSourcedProvider2 has been incorporated in Akka Projection
-    val akkaProjectionEventSourced = "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
     val postgresql = "org.postgresql" % "postgresql" % "42.2.24"
@@ -35,6 +33,10 @@ object Dependencies {
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
 
+    val akkaProjectionEventSourced =
+      "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion % Test
+    val akkaProjectionDurableState =
+      "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" % Test // EPL 1.0 / LGPL 2.1
@@ -65,8 +67,9 @@ object Dependencies {
     r2dbcPool,
     r2dbcPostgres,
     postgresql,
-    akkaProjectionEventSourced,
     akkaProjectionCore,
+    TestDeps.akkaProjectionEventSourced,
+    TestDeps.akkaProjectionDurableState,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
     TestDeps.akkaProjectionTestKit,
@@ -78,5 +81,5 @@ object Dependencies {
     Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.logback, TestDeps.scalaTest)
 
   val docs =
-    Seq(TestDeps.akkaPersistenceTyped)
+    Seq(TestDeps.akkaPersistenceTyped, TestDeps.akkaProjectionEventSourced, TestDeps.akkaProjectionDurableState)
 }

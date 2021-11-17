@@ -16,7 +16,7 @@ import akka.NotUsed
 import akka.japi.Pair
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
-import akka.persistence.query.javadsl.CurrentDurableStatePersistenceIdsQuery
+import akka.persistence.query.javadsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.query.typed.javadsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.state.scaladsl.{ R2dbcDurableStateStore => ScalaR2dbcDurableStateStore }
 import akka.persistence.state.javadsl.DurableStateUpdateStore
@@ -30,18 +30,18 @@ object R2dbcDurableStateStore {
 class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(implicit ec: ExecutionContext)
     extends DurableStateUpdateStore[A]
     with DurableStateStoreBySliceQuery[A]
-    with CurrentDurableStatePersistenceIdsQuery[A] {
+    with DurableStateStorePagedPersistenceIdsQuery[A] {
 
-  def getObject(persistenceId: String): CompletionStage[GetObjectResult[A]] =
+  override def getObject(persistenceId: String): CompletionStage[GetObjectResult[A]] =
     scalaStore
       .getObject(persistenceId)
       .map(x => GetObjectResult(Optional.ofNullable(x.value.getOrElse(null.asInstanceOf[A])), x.revision))
       .asJava
 
-  def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): CompletionStage[Done] =
+  override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): CompletionStage[Done] =
     scalaStore.upsertObject(persistenceId, revision, value, tag).asJava
 
-  def deleteObject(persistenceId: String): CompletionStage[Done] =
+  override def deleteObject(persistenceId: String): CompletionStage[Done] =
     scalaStore.deleteObject(persistenceId).asJava
 
   override def currentChangesBySlices(
@@ -73,4 +73,7 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
     import scala.compat.java8.OptionConverters._
     scalaStore.currentPersistenceIds(afterId.asScala, limit).asJava
   }
+
+  def currentPersistenceIds(): Source[String, NotUsed] =
+    scalaStore.currentPersistenceIds().asJava
 }

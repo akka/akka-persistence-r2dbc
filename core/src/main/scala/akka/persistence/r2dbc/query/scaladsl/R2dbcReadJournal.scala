@@ -51,7 +51,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
-    with CurrentPersistenceIdsQuery {
+    with CurrentPersistenceIdsQuery
+    with PagedPersistenceIdsQuery {
   import R2dbcReadJournal.ByPersistenceIdState
   import R2dbcReadJournal.PersistenceIdsQueryState
 
@@ -226,12 +227,17 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   //LoadEventQuery
-  override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[Option[EventEnvelope[Event]]] = {
+  override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
     val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
     queryDao
       .loadEvent(entityType, persistenceId, slice, sequenceNr)
-      .map(_.map(deserializeBySliceRow))
+      .map {
+        case Some(row) => deserializeBySliceRow(row)
+        case None =>
+          throw new NoSuchElementException(
+            s"Event with persistenceId [$persistenceId] and sequenceNr [$sequenceNr] not found.")
+      }
   }
 
   override def eventsByPersistenceId(
@@ -323,7 +329,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     }
   }
 
-  def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+  override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(afterId, limit)
 
   override def currentPersistenceIds(): Source[String, NotUsed] = {

@@ -38,7 +38,8 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
     with EventsByPersistenceIdQuery
-    with CurrentPersistenceIdsQuery {
+    with CurrentPersistenceIdsQuery
+    with PagedPersistenceIdsQuery {
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     delegate.sliceForPersistenceId(persistenceId)
@@ -80,11 +81,13 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
   override def currentPersistenceIds(): Source[String, NotUsed] =
     delegate.currentPersistenceIds().asJava
 
+  override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] =
+    delegate.currentPersistenceIds(afterId.asScala, limit).asJava
+
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =
     delegate.timestampOf(persistenceId, sequenceNr).map(_.asJava)(ExecutionContexts.parasitic).toJava
 
-  override def loadEnvelope[Event](
-      persistenceId: String,
-      sequenceNr: Long): CompletionStage[Optional[EventEnvelope[Event]]] =
-    delegate.loadEnvelope[Event](persistenceId, sequenceNr).map(_.asJava)(ExecutionContexts.parasitic).toJava
+  override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): CompletionStage[EventEnvelope[Event]] =
+    delegate.loadEnvelope[Event](persistenceId, sequenceNr).toJava
+
 }
