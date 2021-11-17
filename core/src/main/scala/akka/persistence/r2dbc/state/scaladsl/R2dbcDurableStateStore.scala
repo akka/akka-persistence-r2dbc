@@ -15,7 +15,7 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
 import akka.persistence.query.UpdatedDurableState
-import akka.persistence.query.scaladsl.CurrentDurableStatePersistenceIdsQuery
+import akka.persistence.query.scaladsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.query.typed.scaladsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
@@ -41,7 +41,7 @@ object R2dbcDurableStateStore {
 class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends DurableStateUpdateStore[A]
     with DurableStateStoreBySliceQuery[A]
-    with CurrentDurableStatePersistenceIdsQuery[A] {
+    with DurableStateStorePagedPersistenceIdsQuery[A] {
   import R2dbcDurableStateStore.PersistenceIdsQueryState
 
   private val log = LoggerFactory.getLogger(getClass)

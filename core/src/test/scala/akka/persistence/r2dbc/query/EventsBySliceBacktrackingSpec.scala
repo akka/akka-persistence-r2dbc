@@ -104,7 +104,7 @@ class EventsBySliceBacktrackingSpec
       // event payload isn't included in backtracking results
       env3.eventOption shouldBe None
       // but it can be lazy loaded
-      query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.get.eventOption shouldBe Some("e1-1")
+      query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.eventOption shouldBe Some("e1-1")
       // backtracking up to (and equal to) the same offset
       val env4 = result.expectNext()
       env4.persistenceId shouldBe pid1
