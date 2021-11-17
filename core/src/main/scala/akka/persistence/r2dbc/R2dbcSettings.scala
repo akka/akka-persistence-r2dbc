@@ -26,6 +26,8 @@ final class R2dbcSettings(config: Config) {
   val durableStateTable: String = config.getString("state.table")
   val durableStateTableWithSchema: String = schema.map("." + _).getOrElse("") + durableStateTable
 
+  val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
+
   val maxNumberOfSlices = 128 // FIXME config
 
   val dialect: String = config.getString("dialect")
@@ -33,6 +35,8 @@ final class R2dbcSettings(config: Config) {
   val querySettings = new QuerySettings(config.getConfig("query"))
 
   val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
+
+  val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
 
 }
 

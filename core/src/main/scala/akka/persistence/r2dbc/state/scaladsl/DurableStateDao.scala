@@ -69,12 +69,29 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     "(slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
     "VALUES ($1, $2, $3, $4, $5, $6, $7, transaction_timestamp())"
 
-  private val updateStateSql: String =
-    s"UPDATE $stateTable " +
-    "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = " +
-    "GREATEST(transaction_timestamp(), " +
-    s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$5 AND entity_type = $$6 AND persistence_id = $$7 AND revision = $$8)) " +
-    "WHERE slice = $9 AND entity_type = $10 AND persistence_id = $11 AND revision = $12"
+  private val updateStateSql: String = {
+    if (settings.dbTimestampMonotonicIncreasing) {
+      val base =
+        s"UPDATE $stateTable " +
+        "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = transaction_timestamp() " +
+        "WHERE slice = $5 AND entity_type = $6 AND persistence_id = $7"
+      if (settings.durableStateAssertSingleWriter)
+        base + " AND revision = $8"
+      else
+        base
+    } else {
+      val base =
+        s"UPDATE $stateTable " +
+        "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = " +
+        "GREATEST(transaction_timestamp(), " +
+        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$5 AND entity_type = $$6 AND persistence_id = $$7 AND revision = $$8)) " +
+        "WHERE slice = $9 AND entity_type = $10 AND persistence_id = $11"
+      if (settings.durableStateAssertSingleWriter)
+        base + " AND revision = $12"
+      else
+        base
+    }
+  }
 
   private val deleteStateSql: String =
     s"DELETE from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
@@ -173,20 +190,39 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         val previousRevision = state.revision - 1
 
         r2dbcExecutor.updateOne(s"update [${state.persistenceId}]") { connection =>
-          connection
+          val stmt = connection
             .createStatement(updateStateSql)
             .bind(0, state.revision)
             .bind(1, state.serId)
             .bind(2, state.serManifest)
             .bind(3, state.payload)
-            .bind(4, slice)
-            .bind(5, entityType)
-            .bind(6, state.persistenceId)
-            .bind(7, previousRevision)
-            .bind(8, slice)
-            .bind(9, entityType)
-            .bind(10, state.persistenceId)
-            .bind(11, previousRevision)
+
+          if (settings.dbTimestampMonotonicIncreasing) {
+            if (settings.durableStateAssertSingleWriter)
+              stmt
+                .bind(4, slice)
+                .bind(5, entityType)
+                .bind(6, state.persistenceId)
+                .bind(7, previousRevision)
+            else
+              stmt
+                .bind(4, slice)
+                .bind(5, entityType)
+                .bind(6, state.persistenceId)
+          } else {
+            stmt
+              .bind(4, slice)
+              .bind(5, entityType)
+              .bind(6, state.persistenceId)
+              .bind(7, previousRevision)
+              .bind(8, slice)
+              .bind(9, entityType)
+              .bind(10, state.persistenceId)
+            if (settings.durableStateAssertSingleWriter)
+              stmt.bind(11, previousRevision)
+            else
+              stmt
+          }
         }
       }
     }
