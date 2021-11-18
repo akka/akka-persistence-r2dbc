@@ -10,6 +10,7 @@ object Dependencies {
   val AkkaVersion = System.getProperty("override.akka.version", "2.6.17+55-bdb46d16-SNAPSHOT")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaProjectionVersion = "1.2.2+5-5b69dba3-SNAPSHOT"
+  val AkkaProjectionVersionInDocs = "current"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -28,6 +29,7 @@ object Dependencies {
 
   object TestDeps {
     val akkaPersistenceTyped = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion % Test
+    val akkaShardingTyped = "com.typesafe.akka" %% "akka-cluster-sharding-typed" % AkkaVersion % Test
     val akkaPersistenceTck = "com.typesafe.akka" %% "akka-persistence-tck" % AkkaVersion % Test
     val akkaTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
@@ -81,5 +83,9 @@ object Dependencies {
     Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.logback, TestDeps.scalaTest)
 
   val docs =
-    Seq(TestDeps.akkaPersistenceTyped, TestDeps.akkaProjectionEventSourced, TestDeps.akkaProjectionDurableState)
+    Seq(
+      TestDeps.akkaPersistenceTyped,
+      TestDeps.akkaProjectionEventSourced,
+      TestDeps.akkaProjectionDurableState,
+      TestDeps.akkaShardingTyped)
 }
