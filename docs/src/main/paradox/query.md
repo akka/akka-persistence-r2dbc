@@ -2,7 +2,7 @@
 
 ## Event sourced queries
 
-`R2dbcReadJournal` implements the following @extref:[Persistence Queries](akka:persistence-query.html):
+@apidoc[R2dbcReadJournal] implements the following @extref:[Persistence Queries](akka:persistence-query.html):
 
 * `eventsByPersistenceId`, `currentEventsByPersistenceId`
 * `eventsBySlices`, `currentEventsBySlices`
@@ -63,8 +63,8 @@ Java
 Scala
 :  @@snip [create](/docs/src/test/scala/docs/home/query/QueryDocCompileOnly.scala) { #currentEventsBySlices }
 
-`eventsBySlices` should be used via Akka Projection, which will automatically handle the following
-difficulties.
+`eventsBySlices` should be used via @ref:[R2dbcProjection](projection.md), which will automatically handle the following
+difficulties. When using `R2dbcProjection` the events will be delivered in sequence number order without duplicates.
 
 The consumer can keep track of its current position in the event stream by storing the `offset` and restart the
 query from a given `offset` after a crash/restart.
@@ -90,7 +90,7 @@ event payload is always full loaded.
 
 ## Durable state queries
 
-`R2dbcDurableStateStore` implements the following @extref:[Persistence Queries](akka:durable-state/persistence-query.html):
+@apidoc[R2dbcDurableStateStore] implements the following @extref:[Persistence Queries](akka:durable-state/persistence-query.html):
 
 * `getObject`
 * `changesBySlices`, `currentChangesBySlices`
@@ -124,8 +124,9 @@ It will emit an `UpdatedDurableState` when the durable state is updated. When th
 but there is no guarantee that all intermediate changes are emitted if the state is updated several times. Note that
 `UpdatedDurableState` contains the full current state, and it is not a delta from previous revision of state.
 
-`changesBySlices` should be used via Akka Projection, which will automatically handle the similar difficulties
-with duplicates as described for @ref[eventsBySlices](#eventsbyslices).
+`changesBySlices` should be used via @ref:[R2dbcProjection](projection.md), which will automatically handle the similar difficulties
+with duplicates as described for @ref[eventsBySlices](#eventsbyslices). When using `R2dbcProjection` the changes
+will be delivered in revision number order without duplicates.
 
 ## Configuration
 

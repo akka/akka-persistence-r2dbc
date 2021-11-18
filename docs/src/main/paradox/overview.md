@@ -27,7 +27,7 @@ and the schema may change.
   version=$project.version$
 }
 
-This plugin depends on Akka 2.6.x and note that it is important that all `akka-*` 
+This plugin depends on Akka $akka.version$ or later, and note that it is important that all `akka-*` 
 dependencies are in the same version, so it is recommended to depend on them explicitly to avoid problems 
 with transient dependencies causing an unlucky mix of versions.
 
