@@ -31,8 +31,7 @@ jobs:
         uses: coursier/cache-action@v5
       - name: Code style check and binary-compatibility check
         run: |-
-          cp .jvmopts-ci .jvmopts
-          sbt scalafmtCheckAll scalafmtSbtCheck headerCheck
+          sbt -jvm-opts .jvmopts-ci scalafmtCheckAll scalafmtSbtCheck headerCheck
 
   test-postgres:
     name: Run test with Postgres
@@ -124,5 +123,4 @@ jobs:
         uses: coursier/cache-action@v5
       - name: Test Maven Java
         run: |-
-          cp .jvmopts-ci .jvmopts
-          sbt docs/paradox
+          sbt -jvm-opts .jvmopts-ci docs/paradox
