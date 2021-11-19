@@ -1,6 +1,6 @@
 # Projection
 
-The `R2dbcProjection` has support for storing the offset in a relational database using R2DBC.
+The @apidoc[R2dbcProjection$] has support for storing the offset in a relational database using R2DBC.
 
 The source of the envelopes is from a `SourceProvider`, which can be:
 
@@ -8,7 +8,7 @@ The source of the envelopes is from a `SourceProvider`, which can be:
 * state changes for Durable State entities via the @extref:[SourceProvider for changesBySlices](akka-projection:durable-state.html#sourceprovider-for-changesbyslices) with the @ref:[changesBySlices query](query.md#changesbyslices)
 * any other `SourceProvider` with supported @ref:[offset types](#offset-types)
 
-A `R2dbcHandler` receives a `R2dbcSession` instance and an envelope. The 
+A @apidoc[R2dbcHandler] receives a @apidoc[R2dbcSession] instance and an envelope. The 
 `R2dbcSession` provides the means to access an open R2DBC connection that can be used to process the envelope.
 The target database operations can be run in the same transaction as the storage of the offset, which means 
 that @ref:[exactly-once](#exactly-once) processing semantics is supported. It also offers
@@ -64,9 +64,7 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #initProjections }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #initProjections }
 
 The @ref:[`ShoppingCartHandler` is shown below](#handler).
 
@@ -110,9 +108,7 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #exactlyOnce }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #exactlyOnce }
 
 The @ref:[`ShoppingCartHandler` is shown below](#handler).
 
@@ -126,9 +122,7 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #atLeastOnce }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #atLeastOnce }
 
 The offset is stored after a time window, or limited by a number of envelopes, whatever happens first.
 This window can be defined with `withSaveOffset` of the returned `AtLeastOnceProjection`.
@@ -146,9 +140,7 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #grouped }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #grouped }
 
 The envelopes are grouped within a time window, or limited by a number of envelopes, whatever happens first.
 This window can be defined with `withGroup` of the returned `GroupedProjection`. The default settings for
@@ -162,7 +154,7 @@ processing semantics if the projection is restarted from previously stored offse
 
 ## Handler
 
-It's in the `R2dbcHandler that you implement the processing of each envelope. It's essentially a consumer function
+It's in the @apidoc[R2dbcHandler] that you implement the processing of each envelope. It's essentially a consumer function
 from `(R2dbcSession, Envelope)` to @scala[`Future[Done]`]@java[`CompletionStage<Done>`]. 
 
 A handler that is consuming `ShoppingCart.Event` from `eventsBySlices` can look like this:
@@ -171,9 +163,7 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #handler }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #handler }
 
 @@@ note { title=Hint }
 Such simple handlers can also be defined as plain functions via the helper @scala[`R2dbcHandler.apply`]@java[`R2dbcHandler.fromFunction`] factory method.
@@ -187,13 +177,11 @@ Scala
 :  @@snip [R2dbcProjectionDocExample.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala) { #grouped-handler }
 
 Java
-:  ```
-TODO: Java API for R2dbcProjection will be added
-```
+:  @@snip [R2dbcProjectionDocExample.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java) { #grouped-handler }
 
 ### Stateful handler
 
-The `R2dbcHandler` can be stateful, with variables and mutable data structures. It is invoked by the `Projection` machinery
+The @apidoc[R2dbcHandler] can be stateful, with variables and mutable data structures. It is invoked by the `Projection` machinery
 one envelope at a time and visibility guarantees between the invocations are handled automatically, i.e. no volatile
 or other concurrency primitives are needed for managing the state as long as it's not accessed by other threads
 than the one that called `process`.

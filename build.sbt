@@ -66,7 +66,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "akka-persistence-r2dbc-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
-  .aggregate(core, projection, migration)
+  .aggregate(core, projection, migration, docs)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 

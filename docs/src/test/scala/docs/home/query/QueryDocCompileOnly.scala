@@ -1,11 +1,9 @@
 package docs.home.query
 
-
 import akka.actor.typed.ActorSystem
 import akka.persistence.query.NoOffset
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Sink
-
 
 object QueryDocCompileOnly {
   implicit val system: ActorSystem[_] = ???
@@ -52,7 +50,8 @@ object QueryDocCompileOnly {
     val entityType: String = "MyEntity"
     eventQueries
       .currentEventsBySlices[MyEvent](entityType, minSlice, maxSlice, NoOffset.getInstance)
-      .map(envelope => s"event from persistenceId ${envelope.persistenceId} with " +
+      .map(envelope =>
+        s"event from persistenceId ${envelope.persistenceId} with " +
         s"seqNr ${envelope.sequenceNr}: ${envelope.event}")
       .runWith(Sink.foreach(println))
     //#currentEventsBySlices
@@ -73,7 +72,8 @@ object QueryDocCompileOnly {
     stateQueries
       .currentChangesBySlices(entityType, minSlice, maxSlice, NoOffset.getInstance)
       .collect { case change: UpdatedDurableState[MyState] => change }
-      .map(change => s"state change from persistenceId ${change.persistenceId} with " +
+      .map(change =>
+        s"state change from persistenceId ${change.persistenceId} with " +
         s"revision ${change.revision}: ${change.value}")
       .runWith(Sink.foreach(println))
     //#currentChangesBySlices
