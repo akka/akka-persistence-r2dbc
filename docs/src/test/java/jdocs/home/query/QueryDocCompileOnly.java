@@ -9,93 +9,109 @@ import akka.persistence.typed.PersistenceId;
 import akka.stream.javadsl.Sink;
 import java.util.List;
 
-//#readJournalFor
+// #readJournalFor
 import akka.persistence.query.PersistenceQuery;
 import akka.persistence.r2dbc.query.javadsl.R2dbcReadJournal;
 
-//#readJournalFor
+// #readJournalFor
 
-//#durableStateStoreFor
+// #durableStateStoreFor
 import akka.persistence.r2dbc.state.javadsl.R2dbcDurableStateStore;
 import akka.persistence.state.DurableStateStoreRegistry;
 
-//#durableStateStoreFor
+// #durableStateStoreFor
 
-//#currentEventsBySlices
+// #currentEventsBySlices
 import akka.stream.javadsl.Source;
 import akka.persistence.query.typed.EventEnvelope;
 
-//#currentEventsBySlices
+// #currentEventsBySlices
 
-//#currentChangesBySlices
+// #currentChangesBySlices
 import akka.persistence.query.DurableStateChange;
 import akka.persistence.query.UpdatedDurableState;
 
-//#currentChangesBySlices
+// #currentChangesBySlices
 
 public class QueryDocCompileOnly {
 
-    interface MyEvent{}
-    interface MyState{}
+  interface MyEvent {}
 
-    private final ActorSystem<?> system = ActorSystem.create(Behaviors.empty(), "Docs");
+  interface MyState {}
 
-    //#readJournalFor
-    R2dbcReadJournal eventQueries = PersistenceQuery.get(system)
-        .getReadJournalFor(R2dbcReadJournal.class, R2dbcReadJournal.Identifier());
-    //##readJournalFor
+  private final ActorSystem<?> system = ActorSystem.create(Behaviors.empty(), "Docs");
 
-    //#durableStateStoreFor
-    R2dbcDurableStateStore<MyState> stateQueries = DurableStateStoreRegistry.get(system)
-        .getDurableStateStoreFor(R2dbcDurableStateStore.class, R2dbcDurableStateStore.Identifier());
-    //#durableStateStoreFor
+  // #readJournalFor
+  R2dbcReadJournal eventQueries =
+      PersistenceQuery.get(system)
+          .getReadJournalFor(R2dbcReadJournal.class, R2dbcReadJournal.Identifier());
+  // ##readJournalFor
 
-    void exampleEventsByPid() {
-        //#currentEventsByPersistenceId
-        PersistenceId persistenceId = PersistenceId.of("MyEntity", "id1");
-        eventQueries
-            .currentEventsByPersistenceId(persistenceId.id(), 1, 101)
-            .map(envelope -> "event with seqNr " + envelope.sequenceNr() + ": " + envelope.event())
-            .runWith(Sink.foreach(System.out::println), system);
-        //#currentEventsByPersistenceId
-    }
+  // #durableStateStoreFor
+  R2dbcDurableStateStore<MyState> stateQueries =
+      DurableStateStoreRegistry.get(system)
+          .getDurableStateStoreFor(
+              R2dbcDurableStateStore.class, R2dbcDurableStateStore.Identifier());
+  // #durableStateStoreFor
 
-    void exampleEventsBySlices() {
-        //#currentEventsBySlices
-        // Slit the slices into 4 ranges
-        int numberOfSliceRanges = 4;
-        List<Pair<Integer, Integer>> sliceRanges = eventQueries.sliceRanges(numberOfSliceRanges);
+  void exampleEventsByPid() {
+    // #currentEventsByPersistenceId
+    PersistenceId persistenceId = PersistenceId.of("MyEntity", "id1");
+    eventQueries
+        .currentEventsByPersistenceId(persistenceId.id(), 1, 101)
+        .map(envelope -> "event with seqNr " + envelope.sequenceNr() + ": " + envelope.event())
+        .runWith(Sink.foreach(System.out::println), system);
+    // #currentEventsByPersistenceId
+  }
 
-        // Example of using the first slice range
-        int minSlice = sliceRanges.get(0).first();
-        int maxSlice = sliceRanges.get(0).second();
-        String entityType = "MyEntity";
-        Source<EventEnvelope<MyEvent>, NotUsed> source =
-            eventQueries.currentEventsBySlices(entityType, minSlice, maxSlice, NoOffset.getInstance());
-        source
-            .map(envelope -> "event from persistenceId " + envelope.persistenceId() +
-                " with seqNr " + envelope.sequenceNr() + ": " + envelope.event())
-            .runWith(Sink.foreach(System.out::println), system);
-        //#currentEventsBySlices
-    }
+  void exampleEventsBySlices() {
+    // #currentEventsBySlices
+    // Split the slices into 4 ranges
+    int numberOfSliceRanges = 4;
+    List<Pair<Integer, Integer>> sliceRanges = eventQueries.sliceRanges(numberOfSliceRanges);
 
-    void exampleStateBySlices() {
-        //#currentChangesBySlices
-        // Slit the slices into 4 ranges
-        int numberOfSliceRanges = 4;
-        List<Pair<Integer, Integer>> sliceRanges = stateQueries.sliceRanges(numberOfSliceRanges);
+    // Example of using the first slice range
+    int minSlice = sliceRanges.get(0).first();
+    int maxSlice = sliceRanges.get(0).second();
+    String entityType = "MyEntity";
+    Source<EventEnvelope<MyEvent>, NotUsed> source =
+        eventQueries.currentEventsBySlices(entityType, minSlice, maxSlice, NoOffset.getInstance());
+    source
+        .map(
+            envelope ->
+                "event from persistenceId "
+                    + envelope.persistenceId()
+                    + " with seqNr "
+                    + envelope.sequenceNr()
+                    + ": "
+                    + envelope.event())
+        .runWith(Sink.foreach(System.out::println), system);
+    // #currentEventsBySlices
+  }
 
-        // Example of using the first slice range
-        int minSlice = sliceRanges.get(0).first();
-        int maxSlice = sliceRanges.get(0).second();
-        String entityType = "MyEntity";
-        Source<DurableStateChange<MyState>, NotUsed> source =
-            stateQueries.currentChangesBySlices(entityType, minSlice, maxSlice, NoOffset.getInstance());
-        source
-            .collectType(UpdatedDurableState.class)
-            .map(change -> "state change from persistenceId " + change.persistenceId() +
-                " with revision " + change.revision() + ": " + change.value())
-            .runWith(Sink.foreach(System.out::println), system);
-        //#currentChangesBySlices
-    }
+  void exampleStateBySlices() {
+    // #currentChangesBySlices
+    // Split the slices into 4 ranges
+    int numberOfSliceRanges = 4;
+    List<Pair<Integer, Integer>> sliceRanges = stateQueries.sliceRanges(numberOfSliceRanges);
+
+    // Example of using the first slice range
+    int minSlice = sliceRanges.get(0).first();
+    int maxSlice = sliceRanges.get(0).second();
+    String entityType = "MyEntity";
+    Source<DurableStateChange<MyState>, NotUsed> source =
+        stateQueries.currentChangesBySlices(entityType, minSlice, maxSlice, NoOffset.getInstance());
+    source
+        .collectType(UpdatedDurableState.class)
+        .map(
+            change ->
+                "state change from persistenceId "
+                    + change.persistenceId()
+                    + " with revision "
+                    + change.revision()
+                    + ": "
+                    + change.value())
+        .runWith(Sink.foreach(System.out::println), system);
+    // #currentChangesBySlices
+  }
 }

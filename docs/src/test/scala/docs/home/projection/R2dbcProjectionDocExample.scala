@@ -14,20 +14,18 @@ import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
-import akka.cluster.sharding.typed.scaladsl.ShardedDaemonProcess
 import akka.persistence.query.Offset
-import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.r2dbc.CborSerializable
-import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
-import akka.projection.Projection
-import akka.projection.ProjectionBehavior
-import akka.projection.ProjectionId
-import akka.projection.eventsourced.scaladsl.EventSourcedProvider
-import akka.projection.r2dbc.scaladsl.R2dbcHandler
-import akka.projection.r2dbc.scaladsl.R2dbcProjection
-import akka.projection.r2dbc.scaladsl.R2dbcSession
-import akka.projection.scaladsl.SourceProvider
+import docs.home.CborSerializable
 import org.slf4j.LoggerFactory
+
+//#handler
+//#grouped-handler
+import akka.projection.r2dbc.scaladsl.R2dbcHandler
+import akka.projection.r2dbc.scaladsl.R2dbcSession
+import akka.persistence.query.typed.EventEnvelope
+
+//#grouped-handler
+//#handler
 
 object R2dbcProjectionDocExample {
 
@@ -47,8 +45,7 @@ object R2dbcProjectionDocExample {
   }
 
   //#handler
-  class ShoppingCartHandler()(implicit ec: ExecutionContext)
-      extends R2dbcHandler[EventEnvelope[ShoppingCart.Event]] {
+  class ShoppingCartHandler()(implicit ec: ExecutionContext) extends R2dbcHandler[EventEnvelope[ShoppingCart.Event]] {
     private val logger = LoggerFactory.getLogger(getClass)
 
     override def process(session: R2dbcSession, envelope: EventEnvelope[ShoppingCart.Event]): Future[Done] = {
@@ -59,9 +56,9 @@ object R2dbcProjectionDocExample {
             .createStatement("INSERT into order (id, time) VALUES ($1, $2)")
             .bind(0, cartId)
             .bind(1, time)
-          session.updateOne(stmt)
+          session
+            .updateOne(stmt)
             .map(_ => Done)
-
 
         case otherEvent =>
           logger.debug(s"Shopping cart ${otherEvent.cartId} changed by $otherEvent")
@@ -83,8 +80,9 @@ object R2dbcProjectionDocExample {
         envelopes: immutable.Seq[EventEnvelope[ShoppingCart.Event]]): Future[Done] = {
 
       // save all events in DB
-      val stmts = envelopes.map(_.event).collect {
-        case ShoppingCart.CheckedOut(cartId, time) =>
+      val stmts = envelopes
+        .map(_.event)
+        .collect { case ShoppingCart.CheckedOut(cartId, time) =>
           logger.info(s"Shopping cart $cartId was checked out at $time")
 
           session
@@ -92,7 +90,8 @@ object R2dbcProjectionDocExample {
             .bind(0, cartId)
             .bind(1, time)
 
-      }.toVector
+        }
+        .toVector
 
       session.update(stmts).map(_ => Done)
     }
@@ -102,21 +101,32 @@ object R2dbcProjectionDocExample {
   implicit val system = ActorSystem[Nothing](Behaviors.empty, "Example")
   implicit val ec: ExecutionContext = system.executionContext
 
-  // #initProjections
-  def initProjections(): Unit = {
-    def sourceProvider(sliceRange: Range): SourceProvider[Offset, EventEnvelope[ShoppingCart.Event]] =
-      EventSourcedProvider
-        .eventsBySlices[ShoppingCart.Event](
-          system,
-          readJournalPluginId = R2dbcReadJournal.Identifier,
-          entityType,
-          sliceRange.min,
-          sliceRange.max)
+  object IllustrateInit {
+    // #initProjections
+    import akka.cluster.sharding.typed.scaladsl.ShardedDaemonProcess
+    import akka.projection.r2dbc.scaladsl.R2dbcProjection
+    import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+    import akka.projection.ProjectionId
+    import akka.projection.eventsourced.scaladsl.EventSourcedProvider
+    import akka.projection.Projection
+    import akka.projection.ProjectionBehavior
+    import akka.projection.scaladsl.SourceProvider
+    import akka.persistence.query.typed.EventEnvelope
 
-    def projection(sliceRange: Range): Projection[EventEnvelope[ShoppingCart.Event]] = {
-      val minSlice = sliceRange.min
-      val maxSlice = sliceRange.max
-      val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
+    def initProjections(): Unit = {
+      def sourceProvider(sliceRange: Range): SourceProvider[Offset, EventEnvelope[ShoppingCart.Event]] =
+        EventSourcedProvider
+          .eventsBySlices[ShoppingCart.Event](
+            system,
+            readJournalPluginId = R2dbcReadJournal.Identifier,
+            entityType,
+            sliceRange.min,
+            sliceRange.max)
+
+      def projection(sliceRange: Range): Projection[EventEnvelope[ShoppingCart.Event]] = {
+        val minSlice = sliceRange.min
+        val maxSlice = sliceRange.max
+        val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
 
         R2dbcProjection
           .exactlyOnce(
@@ -124,21 +134,26 @@ object R2dbcProjectionDocExample {
             settings = None,
             sourceProvider(sliceRange),
             handler = () => new ShoppingCartHandler)
+      }
+
+      // Split the slices into 4 ranges
+      val numberOfSliceRanges: Int = 4
+      val sliceRanges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, numberOfSliceRanges)
+
+      ShardedDaemonProcess(system).init(
+        name = "ShoppingCartProjection",
+        numberOfInstances = sliceRanges.size,
+        behaviorFactory = i => ProjectionBehavior(projection(sliceRanges(i))),
+        stopMessage = ProjectionBehavior.Stop)
     }
-
-    // Slit the slices into 4 ranges
-    val numberOfSliceRanges: Int = 4
-    val sliceRanges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, numberOfSliceRanges)
-
-    ShardedDaemonProcess(system).init(
-      name = "ShoppingCartProjection",
-      numberOfInstances = sliceRanges.size,
-      behaviorFactory = i => ProjectionBehavior(projection(sliceRanges(i)))
-    )
+    // #initProjections
   }
-  // #initProjections
 
   //#sourceProvider
+  import akka.projection.eventsourced.scaladsl.EventSourcedProvider
+  import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+  import akka.projection.scaladsl.SourceProvider
+
   // Slit the slices into 4 ranges
   val numberOfSliceRanges: Int = 4
   val sliceRanges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, numberOfSliceRanges)
@@ -160,44 +175,41 @@ object R2dbcProjectionDocExample {
 
   object IllustrateExactlyOnce {
     //#exactlyOnce
+    import akka.projection.r2dbc.scaladsl.R2dbcProjection
+    import akka.projection.ProjectionId
+
     val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
 
     val projection =
       R2dbcProjection
-        .exactlyOnce(
-          projectionId,
-          settings = None,
-          sourceProvider,
-          handler = () => new ShoppingCartHandler)
+        .exactlyOnce(projectionId, settings = None, sourceProvider, handler = () => new ShoppingCartHandler)
     //#exactlyOnce
   }
 
   object IllustrateAtLeastOnce {
     //#atLeastOnce
+    import akka.projection.r2dbc.scaladsl.R2dbcProjection
+    import akka.projection.ProjectionId
+
     val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
 
     val projection =
       R2dbcProjection
-        .atLeastOnce(
-          projectionId,
-          settings = None,
-          sourceProvider,
-          handler = () => new ShoppingCartHandler)
+        .atLeastOnce(projectionId, settings = None, sourceProvider, handler = () => new ShoppingCartHandler)
         .withSaveOffset(afterEnvelopes = 100, afterDuration = 500.millis)
     //#atLeastOnce
   }
 
   object IllustrateGrouped {
     //#grouped
+    import akka.projection.r2dbc.scaladsl.R2dbcProjection
+    import akka.projection.ProjectionId
+
     val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
 
     val projection =
       R2dbcProjection
-        .groupedWithin(
-          projectionId,
-          settings = None,
-          sourceProvider,
-          handler = () => new GroupedShoppingCartHandler)
+        .groupedWithin(projectionId, settings = None, sourceProvider, handler = () => new GroupedShoppingCartHandler)
         .withGroup(groupAfterEnvelopes = 20, groupAfterDuration = 500.millis)
     //#grouped
   }
