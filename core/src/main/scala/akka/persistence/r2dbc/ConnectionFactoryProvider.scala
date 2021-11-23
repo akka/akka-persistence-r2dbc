@@ -93,11 +93,9 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .maxSize(settings.maxSize)
       .maxCreateConnectionTime(JDuration.ofMillis(settings.createTimeout.toMillis))
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
-      .acquireRetry(3)
-      // FIXME more properties?
-//      .maxLifeTime(Duration.ZERO)
-//      .maxIdleTime(Duration.ofMinutes(30))
-//      .validationQuery("SELECT 1")
+      .acquireRetry(settings.acquireRetry)
+      .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
+//      .validationQuery("SELECT 1") // FIXME issue #157
       .build()
 
     val pool = new ConnectionPool(poolConfiguration)
