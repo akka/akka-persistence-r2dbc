@@ -556,7 +556,7 @@ private[projection] class R2dbcOffsetStore(
     val duplicate = isDuplicate(recordWithOffset.record)
 
     if (duplicate) {
-      logger.debug("Filtering out duplicate sequence number [{}] for pid [{}]", seqNr, pid) // FIXME change to trace
+      logger.trace("Filtering out duplicate sequence number [{}] for pid [{}]", seqNr, pid)
       FutureFalse
     } else if (recordWithOffset.strictSeqNr) {
       // strictSeqNr == true is for event sourced
@@ -603,7 +603,7 @@ private[projection] class R2dbcOffsetStore(
       if (ok) {
         FutureTrue
       } else {
-        logger.debug("Filtering out earlier revision [{}] for pid [{}], previous revision [{}]", seqNr, pid, prevSeqNr)
+        logger.trace("Filtering out earlier revision [{}] for pid [{}], previous revision [{}]", seqNr, pid, prevSeqNr)
         FutureFalse
       }
     }

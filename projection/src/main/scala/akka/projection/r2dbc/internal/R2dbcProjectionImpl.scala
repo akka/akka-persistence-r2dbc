@@ -4,6 +4,8 @@
 
 package akka.projection.r2dbc.internal
 
+import java.util.concurrent.atomic.AtomicLong
+
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -74,6 +76,8 @@ private[projection] object R2dbcProjectionImpl {
     new R2dbcOffsetStore(projectionId, sourceProvider, system, settings, r2dbcExecutor)
   }
 
+  private val loadEnvelopeCounter = new AtomicLong
+
   def loadEnvelope[Envelope](env: Envelope, sourceProvider: SourceProvider[_, Envelope])(implicit
       ec: ExecutionContext): Future[Envelope] = {
     env match {
@@ -91,7 +95,11 @@ private[projection] object R2dbcProjectionImpl {
               s"Expected sourceProvider [${sourceProvider.getClass.getName}] " +
               "to implement LoadEventQuery when used with eventsBySlices.")
         }).map { loadedEnv =>
-          log.debug("Loaded event lazily, persistenceId [{}], seqNr [{}]", pid, seqNr)
+          val count = loadEnvelopeCounter.incrementAndGet()
+          if (count % 1000 == 0)
+            log.info("Loaded event lazily, persistenceId [{}], seqNr [{}]. Load count [{}]", pid, seqNr, count)
+          else
+            log.debug("Loaded event lazily, persistenceId [{}], seqNr [{}]. Load count [{}]", pid, seqNr, count)
           loadedEnv.asInstanceOf[Envelope]
         }
 
@@ -106,7 +114,19 @@ private[projection] object R2dbcProjectionImpl {
             store.getObject(pid).toScala.map(_.toScala)
         }).map {
           case GetObjectResult(Some(loadedValue), loadedRevision) =>
-            log.debug("Loaded durable state lazily, persistenceId [{}], revision [{}]", pid, loadedRevision)
+            val count = loadEnvelopeCounter.incrementAndGet()
+            if (count % 1000 == 0)
+              log.info(
+                "Loaded durable state lazily, persistenceId [{}], revision [{}]. Load count [{}]",
+                pid,
+                loadedRevision,
+                count)
+            else
+              log.debug(
+                "Loaded durable state lazily, persistenceId [{}], revision [{}]. Load count [{}]",
+                pid,
+                loadedRevision,
+                count)
             new UpdatedDurableState(pid, loadedRevision, loadedValue, upd.offset, upd.timestamp)
               .asInstanceOf[Envelope]
           case GetObjectResult(None, _) =>
@@ -117,6 +137,29 @@ private[projection] object R2dbcProjectionImpl {
 
       case _ =>
         Future.successful(env)
+    }
+  }
+
+  /**
+   * As long as we only have one backtracking query the events that are emitted from backtracking must be accepted,
+   * otherwise they it would be stuck at the rejected event. Failing in that case so that we can notice if this is a
+   * problem. See issue #75.
+   */
+  private def checkBacktrackingNotAccepted[Envelope](env: Envelope): Unit = {
+    env match {
+      case eventEnvelope: EventEnvelope[_] if eventEnvelope.eventOption.isEmpty =>
+        throw new IllegalStateException(
+          s"Unexpected rejected event from backtracking, " +
+          s"persistenceId [${eventEnvelope.persistenceId}], seqNr [${eventEnvelope.sequenceNr}]. " +
+          "Please report this issue at https://github.com/akka/akka-persistence-r2dbc")
+
+      case upd: UpdatedDurableState[_] if upd.value == null =>
+        throw new IllegalStateException(
+          s"Unexpected rejected durable state from backtracking, " +
+          s"persistenceId [${upd.persistenceId}], revision [${upd.revision}]. " +
+          "Please report this issue at https://github.com/akka/akka-persistence-r2dbc")
+
+      case _ =>
     }
   }
 
@@ -144,6 +187,7 @@ private[projection] object R2dbcProjectionImpl {
                 }
               }
             case false =>
+              checkBacktrackingNotAccepted(envelope)
               FutureDone
           }
         }
@@ -162,8 +206,11 @@ private[projection] object R2dbcProjectionImpl {
       override def process(envelopes: immutable.Seq[Envelope]): Future[Done] = {
         offsetStore.filterAccepted(envelopes).flatMap { acceptedEnvelopes =>
           if (acceptedEnvelopes.isEmpty) {
+            envelopes.foreach(checkBacktrackingNotAccepted)
             FutureDone
           } else {
+            if (envelopes.size != acceptedEnvelopes.size)
+              envelopes.diff(acceptedEnvelopes).foreach(checkBacktrackingNotAccepted)
             Future.sequence(acceptedEnvelopes.map(env => loadEnvelope(env, sourceProvider))).flatMap {
               loadedEnvelopes =>
                 val offsets = loadedEnvelopes.iterator.map(sourceProvider.extractOffset).toVector
@@ -204,6 +251,7 @@ private[projection] object R2dbcProjectionImpl {
                   }
               }
             case false =>
+              checkBacktrackingNotAccepted(envelope)
               FutureDone
           }
         }
@@ -228,6 +276,7 @@ private[projection] object R2dbcProjectionImpl {
                   }
               }
             case false =>
+              checkBacktrackingNotAccepted(envelope)
               FutureDone
           }
         }
@@ -245,8 +294,11 @@ private[projection] object R2dbcProjectionImpl {
       override def process(envelopes: immutable.Seq[Envelope]): Future[Done] = {
         offsetStore.filterAccepted(envelopes).flatMap { acceptedEnvelopes =>
           if (acceptedEnvelopes.isEmpty) {
+            envelopes.foreach(checkBacktrackingNotAccepted)
             FutureDone
           } else {
+            if (envelopes.size != acceptedEnvelopes.size)
+              envelopes.diff(acceptedEnvelopes).foreach(checkBacktrackingNotAccepted)
             Future.sequence(acceptedEnvelopes.map(env => loadEnvelope(env, sourceProvider))).flatMap {
               loadedEnvelopes =>
                 delegate
@@ -280,6 +332,7 @@ private[projection] object R2dbcProjectionImpl {
                 Some(loadedEnvelope)
               }
             } else {
+              checkBacktrackingNotAccepted(env)
               Future.successful(None)
             }
           }
