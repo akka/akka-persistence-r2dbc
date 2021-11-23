@@ -26,7 +26,6 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 
 /**
  * INTERNAL API
@@ -131,8 +130,21 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
     system: ActorSystem[_]) {
   import R2dbcExecutor._
 
-  private def getConnection(): Future[Connection] =
-    connectionFactory.create().asFuture()
+  private def getConnection(logPrefix: String): Future[Connection] = {
+    val debugEnabled = log.isDebugEnabled()
+    val startTime = if (debugEnabled) System.nanoTime() else 0L
+    connectionFactory
+      .create()
+      .asFuture()
+      .map { connection =>
+        if (debugEnabled) {
+          val durationMicros = (System.nanoTime() - startTime) / 1000
+          if (durationMicros >= 10 * 1000)
+            log.debug("{} - getConnection took [{}] µs", logPrefix, durationMicros)
+        }
+        connection
+      }(ExecutionContext.parasitic)
+  }
 
   /**
    * Run DDL statement with auto commit.
@@ -175,7 +187,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
     val startTime = System.nanoTime()
 
-    getConnection().flatMap { connection =>
+    getConnection(logPrefix).flatMap { connection =>
       val mappedRows =
         try {
           val boundStmt = statement(connection)
@@ -209,7 +221,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     val startTime = System.nanoTime()
 
-    getConnection().flatMap { connection =>
+    getConnection(logPrefix).flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
         val result =
           try {
@@ -245,7 +257,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
   def withAutoCommitConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     val startTime = System.nanoTime()
 
-    getConnection().flatMap { connection =>
+    getConnection(logPrefix).flatMap { connection =>
       connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
         val result =
           try {
