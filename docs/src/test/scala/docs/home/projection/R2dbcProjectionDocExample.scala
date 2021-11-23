@@ -136,7 +136,7 @@ object R2dbcProjectionDocExample {
             handler = () => new ShoppingCartHandler)
       }
 
-      // Slit the slices into 4 ranges
+      // Split the slices into 4 ranges
       val numberOfSliceRanges: Int = 4
       val sliceRanges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, numberOfSliceRanges)
 

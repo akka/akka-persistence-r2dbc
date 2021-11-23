@@ -153,7 +153,7 @@ class R2dbcProjectionDocExample {
 
   // #initProjections
   void initProjections() {
-    // Slit the slices into 4 ranges
+    // Split the slices into 4 ranges
     int numberOfSliceRanges = 4;
     List<Pair<Integer, Integer>> sliceRanges =
         EventSourcedProvider.sliceRanges(
@@ -189,7 +189,7 @@ class R2dbcProjectionDocExample {
   // #initProjections
 
   // #sourceProvider
-  // Slit the slices into 4 ranges
+  // Split the slices into 4 ranges
   int numberOfSliceRanges = 4;
   List<Pair<Integer, Integer>> sliceRanges =
       EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier(), numberOfSliceRanges);

@@ -66,7 +66,7 @@ public class QueryDocCompileOnly {
 
   void exampleEventsBySlices() {
     // #currentEventsBySlices
-    // Slit the slices into 4 ranges
+    // Split the slices into 4 ranges
     int numberOfSliceRanges = 4;
     List<Pair<Integer, Integer>> sliceRanges = eventQueries.sliceRanges(numberOfSliceRanges);
 
@@ -91,7 +91,7 @@ public class QueryDocCompileOnly {
 
   void exampleStateBySlices() {
     // #currentChangesBySlices
-    // Slit the slices into 4 ranges
+    // Split the slices into 4 ranges
     int numberOfSliceRanges = 4;
     List<Pair<Integer, Integer>> sliceRanges = stateQueries.sliceRanges(numberOfSliceRanges);
 
