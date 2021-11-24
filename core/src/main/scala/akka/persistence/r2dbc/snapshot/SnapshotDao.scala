@@ -90,7 +90,9 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
 
     var paramIdx = 3
-    val selectSnapshots = s"SELECT * FROM $snapshotTable " +
+    val selectSnapshots =
+      "SELECT persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest " +
+      s"FROM $snapshotTable " +
       s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
       (if (criteria.maxSequenceNr != Long.MaxValue) {
          paramIdx += 1
@@ -108,7 +110,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
          paramIdx += 1
          s" AND write_timestamp >= $$$paramIdx"
        } else "") +
-      " ORDER BY seq_nr DESC LIMIT 1"
+      " LIMIT 1"
 
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
