@@ -6,6 +6,7 @@ package akka.persistence.r2dbc.migration
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.duration.FiniteDuration
 
 import akka.Done
 import akka.actor.typed.ActorSystem
@@ -24,12 +25,12 @@ import io.r2dbc.spi.ConnectionFactory
 /**
  * INTERNAL API
  */
-@InternalApi private[r2dbc] class MigrationToolDao(connectionFactory: ConnectionFactory)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_]) {
+@InternalApi private[r2dbc] class MigrationToolDao(
+    connectionFactory: ConnectionFactory,
+    logDbCallsExceeding: FiniteDuration)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   import MigrationToolDao.CurrentProgress
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding)(ec, system)
 
   def createProgressTable(): Future[Done] = {
     r2dbcExecutor.executeDdl("create migration progress table") { connection =>

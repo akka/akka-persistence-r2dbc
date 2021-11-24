@@ -72,7 +72,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   import JournalDao.SerializedJournalRow
   import JournalDao.log
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
 
   private val journalTable = journalSettings.journalTableWithSchema
 
