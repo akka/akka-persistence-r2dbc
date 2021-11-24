@@ -57,7 +57,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     extends BySliceQuery.Dao[DurableStateDao.SerializedStateRow] {
   import DurableStateDao._
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   private val stateTable = settings.durableStateTableWithSchema
 

@@ -104,7 +104,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private val allPersistenceIdsAfterSql =
     s"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   def currentDbTimestamp(): Future[Instant] = {
     r2dbcExecutor

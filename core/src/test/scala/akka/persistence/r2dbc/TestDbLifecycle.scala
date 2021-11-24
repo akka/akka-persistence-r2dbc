@@ -25,7 +25,8 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   lazy val r2dbcExecutor: R2dbcExecutor = {
     new R2dbcExecutor(
       ConnectionFactoryProvider(typedSystem).connectionFactoryFor(testConfigPath + ".connection-factory"),
-      LoggerFactory.getLogger(getClass))(typedSystem.executionContext, typedSystem)
+      LoggerFactory.getLogger(getClass),
+      r2dbcSettings.logDbCallsExceeding)(typedSystem.executionContext, typedSystem)
   }
 
   override protected def beforeAll(): Unit = {

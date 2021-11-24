@@ -4,7 +4,9 @@
 
 package akka.persistence.r2dbc
 
-import scala.concurrent.duration.FiniteDuration
+import java.util.Locale
+
+import scala.concurrent.duration._
 
 import akka.annotation.InternalStableApi
 import akka.util.JavaDurationConverters._
@@ -37,6 +39,12 @@ final class R2dbcSettings(config: Config) {
   val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
 
   val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
+
+  val logDbCallsExceeding: FiniteDuration =
+    config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {
+      case "off" => -1.millis
+      case _     => config.getDuration("log-db-calls-exceeding").asScala
+    }
 
 }
 

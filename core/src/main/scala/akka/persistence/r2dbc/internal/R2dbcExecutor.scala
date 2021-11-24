@@ -11,6 +11,7 @@ import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
 import akka.Done
@@ -125,23 +126,29 @@ import reactor.core.publisher.Flux
   }
 }
 
-class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(implicit
+class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDbCallsExceeding: FiniteDuration)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_]) {
   import R2dbcExecutor._
 
+  private val logDbCallsExceedingMicros = logDbCallsExceeding.toMicros
+  private val logDbCallsExceedingEnabled = logDbCallsExceedingMicros >= 0
+
+  private def nanoTime(): Long =
+    if (logDbCallsExceedingEnabled) System.nanoTime() else 0L
+
+  private def durationInMicros(startTime: Long): Long =
+    (nanoTime() - startTime) / 1000
+
   private def getConnection(logPrefix: String): Future[Connection] = {
-    val debugEnabled = log.isDebugEnabled()
-    val startTime = if (debugEnabled) System.nanoTime() else 0L
+    val startTime = nanoTime()
     connectionFactory
       .create()
       .asFuture()
       .map { connection =>
-        if (debugEnabled) {
-          val durationMicros = (System.nanoTime() - startTime) / 1000
-          if (durationMicros >= 10 * 1000)
-            log.debug("{} - getConnection took [{}] µs", logPrefix, durationMicros)
-        }
+        val durationMicros = durationInMicros(startTime)
+        if (durationMicros >= logDbCallsExceedingMicros)
+          log.info("{} - getConnection took [{}] µs", logPrefix, durationMicros)
         connection
       }(ExecutionContext.parasitic)
   }
@@ -185,7 +192,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
   def select[A](
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
-    val startTime = System.nanoTime()
+    val startTime = nanoTime()
 
     getConnection(logPrefix).flatMap { connection =>
       val mappedRows =
@@ -205,8 +212,9 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
       mappedRows.flatMap { r =>
         connection.close().asFutureDone().map { _ =>
-          if (log.isDebugEnabled())
-            log.debug("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, (System.nanoTime() - startTime) / 1000)
+          val durationMicros = durationInMicros(startTime)
+          if (durationMicros >= logDbCallsExceedingMicros)
+            log.info("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
           r
         }
       }
@@ -219,7 +227,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
    * end or rolled back in case of failures.
    */
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
-    val startTime = System.nanoTime()
+    val startTime = nanoTime()
 
     getConnection(logPrefix).flatMap { connection =>
       connection.beginTransaction().asFutureDone().flatMap { _ =>
@@ -241,8 +249,9 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
         result.flatMap { r =>
           commitAndClose(connection).map { _ =>
-            if (log.isDebugEnabled())
-              log.debug("{} - DB call completed in [{}] µs", logPrefix, (System.nanoTime() - startTime) / 1000)
+            val durationMicros = durationInMicros(startTime)
+            if (durationMicros >= logDbCallsExceedingMicros)
+              log.info("{} - DB call completed in [{}] µs", logPrefix, durationMicros)
             r
           }
         }
@@ -255,7 +264,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
    * Runs the passed function in using a Connection with auto-commit enable (non-transactional).
    */
   def withAutoCommitConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
-    val startTime = System.nanoTime()
+    val startTime = nanoTime()
 
     getConnection(logPrefix).flatMap { connection =>
       connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
@@ -276,8 +285,9 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger)(impli
 
         result.flatMap { r =>
           connection.close().asFutureDone().map { _ =>
-            if (log.isDebugEnabled())
-              log.debug("{} - DB call completed [{}] in [{}] µs", logPrefix, r, (System.nanoTime() - startTime) / 1000)
+            val durationMicros = durationInMicros(startTime)
+            if (durationMicros >= logDbCallsExceedingMicros)
+              log.info("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
             r
           }
         }

@@ -68,7 +68,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   import SnapshotDao._
 
   private val snapshotTable = settings.snapshotsTableWithSchema
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   private val upsertSql =
     s"INSERT INTO $snapshotTable " +

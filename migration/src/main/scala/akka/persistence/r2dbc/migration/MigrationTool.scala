@@ -127,7 +127,8 @@ class MigrationTool(system: ActorSystem[_]) {
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
   private lazy val sourceSnapshotStore = Persistence(system).snapshotStoreFor(sourceSnapshotPluginId)
 
-  private[r2dbc] val migrationDao = new MigrationToolDao(targetConnectionFactory)
+  private[r2dbc] val migrationDao =
+    new MigrationToolDao(targetConnectionFactory, targetR2dbcSettings.logDbCallsExceeding)
 
   private lazy val createProgressTable: Future[Done] =
     migrationDao.createProgressTable()
