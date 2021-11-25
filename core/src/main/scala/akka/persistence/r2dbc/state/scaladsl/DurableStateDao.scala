@@ -15,10 +15,11 @@ import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SliceUtils
+import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
@@ -57,6 +58,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     extends BySliceQuery.Dao[DurableStateDao.SerializedStateRow] {
   import DurableStateDao._
 
+  private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   private val stateTable = settings.durableStateTableWithSchema
@@ -141,8 +143,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     r2dbcExecutor.selectOne(s"select [$persistenceId]")(
       connection =>
@@ -165,8 +167,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   def writeState(state: SerializedStateRow): Future[Done] = {
     require(state.revision > 0)
 
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(state.persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(state.persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(state.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
 
     val result = {
       if (state.revision == 1) {
@@ -240,8 +242,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def deleteState(persistenceId: String): Future[Done] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     val result =
       r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>

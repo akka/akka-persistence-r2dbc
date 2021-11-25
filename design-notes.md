@@ -8,7 +8,7 @@ The usage of `eventsByTag` for Projections has the major drawback that the numbe
 
 ## Introducing event slicing
 
-Instead of tags we can store a slice number by hashing the persistence id. Like `math.abs(persistenceId.hashCode % maxNumberOfSlices)`.
+Instead of tags we can store a slice number by hashing the persistence id. Like `math.abs(persistenceId.hashCode % numberOfSlices)`.
 
 Then the Projection query can be a range query of the slices. For example if using 128 slices and running 4 Projection instances the slice ranges would be 0-31, 32-63, 64-95, 96-128. That can easily be split to more Projection instances when needed and still reuse the offsets for the previous range distributions.
 

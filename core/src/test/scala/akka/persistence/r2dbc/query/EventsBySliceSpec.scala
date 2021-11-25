@@ -68,7 +68,6 @@ class EventsBySliceSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-  import settings.maxNumberOfSlices
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
@@ -270,7 +269,7 @@ class EventsBySliceSpec
         }
       }
 
-      maxNumberOfSlices should be(128)
+      persistenceExt.numberOfSlices should be(128)
       val ranges = query.sliceRanges(4)
       ranges(0) should be(0 to 31)
       ranges(1) should be(32 to 63)
@@ -327,7 +326,7 @@ class EventsBySliceSpec
       val numberOfPersisters = 20
       val numberOfEvents = 3
 
-      maxNumberOfSlices should be(128)
+      persistenceExt.numberOfSlices should be(128)
       val ranges = query.sliceRanges(4)
       ranges(0) should be(0 to 31)
       ranges(1) should be(32 to 63)

@@ -10,10 +10,11 @@ import scala.concurrent.Future
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
+import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SliceUtils
+import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import org.slf4j.Logger
@@ -68,6 +69,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   import SnapshotDao._
 
   private val snapshotTable = settings.snapshotsTableWithSchema
+  private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   private val upsertSql =
@@ -86,8 +88,8 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     "meta_ser_manifest = excluded.meta_ser_manifest"
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     var paramIdx = 3
     val selectSnapshots =
@@ -146,8 +148,8 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   }
 
   def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(serializedRow.persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(serializedRow.persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(serializedRow.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(serializedRow.persistenceId)
 
     r2dbcExecutor
       .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
@@ -183,8 +185,8 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     var paramIdx = 3
     val deleteSnapshots = s"DELETE FROM $snapshotTable " +
