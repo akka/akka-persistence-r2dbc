@@ -84,7 +84,7 @@ object R2dbcOffsetStore {
               if (r.seqNr > existingRecord.seqNr)
                 acc.byPid.updated(r.pid, r)
               else
-                acc.byPid // older or same seqNr (not expected, but handled)
+                acc.byPid // older or same seqNr
             case None =>
               acc.byPid.updated(r.pid, r)
           }
@@ -101,7 +101,7 @@ object R2dbcOffsetStore {
           if (acc.oldestTimestamp == Instant.EPOCH)
             r.timestamp // first record
           else if (r.timestamp.isBefore(acc.oldestTimestamp))
-            r.timestamp // not expected, but handled
+            r.timestamp
           else
             acc.oldestTimestamp // this is the normal case
 
@@ -166,12 +166,11 @@ private[projection] class R2dbcOffsetStore(
 
   private val selectTimestampOffsetSql: String =
     "SELECT persistence_id, seq_nr, timestamp_offset " +
-    s"FROM $timestampOffsetTable WHERE slice BETWEEN $$1 AND $$2 AND projection_name = $$3 " +
-    "ORDER BY timestamp_offset"
+    s"FROM $timestampOffsetTable WHERE slice BETWEEN $$1 AND $$2 AND projection_name = $$3 "
 
   private val insertTimestampOffsetSql: String =
     s"INSERT INTO $timestampOffsetTable " +
-    "(projection_name, projection_key, slice, persistence_id, seq_nr, timestamp_offset, last_updated)  " +
+    "(projection_name, projection_key, slice, persistence_id, seq_nr, timestamp_offset, timestamp_consumed)  " +
     "VALUES ($1,$2,$3,$4,$5,$6, transaction_timestamp())"
 
   private val deleteTimestampOffsetSql: String =
