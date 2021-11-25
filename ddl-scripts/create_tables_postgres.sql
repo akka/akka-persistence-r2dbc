@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   seq_nr BIGINT NOT NULL,
   -- timestamp_offset is the db_timestamp of the original event
   timestamp_offset timestamp with time zone NOT NULL,
-  -- last_updated is when the offset was stored
-  -- the consumer lag is last_updated - timestamp_offset
-  last_updated timestamp with time zone NOT NULL,
-  PRIMARY KEY(slice, projection_name, persistence_id)
+  -- timestamp_consumed is when the offset was stored
+  -- the consumer lag is timestamp_consumed - timestamp_offset
+  timestamp_consumed timestamp with time zone NOT NULL,
+  PRIMARY KEY(slice, projection_name, timestamp_offset, persistence_id, seq_nr)
 );
 
 CREATE TABLE IF NOT EXISTS akka_projection_management (
