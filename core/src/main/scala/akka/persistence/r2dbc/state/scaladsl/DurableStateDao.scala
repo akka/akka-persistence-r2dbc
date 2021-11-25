@@ -62,7 +62,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val stateTable = settings.durableStateTableWithSchema
 
   private val selectStateSql: String =
-    s"SELECT * from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
+    "SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp " +
+    s"FROM $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
 
   private val insertStateSql: String =
     s"INSERT INTO $stateTable " +

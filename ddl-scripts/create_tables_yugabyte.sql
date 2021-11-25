@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   -- last_updated is when the offset was stored
   -- the consumer lag is last_updated - timestamp_offset
   last_updated timestamp with time zone NOT NULL,
-  PRIMARY KEY(slice ASC, projection_name ASC, persistence_id ASC)
+  PRIMARY KEY(slice ASC, projection_name ASC, timestamp_offset ASC, persistence_id ASC, seq_nr ASC)
 );
 
 CREATE TABLE IF NOT EXISTS akka_projection_management (
