@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS durable_state (
 CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC)
   INCLUDE (revision);
 
+-- Primitive offset types are stored in this table.
+-- If only timestamp based offsets are used this table is optional.
+-- Configure akka.projection.r2dbc.offset-store.offset-table="" if the table is not created.
 CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   projection_name VARCHAR(255) NOT NULL,
   projection_key VARCHAR(255) NOT NULL,
@@ -67,6 +70,8 @@ CREATE TABLE IF NOT EXISTS akka_projection_offset_store (
   last_updated BIGINT NOT NULL,
   PRIMARY KEY(projection_name, projection_key)
 );
+
+-- Timestamp based offsets are stored in this table.
 
 CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   projection_name VARCHAR(255) NOT NULL,
