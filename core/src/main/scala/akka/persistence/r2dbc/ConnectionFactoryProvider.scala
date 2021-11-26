@@ -95,13 +95,13 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
-//      .validationQuery("SELECT 1") // FIXME issue #157
-      .build()
 
-    val pool = new ConnectionPool(poolConfiguration)
+    if (settings.validationQuery.nonEmpty)
+      poolConfiguration.validationQuery(settings.validationQuery)
+
+    val pool = new ConnectionPool(poolConfiguration.build())
 
     // eagerly create initialSize connections
-
     pool.warmup().asFutureDone() // don't wait for it
 
     pool

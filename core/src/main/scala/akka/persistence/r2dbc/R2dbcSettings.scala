@@ -78,11 +78,13 @@ final class ConnectionFactorySettings(config: Config) {
 
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
+  val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
+
   val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
-  val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
+  val validationQuery: String = config.getString("validation-query")
 
   val statementCacheSize: Int = config.getInt("statement-cache-size")
 }
