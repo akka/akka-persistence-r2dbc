@@ -11,10 +11,11 @@ import scala.concurrent.Future
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SliceUtils
+import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
@@ -71,6 +72,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   import JournalDao.SerializedJournalRow
   import JournalDao.log
+
+  private val persistenceExt = Persistence(system)
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
 
@@ -205,8 +208,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   }
 
   def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val result = r2dbcExecutor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
@@ -229,8 +232,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   }
 
   def deleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, journalSettings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     val deleteMarkerSeqNrFut =
       if (toSequenceNr == Long.MaxValue)

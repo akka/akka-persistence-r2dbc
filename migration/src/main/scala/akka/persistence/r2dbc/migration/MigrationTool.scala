@@ -30,7 +30,6 @@ import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
 import akka.persistence.query.scaladsl.ReadJournal
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -38,6 +37,7 @@ import akka.persistence.r2dbc.migration.MigrationToolDao.CurrentProgress
 import akka.persistence.r2dbc.snapshot.SnapshotDao
 import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.typed.PersistenceId
 import akka.serialization.Serialization
 import akka.serialization.SerializationExtension
 import akka.serialization.Serializers
@@ -74,8 +74,6 @@ object MigrationTool {
     }
   }
 
-  private val MaxNumberOfSlices = 128 // FIXME define this in akka.persistence.Persistence (not per plugin)
-
 }
 
 /**
@@ -95,11 +93,12 @@ object MigrationTool {
  */
 class MigrationTool(system: ActorSystem[_]) {
   import MigrationTool.Result
-  import MigrationTool.MaxNumberOfSlices
   import system.executionContext
   private implicit val sys: ActorSystem[_] = system
 
   private val log = LoggerFactory.getLogger(getClass)
+
+  private val persistenceExt = Persistence(system)
 
   private val migrationConfig = system.settings.config.getConfig("akka.persistence.r2dbc.migration")
 
@@ -228,8 +227,8 @@ class MigrationTool(system: ActorSystem[_]) {
   }
 
   private def serializedJournalRow(env: ClassicEventEnvelope): SerializedJournalRow = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(env.persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(env.persistenceId, MaxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(env.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(env.persistenceId)
 
     val event = env.event.asInstanceOf[AnyRef]
     val serialized = serialization.serialize(event).get

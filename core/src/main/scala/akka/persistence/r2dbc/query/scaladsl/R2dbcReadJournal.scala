@@ -14,6 +14,7 @@ import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
 import akka.persistence.query.scaladsl._
@@ -26,10 +27,10 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
-import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.TimestampOffset
+import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
@@ -60,11 +61,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = new R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 
-  import settings.maxNumberOfSlices
-
   private val typedSystem = system.toTyped
   import typedSystem.executionContext
   private val serialization = SerializationExtension(system)
+  private val persistenceExt = Persistence(system)
   private val connectionFactory = ConnectionFactoryProvider(typedSystem)
     .connectionFactoryFor(sharedConfigPath + ".connection-factory")
   private val queryDao =
@@ -96,13 +96,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val journalDao = new JournalDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
 
   def extractEntityTypeFromPersistenceId(persistenceId: String): String =
-    SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
+    PersistenceId.extractEntityType(persistenceId)
 
-  override def sliceForPersistenceId(persistenceId: String): Int =
-    SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
+  override def sliceForPersistenceId(persistenceId: String): Int = {
+    persistenceExt.sliceForPersistenceId(persistenceId)
+  }
 
   override def sliceRanges(numberOfRanges: Int): immutable.Seq[Range] =
-    SliceUtils.sliceRanges(numberOfRanges, maxNumberOfSlices)
+    persistenceExt.sliceRanges(numberOfRanges)
 
   override def currentEventsBySlices[Event](
       entityType: String,
@@ -221,15 +222,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // EventTimestampQuery
   override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNr)
   }
 
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     queryDao
       .loadEvent(entityType, persistenceId, slice, sequenceNr)
       .map {

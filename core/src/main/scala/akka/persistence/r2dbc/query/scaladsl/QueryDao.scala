@@ -14,12 +14,13 @@ import scala.concurrent.duration.FiniteDuration
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger
@@ -44,6 +45,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
+
+  private val persistenceExt = Persistence(system)
 
   private def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
@@ -220,8 +223,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
-    val slice = SliceUtils.sliceForPersistenceId(persistenceId, settings.maxNumberOfSlices)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     val result = r2dbcExecutor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection =>

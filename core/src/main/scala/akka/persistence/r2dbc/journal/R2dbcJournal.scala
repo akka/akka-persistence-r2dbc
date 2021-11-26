@@ -19,16 +19,17 @@ import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.event.Logging
 import akka.persistence.AtomicWrite
+import akka.persistence.Persistence
 import akka.persistence.PersistentRepr
 import akka.persistence.journal.AsyncWriteJournal
 import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+import akka.persistence.typed.PersistenceId
 import akka.serialization.Serialization
 import akka.serialization.SerializationExtension
 import akka.serialization.Serializers
@@ -77,6 +78,8 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   private val log = Logging(context.system, classOf[R2dbcJournal])
 
+  private val persistenceExt = Persistence(system)
+
   private val sharedConfigPath = cfgPath.replaceAll("""\.journal$""", "")
   private val serialization: Serialization = SerializationExtension(context.system)
   private val journalSettings = new R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
@@ -110,8 +113,8 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
               other.asInstanceOf[AnyRef]
           }
 
-          val entityType = SliceUtils.extractEntityTypeFromPersistenceId(pr.persistenceId)
-          val slice = SliceUtils.sliceForPersistenceId(pr.persistenceId, journalSettings.maxNumberOfSlices)
+          val entityType = PersistenceId.extractEntityType(pr.persistenceId)
+          val slice = persistenceExt.sliceForPersistenceId(pr.persistenceId)
 
           val serialized = serialization.serialize(event).get
           val serializer = serialization.findSerializerFor(event)

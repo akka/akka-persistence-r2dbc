@@ -8,6 +8,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 import akka.actor.typed.ActorSystem
+import akka.persistence.Persistence
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.Suite
@@ -28,6 +29,8 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
       LoggerFactory.getLogger(getClass),
       r2dbcSettings.logDbCallsExceeding)(typedSystem.executionContext, typedSystem)
   }
+
+  lazy val persistenceExt: Persistence = Persistence(typedSystem)
 
   override protected def beforeAll(): Unit = {
     Await.result(

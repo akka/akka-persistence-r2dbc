@@ -11,6 +11,7 @@ import scala.concurrent.duration._
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
+import akka.persistence.Persistence
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
@@ -18,8 +19,8 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.internal.SliceUtils
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
@@ -47,7 +48,7 @@ class EventsBySliceBacktrackingSpec
     val insertEventSql = s"INSERT INTO ${settings.journalTableWithSchema} " +
       "(slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
       "VALUES ($1, $2, $3, $4, $5, '', '', $6, '', $7)"
-    val entityType = SliceUtils.extractEntityTypeFromPersistenceId(persistenceId)
+    val entityType = PersistenceId.extractEntityType(persistenceId)
 
     val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
       connection
@@ -82,7 +83,7 @@ class EventsBySliceBacktrackingSpec
 
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query
-          .eventsBySlices[String](entityType, 0, settings.maxNumberOfSlices, NoOffset)
+          .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, NoOffset)
           .runWith(sinkProbe)
           .request(100)
 

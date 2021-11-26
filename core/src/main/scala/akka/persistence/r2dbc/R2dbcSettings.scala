@@ -30,8 +30,6 @@ final class R2dbcSettings(config: Config) {
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
-  val maxNumberOfSlices = 128 // FIXME config
-
   val dialect: String = config.getString("dialect")
 
   val querySettings = new QuerySettings(config.getConfig("query"))
