@@ -32,6 +32,8 @@ final class R2dbcSettings(config: Config) {
   val journalTable: String = config.getString("journal.table")
   val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
+  val journalPublishEvents: Boolean = config.getBoolean("journal.publish-events")
+
   val snapshotsTable: String = config.getString("snapshot.table")
   val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
 

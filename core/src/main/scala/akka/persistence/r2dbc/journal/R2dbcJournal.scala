@@ -28,6 +28,7 @@ import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -91,6 +92,10 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       journalSettings,
       ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
   private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
+
+  private val pubSub: Option[PubSub] =
+    if (journalSettings.journalPublishEvents) Some(PubSub(system))
+    else None
 
   // if there are pending writes when an actor restarts we must wait for
   // them to complete before we can read the highest sequence number or we will miss it
@@ -167,10 +172,28 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
         atomicWrite(batch).map(_ => Nil)(ExecutionContexts.parasitic)
       }
     writesInProgress.put(persistenceId, writeResult)
-    writeResult.onComplete { _ =>
-      context.self ! WriteFinished(persistenceId, writeResult)
+    writeResult.onComplete {
+      case Success(_) if pubSub.isDefined =>
+        val seqNr = messages.head.lowestSequenceNr
+        query
+          .timestampOf(persistenceId, seqNr)
+          .map {
+            case Some(timestamp) =>
+              pubSub.foreach { p =>
+                messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+              }
+              Done
+            case None =>
+              log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
+              Done
+          }
+          .onComplete { _ =>
+            self ! WriteFinished(persistenceId, writeResult)
+          }
+      case _ =>
+        self ! WriteFinished(persistenceId, writeResult)
     }
-    writeResult
+    writeAndPublishResult
   }
 
   private def logTagsNotImplemented(): Unit = {
