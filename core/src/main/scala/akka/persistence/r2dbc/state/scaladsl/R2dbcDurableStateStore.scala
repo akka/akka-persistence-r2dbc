@@ -15,6 +15,7 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.Persistence
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.query.typed.scaladsl.DurableStateStoreBySliceQuery
@@ -22,7 +23,6 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
-import akka.persistence.r2dbc.query.TimestampOffset
 import akka.persistence.r2dbc.state.scaladsl.DurableStateDao.SerializedStateRow
 import akka.persistence.state.scaladsl.DurableStateUpdateStore
 import akka.persistence.state.scaladsl.GetObjectResult
