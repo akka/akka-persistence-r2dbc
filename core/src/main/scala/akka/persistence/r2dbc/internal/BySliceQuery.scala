@@ -15,8 +15,8 @@ import scala.concurrent.duration.FiniteDuration
 import akka.NotUsed
 import akka.annotation.InternalApi
 import akka.persistence.query.Offset
+import akka.persistence.query.TimestampOffset
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.query.TimestampOffset
 import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import org.slf4j.Logger

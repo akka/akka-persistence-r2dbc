@@ -17,6 +17,7 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
@@ -25,7 +26,6 @@ import akka.persistence.r2dbc.TestActors.DurableStatePersister.PersistWithAck
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.query.TimestampOffset
 import akka.persistence.r2dbc.state.scaladsl.R2dbcDurableStateStore
 import akka.persistence.state.DurableStateStoreRegistry
 import akka.stream.KillSwitches

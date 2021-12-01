@@ -15,21 +15,21 @@ import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
-import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.query.TimestampOffset
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.scaladsl.Source
