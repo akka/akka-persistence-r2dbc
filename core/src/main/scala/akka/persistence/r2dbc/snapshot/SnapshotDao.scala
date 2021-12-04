@@ -13,6 +13,7 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.ConnectionFactory
@@ -72,53 +73,78 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
-  private val upsertSql =
-    s"INSERT INTO $snapshotTable " +
-    "(slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)" +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) " +
-    "ON CONFLICT (slice, entity_type, persistence_id) " +
-    "DO UPDATE SET " +
-    "seq_nr = excluded.seq_nr, " +
-    "write_timestamp = excluded.write_timestamp, " +
-    "snapshot = excluded.snapshot, " +
-    "ser_id = excluded.ser_id, " +
-    "ser_manifest = excluded.ser_manifest, " +
-    "meta_payload = excluded.meta_payload, " +
-    "meta_ser_id = excluded.meta_ser_id, " +
-    "meta_ser_manifest = excluded.meta_ser_manifest"
+  private val upsertSql = sql"""
+    INSERT INTO $snapshotTable
+    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (slice, entity_type, persistence_id)
+    DO UPDATE SET
+      seq_nr = excluded.seq_nr,
+      write_timestamp = excluded.write_timestamp,
+      snapshot = excluded.snapshot,
+      ser_id = excluded.ser_id,
+      ser_manifest = excluded.ser_manifest,
+      meta_payload = excluded.meta_payload,
+      meta_ser_id = excluded.meta_ser_id,
+      meta_ser_manifest = excluded.meta_ser_manifest"""
+
+  private def selectSql(criteria: SnapshotSelectionCriteria): String = {
+    val maxSeqNrCondition =
+      if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
+      else ""
+
+    val minSeqNrCondition =
+      if (criteria.minSequenceNr > 0L) " AND seq_nr >= ?"
+      else ""
+
+    val maxTimestampCondition =
+      if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= ?"
+      else ""
+
+    val minTimestampCondition =
+      if (criteria.minTimestamp != 0L) " AND write_timestamp >= ?"
+      else ""
+
+    sql"""
+      SELECT persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+      FROM $snapshotTable
+      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
+      LIMIT 1"""
+  }
+
+  private def deleteSql(criteria: SnapshotSelectionCriteria): String = {
+    val maxSeqNrCondition =
+      if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
+      else ""
+
+    val minSeqNrCondition =
+      if (criteria.minSequenceNr > 0L) " AND seq_nr >= ?"
+      else ""
+
+    val maxTimestampCondition =
+      if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= ?"
+      else ""
+
+    val minTimestampCondition =
+      if (criteria.minTimestamp != 0L) " AND write_timestamp >= ?"
+      else ""
+
+    sql"""
+      DELETE FROM $snapshotTable
+      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition"""
+  }
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    var paramIdx = 3
-    val selectSnapshots =
-      "SELECT persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest " +
-      s"FROM $snapshotTable " +
-      s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
-      (if (criteria.maxSequenceNr != Long.MaxValue) {
-         paramIdx += 1
-         s" AND seq_nr <= $$$paramIdx"
-       } else "") +
-      (if (criteria.minSequenceNr > 0L) {
-         paramIdx += 1
-         s" AND seq_nr >= $$$paramIdx"
-       } else "") +
-      (if (criteria.maxTimestamp != Long.MaxValue) {
-         paramIdx += 1
-         s" AND write_timestamp <= $$$paramIdx"
-       } else "") +
-      (if (criteria.minTimestamp != 0L) {
-         paramIdx += 1
-         s" AND write_timestamp >= $$$paramIdx"
-       } else "") +
-      " LIMIT 1"
-
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
         { connection =>
           val statement = connection
-            .createStatement(selectSnapshots)
+            .createStatement(selectSql(criteria))
             .bind(0, slice)
             .bind(1, entityType)
             .bind(2, persistenceId)
@@ -188,29 +214,9 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    var paramIdx = 3
-    val deleteSnapshots = s"DELETE FROM $snapshotTable " +
-      s"WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3" +
-      (if (criteria.maxSequenceNr != Long.MaxValue) {
-         paramIdx += 1
-         s" AND seq_nr <= $$$paramIdx"
-       } else "") +
-      (if (criteria.minSequenceNr > 0L) {
-         paramIdx += 1
-         s" AND seq_nr >= $$$paramIdx"
-       } else "") +
-      (if (criteria.maxTimestamp != Long.MaxValue) {
-         paramIdx += 1
-         s" AND write_timestamp <= $$$paramIdx"
-       } else "") +
-      (if (criteria.minTimestamp != 0L) {
-         paramIdx += 1
-         s" AND write_timestamp >= $$$paramIdx"
-       } else "")
-
     r2dbcExecutor.updateOne(s"delete snapshot [$persistenceId], criteria [$criteria]") { connection =>
       val statement = connection
-        .createStatement(deleteSnapshots)
+        .createStatement(deleteSql(criteria))
         .bind(0, slice)
         .bind(1, entityType)
         .bind(2, persistenceId)

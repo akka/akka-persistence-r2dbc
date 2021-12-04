@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory
 import akka.projection.r2dbc.scaladsl.R2dbcHandler
 import akka.projection.r2dbc.scaladsl.R2dbcSession
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.Sql.Interpolation
 
 //#grouped-handler
 //#handler
@@ -53,7 +54,7 @@ object R2dbcProjectionDocExample {
         case ShoppingCart.CheckedOut(cartId, time) =>
           logger.info(s"Shopping cart $cartId was checked out at $time")
           val stmt = session
-            .createStatement("INSERT into order (id, time) VALUES ($1, $2)")
+            .createStatement(sql"INSERT into order (id, time) VALUES (?, ?)")
             .bind(0, cartId)
             .bind(1, time)
           session
@@ -86,7 +87,7 @@ object R2dbcProjectionDocExample {
           logger.info(s"Shopping cart $cartId was checked out at $time")
 
           session
-            .createStatement("INSERT into order (id, time) VALUES ($1, $2)")
+            .createStatement(sql"INSERT into order (id, time) VALUES (?, ?)")
             .bind(0, cartId)
             .bind(1, time)
 

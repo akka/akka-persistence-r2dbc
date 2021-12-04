@@ -13,6 +13,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
@@ -83,40 +84,43 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
 
     // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
     // always increasing for a pid (time not going backwards).
     // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
-    def insertSubSelect(p: Int) =
+    def timestampSubSelect =
       s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable " +
-      s"WHERE slice = $$$p AND entity_type = $$${p + 1} AND persistence_id = $$${p + 2} AND seq_nr = $$${p + 3})"
+      "WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr = ?)"
 
     val insertEventWithParameterTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
-        baseSql + " $13)"
+        sql"$baseSql ?)"
       else
-        baseSql + "GREATEST($13, " + insertSubSelect(p = 14) + "))"
+        sql"$baseSql GREATEST(?, $timestampSubSelect))"
     }
 
     val insertEventWithTransactionTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
-        baseSql + " transaction_timestamp())"
+        sql"$baseSql transaction_timestamp())"
       else
-        baseSql + "GREATEST(transaction_timestamp(), " + insertSubSelect(p = 13) + "))"
+        sql"$baseSql GREATEST(transaction_timestamp(), $timestampSubSelect))"
     }
 
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
   }
 
-  private val selectHighestSequenceNrSql = s"SELECT MAX(seq_nr) from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr >= $4"
+  private val selectHighestSequenceNrSql = sql"""
+    SELECT MAX(seq_nr) from $journalTable
+    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr >= ?"""
 
-  private val deleteEventsSql = s"DELETE FROM $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr <= $4"
-  private val insertDeleteMarkerSql = s"INSERT INTO $journalTable " +
-    "(slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted) " +
-    "VALUES ($1, $2, $3, $4, transaction_timestamp(), $5, $6, $7, $8, $9, $10)"
+  private val deleteEventsSql = sql"""
+    DELETE FROM $journalTable
+    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr <= ?"""
+  private val insertDeleteMarkerSql = sql"""
+    INSERT INTO $journalTable
+    (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
+    VALUES (?, ?, ?, ?, transaction_timestamp(), ?, ?, ?, ?, ?, ?)"""
 
   /**
    * All events must be for the same persistenceId.

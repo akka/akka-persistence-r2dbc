@@ -11,6 +11,7 @@ import scala.concurrent.duration.FiniteDuration
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.persistence.r2dbc.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao.log
 import io.r2dbc.spi.ConnectionFactory
@@ -34,12 +35,13 @@ import io.r2dbc.spi.ConnectionFactory
 
   def createProgressTable(): Future[Done] = {
     r2dbcExecutor.executeDdl("create migration progress table") { connection =>
-      connection.createStatement("""CREATE TABLE IF NOT EXISTS migration_progress(
-        | persistence_id VARCHAR(255) NOT NULL,
-        | event_seq_nr BIGINT,
-        | snapshot_seq_nr BIGINT,
-        | PRIMARY KEY(persistence_id)
-        |)""".stripMargin)
+      connection.createStatement(sql"""
+        CREATE TABLE IF NOT EXISTS migration_progress(
+          persistence_id VARCHAR(255) NOT NULL,
+          event_seq_nr BIGINT,
+          snapshot_seq_nr BIGINT,
+          PRIMARY KEY(persistence_id)
+        )""")
     }
   }
 
@@ -47,13 +49,13 @@ import io.r2dbc.spi.ConnectionFactory
     r2dbcExecutor
       .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
         connection
-          .createStatement(
-            "INSERT INTO migration_progress " +
-            "(persistence_id, event_seq_nr)  " +
-            "VALUES ($1, $2) " +
-            "ON CONFLICT (persistence_id) " +
-            "DO UPDATE SET " +
-            "event_seq_nr = excluded.event_seq_nr")
+          .createStatement(sql"""
+              INSERT INTO migration_progress
+              (persistence_id, event_seq_nr)
+              VALUES (?, ?)
+              ON CONFLICT (persistence_id)
+              DO UPDATE SET
+              event_seq_nr = excluded.event_seq_nr""")
           .bind(0, persistenceId)
           .bind(1, seqNr)
       }
@@ -64,13 +66,13 @@ import io.r2dbc.spi.ConnectionFactory
     r2dbcExecutor
       .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
         connection
-          .createStatement(
-            "INSERT INTO migration_progress " +
-            "(persistence_id, snapshot_seq_nr)  " +
-            "VALUES ($1, $2) " +
-            "ON CONFLICT (persistence_id) " +
-            "DO UPDATE SET " +
-            "snapshot_seq_nr = excluded.snapshot_seq_nr")
+          .createStatement(sql"""
+              INSERT INTO migration_progress
+              (persistence_id, snapshot_seq_nr)
+              VALUES (?, ?)
+              ON CONFLICT (persistence_id)
+              DO UPDATE SET
+              snapshot_seq_nr = excluded.snapshot_seq_nr""")
           .bind(0, persistenceId)
           .bind(1, seqNr)
       }
@@ -79,7 +81,7 @@ import io.r2dbc.spi.ConnectionFactory
 
   def currentProgress(persistenceId: String): Future[Option[CurrentProgress]] = {
     r2dbcExecutor.selectOne(s"read migration progress [$persistenceId]")(
-      _.createStatement("SELECT * FROM migration_progress WHERE persistence_id = $1")
+      _.createStatement(sql"SELECT * FROM migration_progress WHERE persistence_id = ?")
         .bind(0, persistenceId),
       row =>
         CurrentProgress(

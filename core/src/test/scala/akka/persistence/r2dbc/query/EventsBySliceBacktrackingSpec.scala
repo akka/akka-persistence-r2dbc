@@ -11,11 +11,11 @@ import scala.concurrent.duration._
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.Persistence
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
@@ -45,9 +45,10 @@ class EventsBySliceBacktrackingSpec
   // to be able to store events with specific timestamps
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
     log.debug("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
-    val insertEventSql = s"INSERT INTO ${settings.journalTableWithSchema} " +
-      "(slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload) " +
-      "VALUES ($1, $2, $3, $4, $5, '', '', $6, '', $7)"
+    val insertEventSql = sql"""
+      INSERT INTO ${settings.journalTableWithSchema}
+      (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
+      VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
     val entityType = PersistenceId.extractEntityType(persistenceId)
 
     val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>

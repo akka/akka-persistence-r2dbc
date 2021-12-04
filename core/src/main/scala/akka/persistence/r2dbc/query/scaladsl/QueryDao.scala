@@ -16,6 +16,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
@@ -38,8 +39,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends BySliceQuery.Dao[SerializedJournalRow] {
-  import QueryDao.log
   import JournalDao.readMetadata
+  import QueryDao.log
 
   private val journalTable = settings.journalTableWithSchema
 
@@ -52,15 +53,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): String = {
-    var p = 0
-
-    def nextParam(): String = {
-      p += 1
-      "$" + p
-    }
 
     def toDbTimestampParamCondition =
-      if (toDbTimestampParam) s"AND db_timestamp <= ${nextParam()}" else ""
+      if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
@@ -74,38 +69,39 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
-    selectColumns +
-    s"FROM $journalTable " +
-    s"WHERE entity_type = ${nextParam()} " +
-    s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
-    s"AND db_timestamp >= ${nextParam()} $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
-    s"AND deleted = false " +
-    s"ORDER BY db_timestamp, seq_nr " +
-    s"LIMIT ${nextParam()}"
+    sql"""
+      $selectColumns
+      FROM $journalTable
+      WHERE entity_type = ?
+      AND slice BETWEEN ? AND ?
+      AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+      AND deleted = false
+      ORDER BY db_timestamp, seq_nr
+      LIMIT ?"""
   }
 
-  private val selectTimestampOfEventSql =
-    s"SELECT db_timestamp FROM $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
+  private val selectTimestampOfEventSql = sql"""
+    SELECT db_timestamp FROM $journalTable
+    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectOneEventSql =
-    s"SELECT db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload " +
-    s"FROM $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr = $4 AND deleted = false"
+  private val selectOneEventSql = sql"""
+    SELECT db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
+    FROM $journalTable
+    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectEventsSql =
-    s"SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload " +
-    s"from $journalTable " +
-    "WHERE slice = $1 AND entity_type = $2 AND persistence_id = $3 AND seq_nr >= $4 AND seq_nr <= $5 " +
-    "AND deleted = false " +
-    "ORDER BY seq_nr " +
-    "LIMIT $6"
+  private val selectEventsSql = sql"""
+    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload
+    from $journalTable
+    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
+    AND deleted = false
+    ORDER BY seq_nr
+    LIMIT ?"""
 
   private val allPersistenceIdsSql =
-    s"SELECT DISTINCT(persistence_id) from $journalTable ORDER BY persistence_id LIMIT $$1"
+    sql"SELECT DISTINCT(persistence_id) from $journalTable ORDER BY persistence_id LIMIT ?"
 
   private val allPersistenceIdsAfterSql =
-    s"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
+    sql"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
