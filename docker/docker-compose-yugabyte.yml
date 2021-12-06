@@ -8,7 +8,7 @@ volumes:
 
 services:
   yb-master:
-    image: yugabytedb/yugabyte:2.9.1.0-b140
+    image: yugabytedb/yugabyte:2.8.0.0-b37
     container_name: yb-master-n1
     volumes:
       - yb-master-data-1:/mnt/master
@@ -23,7 +23,7 @@ services:
       SERVICE_7000_NAME: yb-master
 
   yb-tserver:
-    image: yugabytedb/yugabyte:2.9.1.0-b140
+    image: yugabytedb/yugabyte:2.8.0.0-b37
     container_name: yb-tserver-n1
     volumes:
       - yb-tserver-data-1:/mnt/tserver
