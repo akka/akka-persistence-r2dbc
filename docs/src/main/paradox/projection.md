@@ -169,16 +169,6 @@ Java
 Such simple handlers can also be defined as plain functions via the helper @scala[`R2dbcHandler.apply`]@java[`R2dbcHandler.fromFunction`] factory method.
 @@@
 
-@@@ note
-
-R2DBC bind parameters must be defined as `$1`, `$2`, `$3`. The numbering can become inconvenient and doesn't
-improve readability.
-@scala[The string interpolation utility in @apidoc[Sql.Interpolation](akka.persistence.r2dbc.Sql.Interpolation)]
-@java[The utility @apidoc[Sql.format](akka.persistence.r2dbc.Sql$)] is useful for this purpose.
-It Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims whitespace, including line breaks.
-
-@@@
-
 ### Grouped handler
 
 When using @ref:[`R2dbcProjection.groupedWithin`](#groupedwithin) the handler is processing a @scala[`Seq`]@java[`List`] of envelopes.

@@ -22,7 +22,7 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.projection.HandlerRecoveryStrategy
 import akka.projection.OffsetVerification

@@ -14,7 +14,7 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.query.Sequence
 import akka.persistence.query.TimeBasedUUID
-import akka.persistence.r2dbc.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.projection.MergeableOffset
 import akka.projection.ProjectionId
 import akka.projection.internal.ManagementState

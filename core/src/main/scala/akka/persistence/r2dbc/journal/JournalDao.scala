@@ -13,7 +13,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId

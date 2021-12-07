@@ -9,7 +9,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class SqlSpec extends AnyWordSpec with TestSuite with Matchers {
-  import akka.persistence.r2dbc.Sql.Interpolation
+  import Sql.Interpolation
 
   "SQL string interpolation" should {
     "replace ? bind parameters with numbered $" in {

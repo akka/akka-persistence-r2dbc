@@ -15,7 +15,7 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle

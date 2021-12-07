@@ -26,7 +26,6 @@ import java.util.Optional;
 // #grouped-handler
 import akka.projection.r2dbc.javadsl.R2dbcHandler;
 import akka.projection.r2dbc.javadsl.R2dbcSession;
-import akka.persistence.r2dbc.Sql;
 import io.r2dbc.spi.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +104,7 @@ class R2dbcProjectionDocExample {
 
         Statement stmt =
             session
-                .createStatement(Sql.format("INSERT into order (id, time) VALUES (?, ?)"))
+                .createStatement("INSERT into order (id, time) VALUES ($1, $2)")
                 .bind(0, checkedOut.cartId)
                 .bind(1, checkedOut.eventTime);
         return session.updateOne(stmt).thenApply(rowsUpdated -> Done.getInstance());
@@ -136,7 +135,7 @@ class R2dbcProjectionDocExample {
 
           Statement stmt =
               session
-                  .createStatement(Sql.format("INSERT into order (id, time) VALUES (?, ?)"))
+                  .createStatement("INSERT into order (id, time) VALUES ($1, $2)")
                   .bind(0, checkedOut.cartId)
                   .bind(1, checkedOut.eventTime);
           stmts.add(stmt);

@@ -2,16 +2,17 @@
  * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc
+package akka.persistence.r2dbc.internal
 
 import scala.annotation.varargs
 
-import akka.annotation.InternalApi
+import akka.annotation.InternalStableApi
 
 /**
- * Utility to format SQL strings. Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims whitespace, including
- * line breaks.
+ * INTERNAL API: Utility to format SQL strings. Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims
+ * whitespace, including line breaks.
  */
+@InternalStableApi
 object Sql {
 
   /**

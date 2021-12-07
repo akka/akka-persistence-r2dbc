@@ -24,7 +24,7 @@ import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
-import akka.persistence.r2dbc.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.projection.BySlicesSourceProvider
 import akka.projection.MergeableOffset
