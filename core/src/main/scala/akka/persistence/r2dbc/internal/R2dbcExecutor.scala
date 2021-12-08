@@ -126,6 +126,10 @@ import reactor.core.publisher.Flux
   }
 }
 
+/**
+ * INTERNAL API:
+ */
+@InternalStableApi
 class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDbCallsExceeding: FiniteDuration)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_]) {

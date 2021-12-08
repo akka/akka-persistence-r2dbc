@@ -17,6 +17,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
@@ -63,64 +64,53 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val stateTable = settings.durableStateTableWithSchema
 
-  private val selectStateSql: String =
-    "SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp " +
-    s"FROM $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
+  private val selectStateSql: String = sql"""
+    SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
+    FROM $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ?"""
 
-  private val insertStateSql: String =
-    s"INSERT INTO $stateTable " +
-    "(slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp) " +
-    "VALUES ($1, $2, $3, $4, $5, $6, $7, transaction_timestamp())"
+  private val insertStateSql: String = sql"""
+    INSERT INTO $stateTable
+    (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, transaction_timestamp())"""
 
   private val updateStateSql: String = {
-    if (settings.dbTimestampMonotonicIncreasing) {
-      val base =
-        s"UPDATE $stateTable " +
-        "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = transaction_timestamp() " +
-        "WHERE slice = $5 AND entity_type = $6 AND persistence_id = $7"
-      if (settings.durableStateAssertSingleWriter)
-        base + " AND revision = $8"
+    val timestamp =
+      if (settings.dbTimestampMonotonicIncreasing)
+        "transaction_timestamp()"
       else
-        base
-    } else {
-      val base =
-        s"UPDATE $stateTable " +
-        "SET revision = $1, state_ser_id = $2, state_ser_manifest = $3, state_payload = $4, db_timestamp = " +
         "GREATEST(transaction_timestamp(), " +
-        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = $$5 AND entity_type = $$6 AND persistence_id = $$7 AND revision = $$8)) " +
-        "WHERE slice = $9 AND entity_type = $10 AND persistence_id = $11"
-      if (settings.durableStateAssertSingleWriter)
-        base + " AND revision = $12"
-      else
-        base
-    }
+        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND revision = ?))"
+
+    val revisionCondition =
+      if (settings.durableStateAssertSingleWriter) " AND revision = ?"
+      else ""
+
+    sql"""
+      UPDATE $stateTable
+      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, db_timestamp = $timestamp
+      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      $revisionCondition"""
   }
 
   private val deleteStateSql: String =
-    s"DELETE from $stateTable WHERE slice = $$1 AND entity_type = $$2 AND persistence_id = $$3"
+    sql"DELETE from $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ?"
 
   private val currentDbTimestampSql =
-    "SELECT transaction_timestamp() AS db_timestamp"
+    sql"SELECT transaction_timestamp() AS db_timestamp"
 
   private val allPersistenceIdsSql =
-    s"SELECT persistence_id from $stateTable ORDER BY persistence_id LIMIT $$1"
+    sql"SELECT persistence_id from $stateTable ORDER BY persistence_id LIMIT ?"
 
   private val allPersistenceIdsAfterSql =
-    s"SELECT persistence_id from $stateTable WHERE persistence_id > $$1 ORDER BY persistence_id LIMIT $$2"
+    sql"SELECT persistence_id from $stateTable WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
   private def stateBySlicesRangeSql(
       maxDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): String = {
-    var p = 0
-
-    def nextParam(): String = {
-      p += 1
-      "$" + p
-    }
 
     def maxDbTimestampParamCondition =
-      if (maxDbTimestampParam) s"AND db_timestamp < ${nextParam()}" else ""
+      if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
@@ -133,13 +123,14 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       else
         "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
-    selectColumns +
-    s"FROM $stateTable " +
-    s"WHERE entity_type = ${nextParam()} " +
-    s"AND slice BETWEEN ${nextParam()} AND ${nextParam()} " +
-    s"AND db_timestamp >= ${nextParam()} $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition " +
-    s"ORDER BY db_timestamp, revision " +
-    s"LIMIT ${nextParam()}"
+    sql"""
+      $selectColumns
+      FROM $stateTable
+      WHERE entity_type = ?
+      AND slice BETWEEN ? AND ?
+      AND db_timestamp >= ? $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+      ORDER BY db_timestamp, revision
+      LIMIT ?"""
   }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
