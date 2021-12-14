@@ -66,7 +66,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val selectStateSql: String = sql"""
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
-    FROM $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ?"""
+    FROM $stateTable WHERE persistence_id = ?"""
 
   private val insertStateSql: String = sql"""
     INSERT INTO $stateTable
@@ -79,7 +79,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         "transaction_timestamp()"
       else
         "GREATEST(transaction_timestamp(), " +
-        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND revision = ?))"
+        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
 
     val revisionCondition =
       if (settings.durableStateAssertSingleWriter) " AND revision = ?"
@@ -88,12 +88,12 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     sql"""
       UPDATE $stateTable
       SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, db_timestamp = $timestamp
-      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      WHERE persistence_id = ?
       $revisionCondition"""
   }
 
   private val deleteStateSql: String =
-    sql"DELETE from $stateTable WHERE slice = ? AND entity_type = ? AND persistence_id = ?"
+    sql"DELETE from $stateTable WHERE persistence_id = ?"
 
   private val currentDbTimestampSql =
     sql"SELECT transaction_timestamp() AS db_timestamp"
@@ -141,9 +141,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       connection =>
         connection
           .createStatement(selectStateSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId),
+          .bind(0, persistenceId),
       row =>
         SerializedStateRow(
           persistenceId = persistenceId,
@@ -194,26 +192,18 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           if (settings.dbTimestampMonotonicIncreasing) {
             if (settings.durableStateAssertSingleWriter)
               stmt
-                .bind(4, slice)
-                .bind(5, entityType)
-                .bind(6, state.persistenceId)
-                .bind(7, previousRevision)
+                .bind(4, state.persistenceId)
+                .bind(5, previousRevision)
             else
               stmt
-                .bind(4, slice)
-                .bind(5, entityType)
-                .bind(6, state.persistenceId)
+                .bind(4, state.persistenceId)
           } else {
             stmt
-              .bind(4, slice)
-              .bind(5, entityType)
+              .bind(4, state.persistenceId)
+              .bind(5, previousRevision)
               .bind(6, state.persistenceId)
-              .bind(7, previousRevision)
-              .bind(8, slice)
-              .bind(9, entityType)
-              .bind(10, state.persistenceId)
             if (settings.durableStateAssertSingleWriter)
-              stmt.bind(11, previousRevision)
+              stmt.bind(7, previousRevision)
             else
               stmt
           }
@@ -240,9 +230,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
         connection
           .createStatement(deleteStateSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
+          .bind(0, persistenceId)
       }
 
     if (log.isDebugEnabled())
