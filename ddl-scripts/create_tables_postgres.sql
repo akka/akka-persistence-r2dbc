@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY(slice, entity_type, persistence_id, seq_nr)
+  PRIMARY KEY(persistence_id, seq_nr)
 );
 
 -- `event_journal_slice_idx` is only needed if the slice based queries are used
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS snapshot(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY(slice, entity_type, persistence_id)
+  PRIMARY KEY(persistence_id)
 );
 
 CREATE TABLE IF NOT EXISTS durable_state (
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_ser_manifest VARCHAR(255),
   state_payload BYTEA NOT NULL,
 
-  PRIMARY KEY(slice, entity_type, persistence_id, revision)
+  PRIMARY KEY(persistence_id, revision)
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used

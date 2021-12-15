@@ -17,12 +17,12 @@ CREATE TABLE IF NOT EXISTS event_journal(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY((slice, entity_type) HASH, persistence_id, seq_nr ASC)
+  PRIMARY KEY(persistence_id HASH, seq_nr ASC)
 );
 
 -- `event_journal_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(entity_type ASC, slice ASC, db_timestamp ASC)
-  INCLUDE (seq_nr, deleted);
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice ASC, entity_type ASC, db_timestamp ASC)
+  INCLUDE (persistence_id, seq_nr, deleted);
 
 CREATE TABLE IF NOT EXISTS snapshot(
   slice INT NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS snapshot(
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
 
-  PRIMARY KEY((slice, entity_type) HASH, persistence_id)
+  PRIMARY KEY(persistence_id HASH)
 );
 
 CREATE TABLE IF NOT EXISTS durable_state (
@@ -51,12 +51,12 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_ser_manifest VARCHAR(255),
   state_payload BYTEA NOT NULL,
 
-  PRIMARY KEY((slice, entity_type) HASH, persistence_id, revision ASC)
+  PRIMARY KEY(persistence_id HASH, revision ASC)
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(entity_type ASC, slice ASC, db_timestamp ASC)
-  INCLUDE (revision);
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice ASC, entity_type ASC, db_timestamp ASC)
+  INCLUDE (persistence_id, revision);
 
 -- Primitive offset types are stored in this table.
 -- If only timestamp based offsets are used this table is optional.

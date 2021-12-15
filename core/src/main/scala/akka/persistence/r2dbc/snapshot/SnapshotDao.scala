@@ -77,7 +77,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     INSERT INTO $snapshotTable
     (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (slice, entity_type, persistence_id)
+    ON CONFLICT (persistence_id)
     DO UPDATE SET
       seq_nr = excluded.seq_nr,
       write_timestamp = excluded.write_timestamp,
@@ -108,7 +108,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     sql"""
       SELECT persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
-      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
       LIMIT 1"""
   }
@@ -132,24 +132,19 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
 
     sql"""
       DELETE FROM $snapshotTable
-      WHERE slice = ? AND entity_type = ? AND persistence_id = ?
+      WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition"""
   }
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
         { connection =>
           val statement = connection
             .createStatement(selectSql(criteria))
-            .bind(0, slice)
-            .bind(1, entityType)
-            .bind(2, persistenceId)
+            .bind(0, persistenceId)
 
-          var bindIdx = 2
+          var bindIdx = 0
           if (criteria.maxSequenceNr != Long.MaxValue) {
             bindIdx += 1
             statement.bind(bindIdx, criteria.maxSequenceNr)
@@ -217,11 +212,9 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
     r2dbcExecutor.updateOne(s"delete snapshot [$persistenceId], criteria [$criteria]") { connection =>
       val statement = connection
         .createStatement(deleteSql(criteria))
-        .bind(0, slice)
-        .bind(1, entityType)
-        .bind(2, persistenceId)
+        .bind(0, persistenceId)
 
-      var bindIdx = 2
+      var bindIdx = 0
       if (criteria.maxSequenceNr != Long.MaxValue) {
         bindIdx += 1
         statement.bind(bindIdx, criteria.maxSequenceNr)
