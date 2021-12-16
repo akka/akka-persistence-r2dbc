@@ -276,6 +276,7 @@ private[projection] class R2dbcOffsetStore(
   }
 
   private def readTimestampOffset(): Future[Option[TimestampOffset]] = {
+    idle.set(false)
     val oldState = state.get()
 
     val (minSlice, maxSlice) = {
