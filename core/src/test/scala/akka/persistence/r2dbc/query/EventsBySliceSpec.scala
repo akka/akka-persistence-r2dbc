@@ -270,12 +270,12 @@ class EventsBySliceSpec
         }
       }
 
-      persistenceExt.numberOfSlices should be(128)
+      persistenceExt.numberOfSlices should be(1024)
       val ranges = query.sliceRanges(4)
-      ranges(0) should be(0 to 31)
-      ranges(1) should be(32 to 63)
-      ranges(2) should be(64 to 95)
-      ranges(3) should be(96 to 127)
+      ranges(0) should be(0 to 255)
+      ranges(1) should be(256 to 511)
+      ranges(2) should be(512 to 767)
+      ranges(3) should be(768 to 1023)
 
       val allEnvelopes =
         (0 until 4).flatMap { rangeIndex =>
@@ -327,12 +327,12 @@ class EventsBySliceSpec
       val numberOfPersisters = 20
       val numberOfEvents = 3
 
-      persistenceExt.numberOfSlices should be(128)
+      persistenceExt.numberOfSlices should be(1024)
       val ranges = query.sliceRanges(4)
-      ranges(0) should be(0 to 31)
-      ranges(1) should be(32 to 63)
-      ranges(2) should be(64 to 95)
-      ranges(3) should be(96 to 127)
+      ranges(0) should be(0 to 255)
+      ranges(1) should be(256 to 511)
+      ranges(2) should be(512 to 767)
+      ranges(3) should be(768 to 1023)
 
       val queries: Seq[Source[EventEnvelope[String], NotUsed]] =
         (0 until 4).map { rangeIndex =>
