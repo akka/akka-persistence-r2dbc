@@ -86,8 +86,8 @@ for the previous slice distributions.
 
 A slice is deterministically defined based on the persistence id. The purpose is to evenly distribute all
 persistence ids over the slices. The `eventsBySlices` query is for a range of the slices. For example if
-using 128 slices and running 4 Projection instances the slice ranges would be 0-31, 32-63, 64-95, 96-127.
-Changing to 8 slice ranges means that the ranges would be 0-15, 16-31, 32-47, ..., 96-111, 112-127.
+using 1024 slices and running 4 Projection instances the slice ranges would be 0-255, 256-511, 512-767, 768-1023.
+Changing to 8 slice ranges means that the ranges would be 0-127, 128-255, 256-383, ..., 768-895, 896-1023.
 
 However, when changing the number of slices the projections with the old slice distribution must be
 stopped before starting new projections. That can be done with a full shutdown before deploying the

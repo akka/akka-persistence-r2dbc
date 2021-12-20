@@ -7,9 +7,9 @@ import sbt._
 object Dependencies {
   val Scala212 = "2.12.15"
   val Scala213 = "2.13.6"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.17+55-bdb46d16-SNAPSHOT")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.18")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.2.2+5-5b69dba3-SNAPSHOT"
+  val AkkaProjectionVersion = "1.2.3"
   val AkkaProjectionVersionInDocs = "current"
 
   object Compile {
@@ -41,7 +41,7 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" % Test // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.9" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
