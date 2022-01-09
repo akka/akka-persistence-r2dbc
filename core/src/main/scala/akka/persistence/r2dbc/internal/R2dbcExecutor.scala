@@ -27,6 +27,7 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
 
 /**
  * INTERNAL API
@@ -189,6 +190,22 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
     withConnection(logPrefix) { connection =>
       updateInTx(statementsFactory(connection))
     }
+
+  /**
+   * One update statement with auto commit and return mapped result. For example with Postgres: INSERT INTO foo(name)
+   * VALUES ('bar') returning transaction_timestamp()
+   */
+  def updateOneReturning[A](
+      logPrefix: String)(statementFactory: Connection => Statement, mapRow: Row => A): Future[A] = {
+    withAutoCommitConnection(logPrefix) { connection =>
+      val stmt = statementFactory(connection)
+      stmt.execute().asFuture().flatMap { result =>
+        Mono
+          .from[A](result.map((row, _) => mapRow(row)))
+          .asFuture()
+      }
+    }
+  }
 
   def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
     select(logPrefix)(statement, mapRow).map(_.headOption)

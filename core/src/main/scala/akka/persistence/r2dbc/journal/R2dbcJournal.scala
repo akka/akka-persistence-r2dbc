@@ -66,6 +66,8 @@ private[r2dbc] object R2dbcJournal {
     }
     reprWithMeta
   }
+
+  private val FutureDone: Future[Done] = Future.successful(Done)
 }
 
 /**
@@ -75,6 +77,7 @@ private[r2dbc] object R2dbcJournal {
 private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
   import R2dbcJournal.WriteFinished
   import R2dbcJournal.deserializeRow
+  import R2dbcJournal.FutureDone
 
   implicit val system: ActorSystem[_] = context.system.toTyped
   implicit val ec: ExecutionContext = context.dispatcher
@@ -108,7 +111,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   }
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
-    def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
+    def atomicWrite(atomicWrite: AtomicWrite): Future[Option[Instant]] = {
       val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
@@ -155,49 +158,62 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
       serialized match {
         case Success(writes) =>
-          journalDao.writeEvents(writes).map(_ => Success(()))(ExecutionContexts.parasitic)
-        case Failure(t) =>
-          Future.successful(Failure(t))
+          journalDao.writeEvents(writes)
+        case Failure(exc) =>
+          Future.failed(exc)
       }
     }
 
     val persistenceId = messages.head.persistenceId
-    val writeResult: Future[immutable.Seq[Try[Unit]]] =
+    val writeResult: Future[Option[Instant]] =
       if (messages.size == 1)
-        atomicWrite(messages.head).map(_ => Nil)(ExecutionContexts.parasitic)
+        atomicWrite(messages.head)
       else {
         // persistAsync case
         // easiest to just group all into a single AtomicWrite
         val batch = AtomicWrite(messages.flatMap(_.payload))
-        atomicWrite(batch).map(_ => Nil)(ExecutionContexts.parasitic)
+        atomicWrite(batch)
       }
 
-    val writeAndPublishResult: Future[immutable.Seq[Try[Unit]]] =
-      if (pubSub.isDefined) {
-        writeResult.flatMap { wr =>
-          val seqNr = messages.head.lowestSequenceNr
-          query
-            .timestampOf(persistenceId, seqNr)
-            .map {
-              case Some(timestamp) =>
-                pubSub.foreach { p =>
-                  messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
-                }
-                wr
-              case None =>
-                log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
-                wr
-            }
-        }
-      } else {
-        writeResult
-      }
+    val writeAndPublishResult: Future[Done] =
+      publish(messages, writeResult)
 
     writesInProgress.put(persistenceId, writeAndPublishResult)
     writeAndPublishResult.onComplete { _ =>
       self ! WriteFinished(persistenceId, writeAndPublishResult)
     }
-    writeAndPublishResult
+    writeAndPublishResult.map(_ => Nil)(ExecutionContexts.parasitic)
+  }
+
+  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Option[Instant]]): Future[Done] = {
+    def pub(timestamp: Instant): Unit = {
+      pubSub.foreach { p =>
+        messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+      }
+    }
+
+    if (pubSub.isDefined) {
+      dbTimestamp.flatMap {
+        case Some(timestamp) =>
+          pub(timestamp)
+          FutureDone
+        case None =>
+          val persistenceId = messages.head.persistenceId
+          val seqNr = messages.head.lowestSequenceNr
+          query
+            .timestampOf(persistenceId, seqNr)
+            .map {
+              case Some(timestamp) =>
+                pub(timestamp)
+                Done
+              case None =>
+                log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
+                Done
+            }
+      }
+    } else {
+      dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
+    }
   }
 
   private def logTagsNotImplemented(): Unit = {
