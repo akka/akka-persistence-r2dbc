@@ -17,8 +17,8 @@ import akka.actor.typed.pubsub.Topic
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.PersistentRepr
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.r2dbc.query.TimestampOffset
 import akka.persistence.typed.PersistenceId
 
 /**

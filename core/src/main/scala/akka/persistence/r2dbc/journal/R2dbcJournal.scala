@@ -162,7 +162,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     }
 
     val persistenceId = messages.head.persistenceId
-    val writeResult =
+    val writeResult: Future[immutable.Seq[Try[Unit]]] =
       if (messages.size == 1)
         atomicWrite(messages.head).map(_ => Nil)(ExecutionContexts.parasitic)
       else {
@@ -171,27 +171,31 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
         val batch = AtomicWrite(messages.flatMap(_.payload))
         atomicWrite(batch).map(_ => Nil)(ExecutionContexts.parasitic)
       }
-    writesInProgress.put(persistenceId, writeResult)
-    writeResult.onComplete {
-      case Success(_) if pubSub.isDefined =>
-        val seqNr = messages.head.lowestSequenceNr
-        query
-          .timestampOf(persistenceId, seqNr)
-          .map {
-            case Some(timestamp) =>
-              pubSub.foreach { p =>
-                messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
-              }
-              Done
-            case None =>
-              log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
-              Done
-          }
-          .onComplete { _ =>
-            self ! WriteFinished(persistenceId, writeResult)
-          }
-      case _ =>
-        self ! WriteFinished(persistenceId, writeResult)
+
+    val writeAndPublishResult: Future[immutable.Seq[Try[Unit]]] =
+      if (pubSub.isDefined) {
+        writeResult.flatMap { wr =>
+          val seqNr = messages.head.lowestSequenceNr
+          query
+            .timestampOf(persistenceId, seqNr)
+            .map {
+              case Some(timestamp) =>
+                pubSub.foreach { p =>
+                  messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+                }
+                wr
+              case None =>
+                log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
+                wr
+            }
+        }
+      } else {
+        writeResult
+      }
+
+    writesInProgress.put(persistenceId, writeAndPublishResult)
+    writeAndPublishResult.onComplete { _ =>
+      self ! WriteFinished(persistenceId, writeAndPublishResult)
     }
     writeAndPublishResult
   }
