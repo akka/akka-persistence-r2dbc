@@ -88,6 +88,24 @@ with the same timestamp are ordered by sequence number.
 `currentEventsBySlices` doesn't perform these backtracking queries and will not emit duplicates and the
 event payload is always full loaded.
 
+## Publish events for lower latency of eventsBySlices
+
+The `eventsBySlices` query polls the database periodically to find new events. By default, this interval is a
+few seconds, see `akka.persistence.r2dbc.query.refresh-interval` in the @ref:[Configuration](#configuration).
+This interval can be reduced for lower latency, with the drawback of querying the database more frequently.
+
+If you need latency below a few 100 milliseconds you can enable a feature that will publish the events within
+the Akka Cluster instead of reducing `refresh-interval`. Running `eventsBySlices` will subscribe to the events
+and emit them directly without waiting for next query poll. The tradeoff is that more CPU and network resources
+are used. The events must still be retrieved from the database, but at a lower polling frequency,
+because delivery of published messages are not guaranteed.
+
+Enable publishing of events with configuration:
+
+```
+akka.persistence.r2dbc.journal.publish-events = on
+```
+
 ## Durable state queries
 
 @apidoc[R2dbcDurableStateStore] implements the following @extref:[Persistence Queries](akka:durable-state/persistence-query.html):

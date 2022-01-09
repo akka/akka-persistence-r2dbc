@@ -233,3 +233,7 @@ The supported offset types of the `R2dbcProjection` are:
 * `Int`
 * `Long`
 * Any other type that has a configured Akka Serializer is stored with base64 encoding of the serialized bytes.
+
+## Publish events for lower latency
+
+To reduce the latency until the Projection finds and process new events you can enable the feature described in @ref:[eventsBySlices documentation](query.md#publish-events-for-lower-latency-of-eventsbyslices).
