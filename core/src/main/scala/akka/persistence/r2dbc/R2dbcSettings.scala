@@ -8,6 +8,7 @@ import java.util.Locale
 
 import scala.concurrent.duration._
 
+import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
@@ -37,6 +38,11 @@ final class R2dbcSettings(config: Config) {
   val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
 
   val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
+
+  /**
+   * INTERNAL API FIXME remove when https://github.com/yugabyte/yugabyte-db/issues/10995 has been resolved
+   */
+  @InternalApi private[akka] val useAppTimestamp: Boolean = config.getBoolean("use-app-timestamp")
 
   val logDbCallsExceeding: FiniteDuration =
     config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {

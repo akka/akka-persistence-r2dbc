@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.journal
 
+import java.time.Instant
+
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -102,6 +104,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
     def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
+      val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
           val event = pr.payload match {
@@ -135,7 +138,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             entityType,
             pr.persistenceId,
             pr.sequenceNr,
-            JournalDao.EmptyDbTimestamp,
+            timestamp,
             JournalDao.EmptyDbTimestamp,
             Some(serialized),
             id,
