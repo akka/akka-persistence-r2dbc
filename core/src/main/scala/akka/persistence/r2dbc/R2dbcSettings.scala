@@ -17,17 +17,26 @@ import com.typesafe.config.Config
  * INTERNAL API
  */
 @InternalStableApi
+object R2dbcSettings {
+  def apply(config: Config): R2dbcSettings =
+    new R2dbcSettings(config)
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
 final class R2dbcSettings(config: Config) {
   val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
 
   val journalTable: String = config.getString("journal.table")
-  val journalTableWithSchema: String = schema.map("." + _).getOrElse("") + journalTable
+  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
   val snapshotsTable: String = config.getString("snapshot.table")
-  val snapshotsTableWithSchema: String = schema.map("." + _).getOrElse("") + snapshotsTable
+  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
 
   val durableStateTable: String = config.getString("state.table")
-  val durableStateTableWithSchema: String = schema.map("." + _).getOrElse("") + durableStateTable
+  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 

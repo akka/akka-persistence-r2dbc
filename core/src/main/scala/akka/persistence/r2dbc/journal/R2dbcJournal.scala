@@ -84,7 +84,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   private val sharedConfigPath = cfgPath.replaceAll("""\.journal$""", "")
   private val serialization: Serialization = SerializationExtension(context.system)
-  private val journalSettings = new R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+  private val journalSettings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
 
   private val journalDao =
     new JournalDao(

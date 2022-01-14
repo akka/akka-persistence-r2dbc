@@ -105,7 +105,7 @@ class MigrationTool(system: ActorSystem[_]) {
   private val parallelism = migrationConfig.getInt("parallelism")
 
   private val targetPluginId = migrationConfig.getString("target.persistence-plugin-id")
-  private val targetR2dbcSettings = new R2dbcSettings(system.settings.config.getConfig(targetPluginId))
+  private val targetR2dbcSettings = R2dbcSettings(system.settings.config.getConfig(targetPluginId))
 
   private val serialization: Serialization = SerializationExtension(system)
 
