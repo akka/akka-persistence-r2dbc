@@ -11,7 +11,6 @@ import scala.concurrent.Future
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
@@ -96,16 +95,16 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     val insertEventWithParameterTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
-        sql"$baseSql ?)"
+        sql"$baseSql ?) RETURNING db_timestamp"
       else
-        sql"$baseSql GREATEST(?, $timestampSubSelect))"
+        sql"$baseSql GREATEST(?, $timestampSubSelect)) RETURNING db_timestamp"
     }
 
     val insertEventWithTransactionTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
-        sql"$baseSql transaction_timestamp()) RETURNING transaction_timestamp() AS db_timestamp"
+        sql"$baseSql transaction_timestamp()) RETURNING db_timestamp"
       else
-        sql"$baseSql GREATEST(transaction_timestamp(), $timestampSubSelect)) RETURNING transaction_timestamp() AS db_timestamp"
+        sql"$baseSql GREATEST(transaction_timestamp(), $timestampSubSelect)) RETURNING db_timestamp"
     }
 
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
@@ -126,9 +125,14 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   /**
    * All events must be for the same persistenceId.
    *
-   * The returned timestamp is can be used in published events when that feature is enabled.
+   * The returned timestamp should be the `db_timestamp` column and it is used in published events when that feature is
+   * enabled.
+   *
+   * Note for implementing future database dialects: If a database dialect can't efficiently return the timestamp column
+   * it can return `JournalDao.EmptyDbTimestamp` when the pub-sub feature is disabled. When enabled it would have to use
+   * a select (in same transaction).
    */
-  def writeEvents(events: Seq[SerializedJournalRow]): Future[Option[Instant]] = {
+  def writeEvents(events: Seq[SerializedJournalRow]): Future[Instant] = {
     require(events.nonEmpty)
 
     // it's always the same persistenceId for all events
@@ -183,59 +187,36 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       stmt
     }
 
-    if (useTimestampFromDb) {
-      val totalEvents = events.size
-      if (totalEvents == 1) {
-        val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
-          connection => bind(connection.createStatement(insertEventWithTransactionTimestampSql), events.head),
-          row => Some(row.get(0, classOf[Instant])))
-        if (log.isDebugEnabled())
-          result.foreach { _ =>
-            log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
-          }
-        result
-      } else {
-        val result = r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events") {
-          connection =>
-            events.foldLeft(connection.createStatement(insertEventWithTransactionTimestampSql)) { (stmt, write) =>
-              bind(stmt, write).add()
-            }
-        }
+    val insertSql =
+      if (useTimestampFromDb) insertEventWithTransactionTimestampSql
+      else insertEventWithParameterTimestampSql
 
-        if (log.isDebugEnabled())
-          result.foreach { updatedRows =>
-            log.debug("Wrote [{}] events for persistenceId [{}]", updatedRows, events.head.persistenceId)
-          }
-
-        result.map(_ => None)(ExecutionContexts.parasitic)
-      }
-    } else {
-      val result: Future[Int] = {
-        val totalEvents = events.size
-        if (totalEvents == 1)
-          r2dbcExecutor.updateOne(s"insert [$persistenceId]") { connection =>
-            bind(connection.createStatement(insertEventWithParameterTimestampSql), events.head)
-          }
-        else
-          r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events") { connection =>
-            events.foldLeft(connection.createStatement(insertEventWithParameterTimestampSql)) { (stmt, write) =>
-              bind(stmt, write).add()
-            }
-          }
-      }
-
+    val totalEvents = events.size
+    if (totalEvents == 1) {
+      val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
+        connection => bind(connection.createStatement(insertSql), events.head),
+        row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
-        result.foreach { updatedRows =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", updatedRows, events.head.persistenceId)
+        result.foreach { _ =>
+          log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
         }
-
-      result.map(_ => Some(events.head.dbTimestamp))(ExecutionContext.parasitic)
+      result
+    } else {
+      val result = r2dbcExecutor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
+        connection =>
+          events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
+            bind(stmt, write).add()
+          },
+        row => row.get(0, classOf[Instant]))
+      if (log.isDebugEnabled())
+        result.foreach { _ =>
+          log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
+        }
+      result.map(_.head)(ExecutionContext.parasitic)
     }
   }
 
   def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val result = r2dbcExecutor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>

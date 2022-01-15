@@ -66,8 +66,6 @@ private[r2dbc] object R2dbcJournal {
     }
     reprWithMeta
   }
-
-  private val FutureDone: Future[Done] = Future.successful(Done)
 }
 
 /**
@@ -77,7 +75,6 @@ private[r2dbc] object R2dbcJournal {
 private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
   import R2dbcJournal.WriteFinished
   import R2dbcJournal.deserializeRow
-  import R2dbcJournal.FutureDone
 
   implicit val system: ActorSystem[_] = context.system.toTyped
   implicit val ec: ExecutionContext = context.dispatcher
@@ -111,7 +108,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   }
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
-    def atomicWrite(atomicWrite: AtomicWrite): Future[Option[Instant]] = {
+    def atomicWrite(atomicWrite: AtomicWrite): Future[Instant] = {
       val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
@@ -165,7 +162,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     }
 
     val persistenceId = messages.head.persistenceId
-    val writeResult: Future[Option[Instant]] =
+    val writeResult: Future[Instant] =
       if (messages.size == 1)
         atomicWrite(messages.head)
       else {
@@ -185,31 +182,13 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     writeAndPublishResult.map(_ => Nil)(ExecutionContexts.parasitic)
   }
 
-  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Option[Instant]]): Future[Done] = {
-    def pub(timestamp: Instant): Unit = {
-      pubSub.foreach { p =>
-        messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
-      }
-    }
-
+  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Instant]): Future[Done] = {
     if (pubSub.isDefined) {
-      dbTimestamp.flatMap {
-        case Some(timestamp) =>
-          pub(timestamp)
-          FutureDone
-        case None =>
-          val persistenceId = messages.head.persistenceId
-          val seqNr = messages.head.lowestSequenceNr
-          query
-            .timestampOf(persistenceId, seqNr)
-            .map {
-              case Some(timestamp) =>
-                pub(timestamp)
-                Done
-              case None =>
-                log.warning("Timestamp of event not found for persistenceId [{}], seqNr [{}].", persistenceId, seqNr)
-                Done
-            }
+      dbTimestamp.map { timestamp =>
+        pubSub.foreach { p =>
+          messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+        }
+        Done
       }
     } else {
       dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
