@@ -25,6 +25,7 @@ services:
   yb-tserver:
     image: yugabytedb/yugabyte:2.8.0.0-b37
     container_name: yb-tserver-n1
+    shm_size: '512mb'
     volumes:
       - yb-tserver-data-1:/mnt/tserver
     command: [ "/home/yugabyte/bin/yb-tserver",

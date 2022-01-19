@@ -9,14 +9,14 @@ import scala.annotation.varargs
 import akka.annotation.InternalStableApi
 
 /**
- * INTERNAL API: Utility to format SQL strings. Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims
+ * INTERNAL API: Utility to format SQL strings. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims
  * whitespace, including line breaks.
  */
 @InternalStableApi
 object Sql {
 
   /**
-   * Scala string interpolation with `sql` prefix. Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims
+   * Scala string interpolation with `sql` prefix. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims
    * whitespace, including line breaks. Standard string interpolation arguments `$` can be used.
    */
   implicit class Interpolation(val sc: StringContext) extends AnyVal {
@@ -25,7 +25,7 @@ object Sql {
   }
 
   /**
-   * Java API: Replaces `?` with numbered `$1`, `$2` for bind parameters. Trims whitespace, including line breaks. The
+   * Java API: Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims whitespace, including line breaks. The
    * arguments are used like in [[java.lang.String.format]].
    */
   @varargs

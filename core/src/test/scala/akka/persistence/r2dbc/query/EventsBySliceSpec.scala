@@ -73,7 +73,7 @@ class EventsBySliceSpec
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
   private class Setup {
-    val entityType = nextEntityType
+    val entityType = nextEntityType()
     val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))

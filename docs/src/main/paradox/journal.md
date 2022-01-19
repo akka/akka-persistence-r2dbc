@@ -27,7 +27,7 @@ The following can be overridden in your `application.conf` for the journal speci
 
 @@snip [reference.conf](/core/src/main/resources/reference.conf) {#journal-settings}
 
-### Deletes
+## Deletes
 
 The journal supports deletes through hard deletes, which means the journal entries are actually deleted from the database. 
 There is no materialized view with a copy of the event so make sure to not delete events too early if they are used from projections or queries.

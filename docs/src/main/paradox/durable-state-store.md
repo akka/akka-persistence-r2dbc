@@ -27,7 +27,7 @@ The following can be overridden in your `application.conf` for the journal speci
 
 @@snip [reference.conf](/core/src/main/resources/reference.conf) {#durable-state-settings}
 
-### Deletes
+## Deletes
 
 The journal supports deletes through hard deletes, which means the durable state store entries are actually deleted from the database.
 There is no materialized view with a copy of the state so make sure to not delete durable states too early if they are used from projections or queries.

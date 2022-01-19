@@ -28,6 +28,7 @@ import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -92,6 +93,10 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
   private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
 
+  private val pubSub: Option[PubSub] =
+    if (journalSettings.journalPublishEvents) Some(PubSub(system))
+    else None
+
   // if there are pending writes when an actor restarts we must wait for
   // them to complete before we can read the highest sequence number or we will miss it
   private val writesInProgress = new java.util.HashMap[String, Future[_]]()
@@ -103,7 +108,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   }
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
-    def atomicWrite(atomicWrite: AtomicWrite): Future[Try[Unit]] = {
+    def atomicWrite(atomicWrite: AtomicWrite): Future[Instant] = {
       val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
@@ -150,27 +155,44 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
       serialized match {
         case Success(writes) =>
-          journalDao.writeEvents(writes).map(_ => Success(()))(ExecutionContexts.parasitic)
-        case Failure(t) =>
-          Future.successful(Failure(t))
+          journalDao.writeEvents(writes)
+        case Failure(exc) =>
+          Future.failed(exc)
       }
     }
 
     val persistenceId = messages.head.persistenceId
-    val writeResult =
+    val writeResult: Future[Instant] =
       if (messages.size == 1)
-        atomicWrite(messages.head).map(_ => Nil)(ExecutionContexts.parasitic)
+        atomicWrite(messages.head)
       else {
         // persistAsync case
         // easiest to just group all into a single AtomicWrite
         val batch = AtomicWrite(messages.flatMap(_.payload))
-        atomicWrite(batch).map(_ => Nil)(ExecutionContexts.parasitic)
+        atomicWrite(batch)
       }
-    writesInProgress.put(persistenceId, writeResult)
-    writeResult.onComplete { _ =>
-      context.self ! WriteFinished(persistenceId, writeResult)
+
+    val writeAndPublishResult: Future[Done] =
+      publish(messages, writeResult)
+
+    writesInProgress.put(persistenceId, writeAndPublishResult)
+    writeAndPublishResult.onComplete { _ =>
+      self ! WriteFinished(persistenceId, writeAndPublishResult)
     }
-    writeResult
+    writeAndPublishResult.map(_ => Nil)(ExecutionContexts.parasitic)
+  }
+
+  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Instant]): Future[Done] = {
+    if (pubSub.isDefined) {
+      dbTimestamp.map { timestamp =>
+        pubSub.foreach { p =>
+          messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+        }
+        Done
+      }
+    } else {
+      dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
+    }
   }
 
   private def logTagsNotImplemented(): Unit = {

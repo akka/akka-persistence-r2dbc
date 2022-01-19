@@ -12,6 +12,7 @@ import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
+import akka.actor.typed.pubsub.Topic
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
@@ -28,10 +29,12 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
+import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
+import akka.stream.OverflowStrategy
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
@@ -146,8 +149,27 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[EventEnvelope[Event], NotUsed] =
-    bySlice.liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+      offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
+    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+    if (settings.journalPublishEvents) {
+      val pubSub = PubSub(typedSystem)
+      val pubSubSource =
+        Source
+          .actorRef[EventEnvelope[Event]](
+            completionMatcher = PartialFunction.empty,
+            failureMatcher = PartialFunction.empty,
+            bufferSize = settings.querySettings.bufferSize,
+            overflowStrategy = OverflowStrategy.dropNew)
+          .mapMaterializedValue { ref =>
+            (minSlice to maxSlice).foreach { slice =>
+              import akka.actor.typed.scaladsl.adapter._
+              pubSub.eventTopic(entityType, slice) ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
+            }
+          }
+      dbSource.merge(pubSubSource)
+    } else
+      dbSource
+  }
 
   override def currentEventsByPersistenceId(
       persistenceId: String,

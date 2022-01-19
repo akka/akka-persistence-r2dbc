@@ -27,6 +27,7 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
 
 /**
  * INTERNAL API
@@ -176,6 +177,9 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
       updateOneInTx(statementFactory(connection))
     }
 
+  /**
+   * Update statement that is constructed by several statements combined with `add()`.
+   */
   def updateInBatch(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
     withConnection(logPrefix) { connection =>
       updateBatchInTx(statementFactory(connection))
@@ -189,6 +193,46 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
     withConnection(logPrefix) { connection =>
       updateInTx(statementsFactory(connection))
     }
+
+  /**
+   * One update statement with auto commit and return mapped result. For example with Postgres:
+   * {{{
+   * INSERT INTO foo(name) VALUES ('bar') returning db_timestamp
+   * }}}
+   */
+  def updateOneReturning[A](
+      logPrefix: String)(statementFactory: Connection => Statement, mapRow: Row => A): Future[A] = {
+    withAutoCommitConnection(logPrefix) { connection =>
+      val stmt = statementFactory(connection)
+      stmt.execute().asFuture().flatMap { result =>
+        Mono
+          .from[A](result.map((row, _) => mapRow(row)))
+          .asFuture()
+      }
+    }
+  }
+
+  /**
+   * Update statement that is constructed by several statements combined with `add()`. Returns the mapped result of all
+   * rows. For example with Postgres:
+   * {{{
+   * INSERT INTO foo(name) VALUES ('bar') returning db_timestamp
+   * }}}
+   */
+  def updateInBatchReturning[A](logPrefix: String)(
+      statementFactory: Connection => Statement,
+      mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
+    import scala.jdk.CollectionConverters._
+    withConnection(logPrefix) { connection =>
+      val stmt = statementFactory(connection)
+      Flux
+        .from[Result](stmt.execute())
+        .concatMap(_.map((row, _) => mapRow(row)))
+        .collectList()
+        .asFuture()
+        .map(_.iterator().asScala.toVector)
+    }
+  }
 
   def selectOne[A](logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[Option[A]] = {
     select(logPrefix)(statement, mapRow).map(_.headOption)
