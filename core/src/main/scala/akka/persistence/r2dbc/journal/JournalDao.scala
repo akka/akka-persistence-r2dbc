@@ -205,7 +205,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       val result = r2dbcExecutor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
         connection =>
           events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
-            bind(stmt, write).add()
+            stmt.add()
+            bind(stmt, write)
           },
         row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
