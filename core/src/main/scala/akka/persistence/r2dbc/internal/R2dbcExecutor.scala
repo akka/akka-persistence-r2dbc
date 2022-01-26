@@ -8,9 +8,9 @@ import java.util.function.BiConsumer
 
 import scala.collection.immutable
 import scala.collection.mutable
+import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.Promise
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
@@ -23,8 +23,6 @@ import io.r2dbc.spi.Result
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.reactivestreams.Publisher
-import org.reactivestreams.Subscriber
-import org.reactivestreams.Subscription
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
@@ -34,51 +32,12 @@ import reactor.core.publisher.Mono
  */
 @InternalStableApi object R2dbcExecutor {
   final implicit class PublisherOps[T](val publisher: Publisher[T]) extends AnyVal {
-    def asFuture(): Future[T] = {
-      val promise = Promise[T]()
-      publisher.subscribe(new Subscriber[T] {
-
-        override def onSubscribe(s: Subscription): Unit = {
-          s.request(1)
-        }
-
-        override def onNext(value: T): Unit = {
-          promise.trySuccess(value)
-        }
-
-        override def onError(t: Throwable): Unit = {
-          promise.tryFailure(t)
-        }
-
-        override def onComplete(): Unit = {
-          if (!promise.isCompleted)
-            promise.tryFailure(new RuntimeException(s"Publisher [$publisher] completed without first value."))
-        }
-      })
-      promise.future
-    }
+    def asFuture(): Future[T] =
+      Mono.from(publisher).toFuture.toScala
 
     def asFutureDone(): Future[Done] = {
-      val promise = Promise[Done]()
-      publisher.subscribe(new Subscriber[Any] {
-
-        override def onSubscribe(s: Subscription): Unit = {
-          s.request(1)
-        }
-
-        override def onNext(value: Any): Unit = {
-          promise.trySuccess(Done)
-        }
-
-        override def onError(t: Throwable): Unit = {
-          promise.tryFailure(t)
-        }
-
-        override def onComplete(): Unit = {
-          promise.trySuccess(Done)
-        }
-      })
-      promise.future
+      val mono: Mono[Done] = Mono.from(publisher).map(_ => Done)
+      mono.defaultIfEmpty(Done).toFuture.toScala
     }
   }
 
