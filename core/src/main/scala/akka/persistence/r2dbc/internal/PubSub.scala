@@ -47,7 +47,7 @@ import akka.persistence.typed.PersistenceId
   }
 
   private def topicName(entityType: String, slice: Int): String =
-    URLEncoder.encode(s"r2dbc-$entityType-$slice", StandardCharsets.UTF_8)
+    URLEncoder.encode(s"r2dbc-$entityType-$slice", StandardCharsets.UTF_8.name())
 
   def publish(pr: PersistentRepr, timestamp: Instant): Unit = {
     val pid = pr.persistenceId
