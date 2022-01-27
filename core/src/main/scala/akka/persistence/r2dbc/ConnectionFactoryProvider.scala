@@ -95,6 +95,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
+      // setting lifetime due to issue https://github.com/r2dbc/r2dbc-pool/issues/129
+      .maxLifeTime(JDuration.ofDays(365 * 100))
 
     if (settings.validationQuery.nonEmpty)
       poolConfiguration.validationQuery(settings.validationQuery)
