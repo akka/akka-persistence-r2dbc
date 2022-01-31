@@ -244,17 +244,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // EventTimestampQuery
   override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    queryDao.timestampOfEvent(entityType, persistenceId, slice, sequenceNr)
+    queryDao.timestampOfEvent(persistenceId, sequenceNr)
   }
 
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     queryDao
-      .loadEvent(entityType, persistenceId, slice, sequenceNr)
+      .loadEvent(persistenceId, sequenceNr)
       .map {
         case Some(row) => deserializeBySliceRow(row)
         case None =>

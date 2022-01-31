@@ -82,17 +82,17 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
   private val selectTimestampOfEventSql = sql"""
     SELECT db_timestamp FROM $journalTable
-    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr = ? AND deleted = false"""
+    WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
   private val selectOneEventSql = sql"""
-    SELECT db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
+    SELECT slice, entity_type, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
     FROM $journalTable
-    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr = ? AND deleted = false"""
+    WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
   private val selectEventsSql = sql"""
     SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload
     from $journalTable
-    WHERE slice = ? AND entity_type = ? AND persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
+    WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
     AND deleted = false
     ORDER BY seq_nr
     LIMIT ?"""
@@ -176,35 +176,27 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def timestampOfEvent(entityType: String, persistenceId: String, slice: Int, seqNr: Long): Future[Option[Instant]] = {
+  def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
     r2dbcExecutor.selectOne("select timestampOfEvent")(
       connection =>
         connection
           .createStatement(selectTimestampOfEventSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
-          .bind(3, seqNr),
+          .bind(0, persistenceId)
+          .bind(1, seqNr),
       row => row.get("db_timestamp", classOf[Instant]))
   }
 
-  def loadEvent(
-      entityType: String,
-      persistenceId: String,
-      slice: Int,
-      seqNr: Long): Future[Option[SerializedJournalRow]] =
+  def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]] =
     r2dbcExecutor.selectOne("select one event")(
       connection =>
         connection
           .createStatement(selectOneEventSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
-          .bind(3, seqNr),
+          .bind(0, persistenceId)
+          .bind(1, seqNr),
       row =>
         SerializedJournalRow(
-          slice,
-          entityType,
+          slice = row.get("slice", classOf[Integer]),
+          entityType = row.get("entity_type", classOf[String]),
           persistenceId,
           seqNr,
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
@@ -226,12 +218,10 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       connection =>
         connection
           .createStatement(selectEventsSql)
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
-          .bind(3, fromSequenceNr)
-          .bind(4, toSequenceNr)
-          .bind(5, settings.querySettings.bufferSize),
+          .bind(0, persistenceId)
+          .bind(1, fromSequenceNr)
+          .bind(2, toSequenceNr)
+          .bind(3, settings.querySettings.bufferSize),
       row =>
         SerializedJournalRow(
           slice = row.get("slice", classOf[Integer]),
