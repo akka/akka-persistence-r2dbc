@@ -13,7 +13,7 @@ The `durable_state_slice_idx` index is only needed if the slice based @ref:[quer
 To enable the journal plugin to be used by default, add the following line to your Akka `application.conf`:
 
 ```
-akka.persistence.state.plugin = "akka.persistence.r2dbc.durable-state-store"
+akka.persistence.state.plugin = "akka.persistence.r2dbc.state"
 ```
 
 It can also be enabled with the `durableStateStorePluginId` for a specific `DurableStateBehavior` and multiple

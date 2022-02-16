@@ -21,7 +21,7 @@ To enable the plugins to be used by default, add the following line to your Akka
 ```
 akka.persistence.journal.plugin = "akka.persistence.r2dbc.journal"
 akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
-akka.persistence.state.plugin = "akka.persistence.r2dbc.durable-state-store"
+akka.persistence.state.plugin = "akka.persistence.r2dbc.state"
 ```
 
 More information in:
