@@ -21,7 +21,6 @@ import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger
@@ -155,6 +154,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
+            tags = Set.empty, // tags not fetched in queries (yet)
             metadata = None)
         else
           SerializedJournalRow(
@@ -168,6 +168,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = row.get("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
+            tags = Set.empty, // tags not fetched in queries (yet)
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -205,14 +206,13 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
+          tags = Set.empty, // tags not fetched in queries (yet)
           metadata = readMetadata(row)))
 
   def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     val result = r2dbcExecutor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection =>
@@ -234,6 +234,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
+          tags = Set.empty, // tags not fetched in queries (yet)
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)

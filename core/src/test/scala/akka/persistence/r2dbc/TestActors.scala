@@ -33,10 +33,18 @@ object TestActors {
       apply(PersistenceId.ofUniqueId(pid))
 
     def apply(pid: PersistenceId): Behavior[Command] = {
-      apply(pid, "", "")
+      apply(pid, "", "", Set.empty)
     }
 
-    def apply(pid: PersistenceId, journalPluginId: String, snapshotPluginId: String): Behavior[Command] = {
+    def apply(pid: PersistenceId, tags: Set[String]): Behavior[Command] = {
+      apply(pid, "", "", tags)
+    }
+
+    def apply(
+        pid: PersistenceId,
+        journalPluginId: String,
+        snapshotPluginId: String,
+        tags: Set[String]): Behavior[Command] = {
       Behaviors.setup { context =>
         eventSourcedBehavior(pid, context)
           .withJournalPluginId(journalPluginId)
@@ -44,6 +52,7 @@ object TestActors {
           .snapshotWhen { case (_, event, _) =>
             event.toString.contains("snap")
           }
+          .withTagger(_ => tags)
       }
     }
 

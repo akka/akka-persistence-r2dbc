@@ -42,6 +42,7 @@ private[r2dbc] object JournalDao {
       serId: Int,
       serManifest: String,
       writerUuid: String,
+      tags: Set[String],
       metadata: Option[SerializedEventMetadata])
       extends BySliceQuery.SerializedRow
 
@@ -83,8 +84,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
-      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
 
     // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
     // always increasing for a pid (time not going backwards).
@@ -154,34 +155,39 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(7, write.serManifest)
         .bind(8, write.payload.get)
 
+      if (write.tags.isEmpty)
+        stmt.bindNull(9, classOf[Array[String]])
+      else
+        stmt.bind(9, write.tags.toArray)
+
       // optional metadata
       write.metadata match {
         case Some(m) =>
           stmt
-            .bind(9, m.serId)
-            .bind(10, m.serManifest)
-            .bind(11, m.payload)
+            .bind(10, m.serId)
+            .bind(11, m.serManifest)
+            .bind(12, m.payload)
         case None =>
           stmt
-            .bindNull(9, classOf[Integer])
-            .bindNull(10, classOf[String])
-            .bindNull(11, classOf[Array[Byte]])
+            .bindNull(10, classOf[Integer])
+            .bindNull(11, classOf[String])
+            .bindNull(12, classOf[Array[Byte]])
       }
 
       if (useTimestampFromDb) {
         if (!journalSettings.dbTimestampMonotonicIncreasing)
           stmt
-            .bind(12, write.persistenceId)
-            .bind(13, previousSeqNr)
+            .bind(13, write.persistenceId)
+            .bind(14, previousSeqNr)
       } else {
         if (journalSettings.dbTimestampMonotonicIncreasing)
           stmt
-            .bind(12, write.dbTimestamp)
+            .bind(13, write.dbTimestamp)
         else
           stmt
-            .bind(12, write.dbTimestamp)
-            .bind(13, write.persistenceId)
-            .bind(14, previousSeqNr)
+            .bind(13, write.dbTimestamp)
+            .bind(14, write.persistenceId)
+            .bind(15, previousSeqNr)
       }
 
       stmt

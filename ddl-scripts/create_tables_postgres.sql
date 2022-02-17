@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
   deleted BOOLEAN DEFAULT FALSE NOT NULL,
   writer VARCHAR(255) NOT NULL,
   adapter_manifest VARCHAR(255),
+  tags TEXT ARRAY,
 
   meta_ser_id INTEGER,
   meta_ser_manifest VARCHAR(255),
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_ser_id INTEGER NOT NULL,
   state_ser_manifest VARCHAR(255),
   state_payload BYTEA NOT NULL,
+  tags TEXT ARRAY,
 
   PRIMARY KEY(persistence_id, revision)
 );
