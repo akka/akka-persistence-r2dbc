@@ -90,6 +90,8 @@ object MigrationTool {
  * `migration_progress`. In a subsequent run it will only migrate new events and snapshots compared to what was stored
  * in `migration_progress`. It will also find and migrate new persistence ids in a subsequent run. You can delete from
  * `migration_progress` if you want to re-run the full migration.
+ *
+ * Note: tags are not migrated.
  */
 class MigrationTool(system: ActorSystem[_]) {
   import MigrationTool.Result
@@ -255,6 +257,7 @@ class MigrationTool(system: ActorSystem[_]) {
       serializer.identifier,
       manifest,
       "", // writerUuid is discarded, but that is ok
+      tags = Set.empty, // tags are not migrated (not included in currentEventsByPersistenceId envelope)
       metadata)
   }
 
