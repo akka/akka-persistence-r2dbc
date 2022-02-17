@@ -82,6 +82,11 @@ final class QuerySettings(config: Config) {
  */
 @InternalStableApi
 final class ConnectionFactorySettings(config: Config) {
+
+  val urlOption: Option[String] =
+    Option(config.getString("url"))
+      .filter(_.trim.nonEmpty)
+
   val driver: String = config.getString("driver")
   val host: String = config.getString("host")
   val port: Int = config.getInt("port")
