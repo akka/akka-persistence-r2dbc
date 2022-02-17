@@ -95,12 +95,12 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       DurableStateDao.EmptyDbTimestamp,
       serialized,
       serializer.identifier,
-      manifest)
+      manifest,
+      if (tag.isEmpty) Set.empty else Set(tag))
 
     stateDao.writeState(serializedRow)
 
   }
-
   override def deleteObject(persistenceId: String): Future[Done] =
     stateDao.deleteState(persistenceId)
 

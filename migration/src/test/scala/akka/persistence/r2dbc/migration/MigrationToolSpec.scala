@@ -144,7 +144,7 @@ class MigrationToolSpec
 
   private def persistEvents(pid: PersistenceId, events: Seq[String]): Unit = {
     val probe = testKit.createTestProbe[Done]()
-    val persister = testKit.spawn(Persister(pid, sourceJournalPluginId, sourceSnapshotPluginId))
+    val persister = testKit.spawn(Persister(pid, sourceJournalPluginId, sourceSnapshotPluginId, tags = Set.empty))
     events.foreach { event =>
       persister ! Persister.Persist(event)
     }
@@ -157,7 +157,8 @@ class MigrationToolSpec
 
   private def assertState(pid: PersistenceId, expectedState: String): Unit = {
     val probe = testKit.createTestProbe[Any]()
-    val targetPersister = testKit.spawn(Persister(pid, targetPluginId + ".journal", targetPluginId + ".snapshot"))
+    val targetPersister =
+      testKit.spawn(Persister(pid, targetPluginId + ".journal", targetPluginId + ".snapshot", tags = Set.empty))
     targetPersister ! Persister.GetState(probe.ref)
     probe.expectMessage(expectedState)
     targetPersister ! Persister.Stop(probe.ref)

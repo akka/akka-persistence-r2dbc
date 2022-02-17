@@ -101,7 +101,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   // them to complete before we can read the highest sequence number or we will miss it
   private val writesInProgress = new java.util.HashMap[String, Future[_]]()
 
-  private var tagsNotImplementedWarningLogged = false
+  private var eventsByTagNotImplementedLogged = false
 
   override def receivePluginInternal: Receive = { case WriteFinished(pid, f) =>
     writesInProgress.remove(pid, f)
@@ -112,13 +112,13 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
-          val event = pr.payload match {
-            case Tagged(payload, _) =>
-              // tags not implemented, issue #82
-              logTagsNotImplemented()
-              payload.asInstanceOf[AnyRef]
+          val (event, tags) = pr.payload match {
+            case Tagged(payload, tags) =>
+              // eventsBytag not implemented, issue #82, but they are stored
+              logEventsByTagsNotImplemented()
+              (payload.asInstanceOf[AnyRef], tags)
             case other =>
-              other.asInstanceOf[AnyRef]
+              (other.asInstanceOf[AnyRef], Set.empty[String])
           }
 
           val entityType = PersistenceId.extractEntityType(pr.persistenceId)
@@ -149,6 +149,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             id,
             manifest,
             pr.writerUuid,
+            tags,
             metadata)
         }
       }
@@ -195,13 +196,13 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     }
   }
 
-  private def logTagsNotImplemented(): Unit = {
-    if (!tagsNotImplementedWarningLogged) {
-      tagsNotImplementedWarningLogged = true
-      log.warning(
-        "Tags not implemented by akka-persistence-r2dbc. We recommend using eventsBySlices instead. " +
-        "Tagged events will be stored but the tags are discarded. " +
-        "Tags may be implemented in the future if there is strong demand for it. " +
+  private def logEventsByTagsNotImplemented(): Unit = {
+    if (!eventsByTagNotImplementedLogged) {
+      eventsByTagNotImplementedLogged = true
+      log.info(
+        "eventsByTag query not implemented by akka-persistence-r2dbc. We recommend using eventsBySlices instead. " +
+        "The given tags are stored. " +
+        "eventsByTag may be implemented in the future if there is strong demand for it. " +
         "Let us know in https://github.com/akka/akka-persistence-r2dbc/issues/82")
     }
   }

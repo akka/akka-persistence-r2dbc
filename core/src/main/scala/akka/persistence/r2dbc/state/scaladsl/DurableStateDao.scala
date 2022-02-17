@@ -24,6 +24,7 @@ import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
+import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -41,7 +42,8 @@ import org.slf4j.LoggerFactory
       readDbTimestamp: Instant,
       payload: Array[Byte],
       serId: Int,
-      serManifest: String)
+      serManifest: String,
+      tags: Set[String])
       extends BySliceQuery.SerializedRow {
     override def seqNr: Long = revision
   }
@@ -70,8 +72,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val insertStateSql: String = sql"""
     INSERT INTO $stateTable
-    (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, transaction_timestamp())"""
+    (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags, db_timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, transaction_timestamp())"""
 
   private val updateStateSql: String = {
     val timestamp =
@@ -87,7 +89,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
     sql"""
       UPDATE $stateTable
-      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, db_timestamp = $timestamp
+      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, tags = ?, db_timestamp = $timestamp
       WHERE persistence_id = ?
       $revisionCondition"""
   }
@@ -134,9 +136,6 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-
     r2dbcExecutor.selectOne(s"select [$persistenceId]")(
       connection =>
         connection
@@ -150,7 +149,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           readDbTimestamp = Instant.EPOCH, // not needed here
           payload = row.get("state_payload", classOf[Array[Byte]]),
           serId = row.get("state_ser_id", classOf[Integer]),
-          serManifest = row.get("state_ser_manifest", classOf[String])))
+          serManifest = row.get("state_ser_manifest", classOf[String]),
+          tags = Set.empty // tags not fetched in queries (yet)
+        ))
   }
 
   def writeState(state: SerializedStateRow): Future[Done] = {
@@ -159,11 +160,18 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     val entityType = PersistenceId.extractEntityType(state.persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
 
+    def bindTags(stmt: Statement, i: Int): Statement = {
+      if (state.tags.isEmpty)
+        stmt.bindNull(i, classOf[Array[String]])
+      else
+        stmt.bind(i, state.tags.toArray)
+    }
+
     val result = {
       if (state.revision == 1) {
         r2dbcExecutor
           .updateOne(s"insert [${state.persistenceId}]") { connection =>
-            connection
+            val stmt = connection
               .createStatement(insertStateSql)
               .bind(0, slice)
               .bind(1, entityType)
@@ -172,6 +180,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(4, state.serId)
               .bind(5, state.serManifest)
               .bind(6, state.payload)
+            bindTags(stmt, 7)
           }
           .recoverWith { case _: R2dbcDataIntegrityViolationException =>
             Future.failed(
@@ -188,22 +197,24 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(1, state.serId)
             .bind(2, state.serManifest)
             .bind(3, state.payload)
+          bindTags(stmt, 4)
 
           if (settings.dbTimestampMonotonicIncreasing) {
             if (settings.durableStateAssertSingleWriter)
               stmt
-                .bind(4, state.persistenceId)
-                .bind(5, previousRevision)
+                .bind(5, state.persistenceId)
+                .bind(6, previousRevision)
             else
               stmt
-                .bind(4, state.persistenceId)
+                .bind(5, state.persistenceId)
           } else {
             stmt
-              .bind(4, state.persistenceId)
-              .bind(5, previousRevision)
-              .bind(6, state.persistenceId)
+              .bind(5, state.persistenceId)
+              .bind(6, previousRevision)
+              .bind(7, state.persistenceId)
+
             if (settings.durableStateAssertSingleWriter)
-              stmt.bind(7, previousRevision)
+              stmt.bind(8, previousRevision)
             else
               stmt
           }
@@ -223,9 +234,6 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def deleteState(persistenceId: String): Future[Done] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-
     val result =
       r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
         connection
@@ -285,7 +293,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = null, // lazy loaded for backtracking
             serId = 0,
-            serManifest = "")
+            serManifest = "",
+            tags = Set.empty // tags not fetched in queries (yet)
+          )
         else
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
@@ -294,7 +304,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = row.get("state_payload", classOf[Array[Byte]]),
             serId = row.get("state_ser_id", classOf[Integer]),
-            serManifest = row.get("state_ser_manifest", classOf[String])))
+            serManifest = row.get("state_ser_manifest", classOf[String]),
+            tags = Set.empty // tags not fetched in queries (yet)
+          ))
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
