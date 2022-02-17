@@ -57,14 +57,23 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   }
 
   private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
-    val options = ConnectionFactoryOptions
-      .builder()
-      .option(ConnectionFactoryOptions.DRIVER, settings.driver)
-      .option(ConnectionFactoryOptions.HOST, settings.host)
-      .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
-      .option(ConnectionFactoryOptions.USER, settings.user)
-      .option(ConnectionFactoryOptions.PASSWORD, settings.password)
-      .option(ConnectionFactoryOptions.DATABASE, settings.database)
+
+    val builder =
+      settings.urlOption match {
+        case Some(url) =>
+          ConnectionFactoryOptions.builder().from(ConnectionFactoryOptions.parse(url))
+        case _ =>
+          ConnectionFactoryOptions
+            .builder()
+            .option(ConnectionFactoryOptions.DRIVER, settings.driver)
+            .option(ConnectionFactoryOptions.HOST, settings.host)
+            .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
+            .option(ConnectionFactoryOptions.USER, settings.user)
+            .option(ConnectionFactoryOptions.PASSWORD, settings.password)
+            .option(ConnectionFactoryOptions.DATABASE, settings.database)
+      }
+
+    builder
       .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
       .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
       .option(
@@ -72,16 +81,16 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         Integer.valueOf(settings.statementCacheSize))
 
     if (settings.sslEnabled) {
-      options.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
+      builder.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
 
       if (settings.sslMode.nonEmpty)
-        options.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.valueOf(settings.sslMode))
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.valueOf(settings.sslMode))
 
       if (settings.sslRootCert.nonEmpty)
-        options.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
     }
 
-    ConnectionFactories.get(options.build())
+    ConnectionFactories.get(builder.build())
   }
 
   private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
