@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS event_journal(
 );
 
 -- `event_journal_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice ASC, entity_type ASC, db_timestamp ASC)
+CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice ASC, entity_type ASC, db_timestamp ASC, seq_nr ASC, persistence_id, deleted)
   SPLIT AT VALUES ((127), (255), (383), (511), (639), (767), (895));
 
 CREATE TABLE IF NOT EXISTS snapshot(
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice ASC, entity_type ASC, db_timestamp ASC)
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice ASC, entity_type ASC, db_timestamp ASC, revision ASC, persistence_id)
   SPLIT AT VALUES ((127), (255), (383), (511), (639), (767), (895));
 
 -- Primitive offset types are stored in this table.

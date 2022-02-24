@@ -336,4 +336,13 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
+  override def eventCountBuckets(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant,
+      limit: Int): Future[Seq[(Long, Long)]] = {
+    // FIXME look into if this is also needed for durable state
+    Future.successful(Nil)
+  }
 }

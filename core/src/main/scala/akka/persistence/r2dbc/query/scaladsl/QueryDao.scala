@@ -18,6 +18,7 @@ import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -78,6 +79,16 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
   }
+
+  private val selectBucketsSql = sql"""
+    SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+    FROM $journalTable
+    WHERE entity_type = ?
+    AND slice BETWEEN ? AND ?
+    AND db_timestamp >= ? AND db_timestamp <= ?
+    AND deleted = false
+    GROUP BY bucket ORDER BY bucket LIMIT ?
+    """
 
   private val selectTimestampOfEventSql = sql"""
     SELECT db_timestamp FROM $journalTable
@@ -175,6 +186,46 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       result.foreach(rows => log.debug("Read [{}] events from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
+  override def eventCountBuckets(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant,
+      limit: Int): Future[Seq[(Long, Long)]] = {
+
+    val toTimestamp = {
+      val now = Instant.now() // not important to use database time
+      if (fromTimestamp == Instant.EPOCH)
+        now
+      else {
+        // max buckets, just to have some upper bound
+        val t = fromTimestamp.plusSeconds(Buckets.BucketDurationSeconds * limit + Buckets.BucketDurationSeconds)
+        if (t.isAfter(now)) now else t
+      }
+    }
+
+    val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+      connection =>
+        connection
+          .createStatement(selectBucketsSql)
+          .bind(0, entityType)
+          .bind(1, minSlice)
+          .bind(2, maxSlice)
+          .bind(3, fromTimestamp)
+          .bind(4, toTimestamp)
+          .bind(5, limit),
+      row => {
+        val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
+        val count = row.get("count", classOf[java.lang.Long]).toLong
+        bucketStartEpochSeconds -> count
+      })
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+
+    result
   }
 
   def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
