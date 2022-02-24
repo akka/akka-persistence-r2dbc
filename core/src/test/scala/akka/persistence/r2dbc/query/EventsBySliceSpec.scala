@@ -23,6 +23,7 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestActors.Persister.Persist
+import akka.persistence.r2dbc.TestActors.Persister.PersistAll
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestActors.Persister.Ping
 import akka.persistence.r2dbc.TestConfig
@@ -51,8 +52,12 @@ object EventsBySliceSpec {
     # reduce risk of missing events
     akka.persistence.r2dbc.query.behind-current-time = 500 millis
     akka.persistence.r2dbc-small-buffer = $${akka.persistence.r2dbc}
+
+    # this is used by the "read in chunks" test
     akka.persistence.r2dbc-small-buffer.query {
-      buffer-size = 3
+      buffer-size = 4
+      # for this extreme scenario it will add delay between each query for the live case
+      refresh-interval = 20 millis
     }
     """))
       .withFallback(TestConfig.config)
@@ -149,8 +154,8 @@ class EventsBySliceSpec
       "read in chunks" in new Setup {
         val queryWithSmallBuffer = PersistenceQuery(testKit.system)
           .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
-        for (i <- 1 to 10; n <- 1 to 10) {
-          persister ! Persist(s"e-$i-$n")
+        for (i <- 1 to 10; n <- 1 to 10 by 2) {
+          persister ! PersistAll(List(s"e-$i-$n", s"e-$i-${n + 1}"))
         }
         persister ! Ping(probe.ref)
         probe.expectMessage(10.seconds, Done)

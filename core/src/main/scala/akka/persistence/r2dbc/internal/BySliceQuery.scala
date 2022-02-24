@@ -51,8 +51,8 @@ import org.slf4j.Logger
       if (backtracking) latestBacktracking.timestamp
       else latest.timestamp
 
-    def nextQueryToTimestamp: Option[Instant] = {
-      buckets.findTimeForEventsLimit(nextQueryFromTimestamp, Buckets.Limit) match {
+    def nextQueryToTimestamp(atLeastNumberOfEvents: Int): Option[Instant] = {
+      buckets.findTimeForEventsLimit(nextQueryFromTimestamp, atLeastNumberOfEvents) match {
         case Some(t) =>
           if (backtracking)
             if (t.isAfter(latest.timestamp)) Some(latest.timestamp) else Some(t)
@@ -192,10 +192,13 @@ import org.slf4j.Logger
       state.copy(latest = extractOffset(envelope), rowCount = state.rowCount + 1)
 
     def nextQuery(state: QueryState, endTimestamp: Instant): (QueryState, Option[Source[Envelope, NotUsed]]) = {
-      if (state.queryCount == 0L || state.rowCount >= settings.querySettings.bufferSize - 1) {
+      // Note that we can't know how many events with the same timestamp that are filtered out
+      // so continue until rowCount is 0. That means an extra query at the end to make sure there are no
+      // more to fetch.
+      if (state.queryCount == 0L || state.rowCount > 0) {
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
-        val toTimestamp = newState.nextQueryToTimestamp match {
+        val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize) match {
           case Some(t) =>
             if (t.isBefore(endTimestamp)) t else endTimestamp
           case None =>
@@ -347,7 +350,7 @@ import org.slf4j.Logger
         else settings.querySettings.behindCurrentTime
 
       val fromTimestamp = newState.nextQueryFromTimestamp
-      val toTimestamp = newState.nextQueryToTimestamp
+      val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize)
 
       if (log.isDebugEnabled())
         log.debug(
