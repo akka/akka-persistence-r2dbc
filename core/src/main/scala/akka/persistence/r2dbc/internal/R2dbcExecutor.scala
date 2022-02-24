@@ -129,6 +129,22 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
     }
 
   /**
+   * Run DDL statements in the same transaction.
+   */
+  def executeDdls(logPrefix: String)(statementFactory: Connection => immutable.IndexedSeq[Statement]): Future[Done] =
+    withConnection(logPrefix) { connection =>
+      val stmts = statementFactory(connection)
+      // connection not intended for concurrent calls, make sure statements are executed one at a time
+      stmts.foldLeft(Future.successful[Done](Done)) { (acc, stmt) =>
+        acc.flatMap { _ =>
+          stmt.execute().asFuture().flatMap { res =>
+            res.getRowsUpdated.asFutureDone()
+          }
+        }
+      }
+    }
+
+  /**
    * One update statement with auto commit.
    */
   def updateOne(logPrefix: String)(statementFactory: Connection => Statement): Future[Int] =
