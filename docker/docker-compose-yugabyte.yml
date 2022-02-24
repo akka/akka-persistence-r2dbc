@@ -8,7 +8,7 @@ volumes:
 
 services:
   yb-master:
-    image: yugabytedb/yugabyte:2.8.0.0-b37
+    image: yugabytedb/yugabyte:2.12.1.0-b41
     container_name: yb-master-n1
     volumes:
       - yb-master-data-1:/mnt/master
@@ -33,7 +33,8 @@ services:
                "--start_pgsql_proxy",
                "--rpc_bind_addresses=yb-tserver-n1:9100",
                "--tserver_master_addrs=yb-master-n1:7100",
-               "--ysql_sequence_cache_minval=1"]
+               "--ysql_sequence_cache_minval=1",
+               "--yb_num_shards_per_tserver=1"]
     ports:
       - "9042:9042"
       - "5433:5433"
