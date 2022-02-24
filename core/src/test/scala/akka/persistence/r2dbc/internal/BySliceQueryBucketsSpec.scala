@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.internal
 import java.time.Instant
 
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.BucketDurationSeconds
 import org.scalatest.TestSuite
 import org.scalatest.matchers.should.Matchers
@@ -31,12 +32,12 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
     Buckets.empty
       .add(
         List(
-          bucketStartEpochSeconds(0) -> 101,
-          bucketStartEpochSeconds(1) -> 202,
-          bucketStartEpochSeconds(2) -> 303,
-          bucketStartEpochSeconds(3) -> 304,
-          bucketStartEpochSeconds(4) -> 305,
-          bucketStartEpochSeconds(5) -> 306))
+          Bucket(bucketStartEpochSeconds(0), 101),
+          Bucket(bucketStartEpochSeconds(1), 202),
+          Bucket(bucketStartEpochSeconds(2), 303),
+          Bucket(bucketStartEpochSeconds(3), 304),
+          Bucket(bucketStartEpochSeconds(4), 305),
+          Bucket(bucketStartEpochSeconds(5), 306)))
   }
 
   "BySliceQuery.Buckets" should {

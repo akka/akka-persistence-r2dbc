@@ -16,11 +16,15 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.persistence.query.NoOffset
+import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
+import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import org.slf4j.LoggerFactory
 
 /**
  * App to store many events as test data. Useful when analyzing query plans and performance.
@@ -28,8 +32,12 @@ import com.typesafe.config.ConfigFactory
  * Before running this you must:
  *   - Create the table (and index) `test_journal` corresponding to `event_journal`
  *   - Change logback-test.xml to only use STDOUT (no capturing)
+ *
+ * You can define main arg `eventsBySlices` to run the query at the same time.
  */
 object TestDataGenerator {
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   def main(args: Array[String]): Unit = {
     val config = ConfigFactory
@@ -39,16 +47,68 @@ object TestDataGenerator {
       }
       """)
       .withFallback(TestConfig.config)
-    ActorSystem(Generator(), "GenerateData", config)
+
+    ActorSystem[Nothing](Main(query = args.contains("eventsBySlices")), "GenerateData", config)
+  }
+
+  object Main {
+    def apply(query: Boolean): Behavior[Nothing] =
+      Behaviors.setup[Nothing] { ctx =>
+        if (query)
+          startEventsByQuery(ctx.system)
+
+        ctx.spawn(Generator(), "generator")
+        Behaviors.same
+      }
+
+    def startEventsByQuery(system: ActorSystem[_]): Unit = {
+      import system.executionContext
+      implicit val sys = system
+
+      val query = PersistenceQuery(system)
+        .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
+
+      val done = query
+        .eventsBySlices[String](Generator.EntityType, 0, 255, NoOffset)
+        .runFold((0L, 0L)) { case ((count, backtrackingCount), env) =>
+          val (newCount, newBacktrackingCount) =
+            if (env.eventOption.isDefined)
+              (count + 1, backtrackingCount)
+            else
+              (count, backtrackingCount + 1)
+
+          if ((newCount + newBacktrackingCount) % 100 == 0) {
+            log.info(
+              "eventsBySlices received [{}] events, and [{}] backtracking events",
+              newCount,
+              newBacktrackingCount)
+          }
+
+          (newCount, newBacktrackingCount)
+        }
+
+      done.onComplete {
+        case Success((count, backtrackingCount)) =>
+          log.info(
+            "eventsBySlices completed and received total [{}] events, and [{}] backtracking events",
+            count,
+            backtrackingCount)
+        case Failure(exc) =>
+          log.error("eventsBySlices failed", exc)
+          system.terminate()
+      }
+    }
   }
 
   object Generator {
     sealed trait Command
     case object Next extends Command
 
+    val EntityType = "test"
+
     val parallelism = 10
     val numEntities = 10000
-    val numEvents = 100000
+    val numEvents = 10000
 
     val rnd = new Random(seed = 0)
     implicit val askTimeout: Timeout = 10.seconds
@@ -72,7 +132,7 @@ object TestDataGenerator {
           val ref = entities.getOrElse(
             i, {
               val entityId = UUID.randomUUID().toString
-              val pid = PersistenceId("test", entityId)
+              val pid = PersistenceId(EntityType, entityId)
               context.spawn(Persister(pid), entityId)
             })
 

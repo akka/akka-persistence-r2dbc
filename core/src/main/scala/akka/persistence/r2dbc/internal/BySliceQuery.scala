@@ -73,7 +73,7 @@ import org.slf4j.Logger
     val empty = new Buckets(immutable.SortedMap.empty)
     // Note that 10 seconds is also defined in the aggregation sql in the dao, so be cautious if you change this.
     val BucketDurationSeconds = 10
-    val Limit = 1000 // FIXME can be increased to 10000
+    val Limit = 10000
 
     final case class Bucket(startTime: EpochSeconds, count: Count)
   }
@@ -444,6 +444,10 @@ import org.slf4j.Logger
         if (row.dbTimestamp == currentTimestamp) {
           // has this already been seen?
           if (currentSequenceNrs.get(row.persistenceId).exists(_ >= row.seqNr)) {
+            if (currentSequenceNrs.size >= settings.querySettings.bufferSize) {
+              throw new IllegalStateException(
+                s"Too many events stored with the same timestamp [$currentTimestamp], buffer size [${settings.querySettings.bufferSize}]")
+            }
             log.trace(
               "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
               row.persistenceId,
