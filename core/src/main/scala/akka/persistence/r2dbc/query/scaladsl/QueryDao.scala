@@ -19,6 +19,7 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -46,8 +47,6 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
-
-  private val persistenceExt = Persistence(system)
 
   private def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
@@ -193,7 +192,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      limit: Int): Future[Seq[(Long, Long)]] = {
+      limit: Int): Future[Seq[Bucket]] = {
 
     val toTimestamp = {
       val now = Instant.now() // not important to use database time
@@ -219,7 +218,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get("count", classOf[java.lang.Long]).toLong
-        bucketStartEpochSeconds -> count
+        Bucket(bucketStartEpochSeconds, count)
       })
 
     if (log.isDebugEnabled)

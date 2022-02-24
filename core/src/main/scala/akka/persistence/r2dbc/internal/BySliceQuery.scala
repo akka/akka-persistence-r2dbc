@@ -19,6 +19,7 @@ import akka.annotation.InternalApi
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import org.slf4j.Logger
@@ -73,6 +74,8 @@ import org.slf4j.Logger
     // Note that 10 seconds is also defined in the aggregation sql in the dao, so be cautious if you change this.
     val BucketDurationSeconds = 10
     val Limit = 1000 // FIXME can be increased to 10000
+
+    final case class Bucket(startTime: EpochSeconds, count: Count)
   }
 
   /**
@@ -85,7 +88,7 @@ import org.slf4j.Logger
    *   Key is the epoch seconds for the start of the bucket. Value is the number of events in the bucket.
    */
   class Buckets(eventsByBucket: immutable.SortedMap[Buckets.EpochSeconds, Buckets.Count]) {
-    import Buckets.{ BucketDurationSeconds, Count, EpochSeconds }
+    import Buckets.{ Bucket, BucketDurationSeconds, Count, EpochSeconds }
 
     val createdAt: Instant = Instant.now()
 
@@ -111,8 +114,8 @@ import org.slf4j.Logger
 
     // Key is the epoch seconds for the start of the bucket.
     // Value is the number of events in the bucket.
-    def add(bucketCounts: Seq[(EpochSeconds, Count)]): Buckets =
-      new Buckets(eventsByBucket ++ bucketCounts)
+    def add(bucketCounts: Seq[Bucket]): Buckets =
+      new Buckets(eventsByBucket ++ bucketCounts.iterator.map { case Bucket(startTime, count) => startTime -> count })
 
     def clearUntil(time: Instant): Buckets = {
       val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
@@ -158,7 +161,7 @@ import org.slf4j.Logger
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
-        limit: Int): Future[Seq[(Long, Long)]]
+        limit: Int): Future[Seq[Bucket]]
   }
 }
 
@@ -413,7 +416,7 @@ import org.slf4j.Logger
           val newBuckets = state.buckets.clearUntil(fromTimestamp).add(counts)
           val newState = state.copy(buckets = newBuckets)
           if (log.isDebugEnabled) {
-            val sum = counts.iterator.map(_._2).sum
+            val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
             log.debug(
               "{} retrieved [{}] event count buckets, with a total of [{}], from slices [{} - {}], from time [{}]",
               logPrefix,

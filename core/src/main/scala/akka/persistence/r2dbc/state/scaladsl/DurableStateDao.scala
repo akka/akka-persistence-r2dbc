@@ -19,6 +19,7 @@ import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
@@ -341,8 +342,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      limit: Int): Future[Seq[(Long, Long)]] = {
-    // FIXME look into if this is also needed for durable state
+      limit: Int): Future[Seq[Bucket]] = {
+    // FIXME implement this, issue https://github.com/akka/akka-persistence-r2dbc/issues/212
     Future.successful(Nil)
   }
 }

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS test_journal(
+CREATE TABLE IF NOT EXISTS event_journal(
   slice INT NOT NULL,
   entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
