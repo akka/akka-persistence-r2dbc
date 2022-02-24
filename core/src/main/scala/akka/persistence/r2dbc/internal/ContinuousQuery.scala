@@ -4,14 +4,21 @@
 
 package akka.persistence.r2dbc.internal
 
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
+
 import akka.NotUsed
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
+import akka.stream.Attributes
+import akka.stream.Outlet
+import akka.stream.SourceShape
 import akka.stream.scaladsl.Source
 import akka.stream.stage._
-import akka.stream.{ Attributes, Outlet, SourceShape }
 import akka.util.OptionVal
-
-import scala.concurrent.duration._
 
 /**
  * INTERNAL API
@@ -22,8 +29,9 @@ private[r2dbc] object ContinuousQuery {
       initialState: S,
       updateState: (S, T) => S,
       delayNextQuery: S => Option[FiniteDuration],
-      nextQuery: S => (S, Option[Source[T, NotUsed]])): Source[T, NotUsed] =
-    Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery))
+      nextQuery: S => (S, Option[Source[T, NotUsed]]),
+      beforeQuery: S => Option[Future[S]] = (_: S) => None): Source[T, NotUsed] =
+    Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery, beforeQuery))
 
   private case object NextQuery
 
@@ -48,6 +56,8 @@ private[r2dbc] object ContinuousQuery {
  *   Called when previous source completes
  * @param nextQuery
  *   Called each time the previous source completes
+ * @param beforeQuery
+ *   Called before each `nextQuery` to allow for async update of the state
  * @tparam S
  *   State type
  * @tparam T
@@ -58,7 +68,8 @@ final private[r2dbc] class ContinuousQuery[S, T](
     initialState: S,
     updateState: (S, T) => S,
     delayNextQuery: S => Option[FiniteDuration],
-    nextQuery: S => (S, Option[Source[T, NotUsed]]))
+    nextQuery: S => (S, Option[Source[T, NotUsed]]),
+    beforeQuery: S => Option[Future[S]])
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
 
@@ -72,6 +83,14 @@ final private[r2dbc] class ContinuousQuery[S, T](
       var state = initialState
       var nrElements = Long.MaxValue
       var subStreamFinished = false
+
+      private val beforeQueryCallback = getAsyncCallback[Try[S]] {
+        case Success(newState) =>
+          state = newState
+          runNextQuery()
+        case Failure(exc) =>
+          failStage(exc)
+      }
 
       private def pushAndUpdateState(t: T): Unit = {
         state = updateState(state, t)
@@ -94,42 +113,51 @@ final private[r2dbc] class ContinuousQuery[S, T](
           case None =>
             nrElements = 0
             subStreamFinished = false
-            nextQuery(state) match {
-              case (newState, Some(source)) =>
-                state = newState
-                sinkIn = new SubSinkInlet[T]("queryIn")
-                sinkIn.setHandler(new InHandler {
-                  override def onPush(): Unit = {
-                    if (!nextRow.isEmpty) {
-                      throw new IllegalStateException(s"onPush called when we already have next row.")
-                    }
-                    nrElements += 1
-                    if (isAvailable(out)) {
-                      val element = sinkIn.grab()
-                      pushAndUpdateState(element)
-                      sinkIn.pull()
-                    } else {
-                      nextRow = OptionVal(sinkIn.grab())
-                    }
-                  }
 
-                  override def onUpstreamFinish(): Unit =
-                    if (nextRow.isDefined) {
-                      // wait for the element to be pulled
-                      subStreamFinished = true
-                    } else {
-                      next()
-                    }
-                })
-                val graph = Source
-                  .fromGraph(source)
-                  .to(sinkIn.sink)
-                interpreter.subFusingMaterializer.materialize(graph)
-                sinkIn.pull()
-              case (newState, None) =>
-                state = newState
-                completeStage()
+            beforeQuery(state) match {
+              case None => runNextQuery()
+              case Some(beforeQueryFuture) =>
+                beforeQueryFuture.onComplete(beforeQueryCallback.invoke)(ExecutionContexts.parasitic)
             }
+        }
+      }
+
+      private def runNextQuery(): Unit = {
+        nextQuery(state) match {
+          case (newState, Some(source)) =>
+            state = newState
+            sinkIn = new SubSinkInlet[T]("queryIn")
+            sinkIn.setHandler(new InHandler {
+              override def onPush(): Unit = {
+                if (!nextRow.isEmpty) {
+                  throw new IllegalStateException(s"onPush called when we already have next row.")
+                }
+                nrElements += 1
+                if (isAvailable(out)) {
+                  val element = sinkIn.grab()
+                  pushAndUpdateState(element)
+                  sinkIn.pull()
+                } else {
+                  nextRow = OptionVal(sinkIn.grab())
+                }
+              }
+
+              override def onUpstreamFinish(): Unit =
+                if (nextRow.isDefined) {
+                  // wait for the element to be pulled
+                  subStreamFinished = true
+                } else {
+                  next()
+                }
+            })
+            val graph = Source
+              .fromGraph(source)
+              .to(sinkIn.sink)
+            interpreter.subFusingMaterializer.materialize(graph)
+            sinkIn.pull()
+          case (newState, None) =>
+            state = newState
+            completeStage()
         }
       }
 
@@ -150,7 +178,7 @@ final private[r2dbc] class ContinuousQuery[S, T](
               }
             }
           case OptionVal.None =>
-            if (!subStreamFinished && !sinkIn.isClosed && !sinkIn.hasBeenPulled) {
+            if (!subStreamFinished && sinkIn != null && !sinkIn.isClosed && !sinkIn.hasBeenPulled) {
               sinkIn.pull()
             }
         }
