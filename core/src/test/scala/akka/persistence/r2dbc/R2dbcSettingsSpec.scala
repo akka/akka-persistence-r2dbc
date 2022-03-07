@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc
 
 import com.typesafe.config.ConfigFactory
+import io.r2dbc.postgresql.client.SSLMode
 import org.scalatest.TestSuite
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -33,6 +34,24 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       settings.connectionFactorySettings shouldBe a[ConnectionFactorySettings]
       settings.connectionFactorySettings.urlOption shouldBe defined
+    }
+
+    "support ssl-mode as enum name" in {
+      val config = ConfigFactory
+        .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=VERIFY_FULL")
+        .withFallback(ConfigFactory.load())
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.connectionFactorySettings.sslMode shouldBe "VERIFY_FULL"
+      SSLMode.fromValue(settings.connectionFactorySettings.sslMode) shouldBe SSLMode.VERIFY_FULL
+    }
+
+    "support ssl-mode values in lower and dashes" in {
+      val config = ConfigFactory
+        .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=verify-full")
+        .withFallback(ConfigFactory.load())
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.connectionFactorySettings.sslMode shouldBe "verify-full"
+      SSLMode.fromValue(settings.connectionFactorySettings.sslMode) shouldBe SSLMode.VERIFY_FULL
     }
   }
 }

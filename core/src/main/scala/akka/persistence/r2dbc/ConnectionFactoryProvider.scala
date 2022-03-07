@@ -84,7 +84,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       builder.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
 
       if (settings.sslMode.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.valueOf(settings.sslMode))
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.fromValue(settings.sslMode))
 
       if (settings.sslRootCert.nonEmpty)
         builder.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
