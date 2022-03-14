@@ -215,9 +215,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
 
   def select[A](
       logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
-    val startTime = nanoTime()
-
     getConnection(logPrefix).flatMap { connection =>
+      val startTime = nanoTime()
       val mappedRows =
         try {
           val boundStmt = statement(connection)
@@ -250,9 +249,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
    * end or rolled back in case of failures.
    */
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
-    val startTime = nanoTime()
-
     getConnection(logPrefix).flatMap { connection =>
+      val startTime = nanoTime()
       connection.beginTransaction().asFutureDone().flatMap { _ =>
         val result =
           try {
@@ -287,9 +285,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
    * Runs the passed function in using a Connection with auto-commit enable (non-transactional).
    */
   def withAutoCommitConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
-    val startTime = nanoTime()
-
     getConnection(logPrefix).flatMap { connection =>
+      val startTime = nanoTime()
       connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
         val result =
           try {
