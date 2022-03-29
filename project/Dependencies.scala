@@ -41,7 +41,7 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.10" % Test // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
