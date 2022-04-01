@@ -7,7 +7,7 @@ import sbt._
 object Dependencies {
   val Scala212 = "2.12.15"
   val Scala213 = "2.13.8"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.18")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.19")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaProjectionVersion = "1.2.3"
   val AkkaProjectionVersionInDocs = "current"
@@ -22,9 +22,9 @@ object Dependencies {
 
     val postgresql = "org.postgresql" % "postgresql" % "42.3.3"
 
-    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.0.RELEASE"
+    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE"
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.0.RELEASE"
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.0.RELEASE"
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.1.RELEASE"
   }
 
   object TestDeps {
