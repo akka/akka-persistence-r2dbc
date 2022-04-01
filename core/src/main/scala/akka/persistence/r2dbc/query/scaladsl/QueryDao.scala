@@ -187,7 +187,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  override def eventCountBuckets(
+  override def countBuckets(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -226,6 +226,11 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
     result
   }
+
+  /**
+   * Events are append only
+   */
+  override def countBucketsMayChange: Boolean = false
 
   def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
     r2dbcExecutor.selectOne("select timestampOfEvent")(

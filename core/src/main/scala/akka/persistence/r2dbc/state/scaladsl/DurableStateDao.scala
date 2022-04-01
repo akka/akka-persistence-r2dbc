@@ -19,6 +19,7 @@ import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
@@ -70,6 +71,15 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val selectStateSql: String = sql"""
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
     FROM $stateTable WHERE persistence_id = ?"""
+
+  private val selectBucketsSql = sql"""
+     SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+     FROM $stateTable
+     WHERE entity_type = ?
+     AND slice BETWEEN ? AND ?
+     AND db_timestamp >= ? AND db_timestamp <= ?
+     GROUP BY bucket ORDER BY bucket LIMIT ?
+     """
 
   private val insertStateSql: String = sql"""
     INSERT INTO $stateTable
@@ -337,13 +347,50 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  override def eventCountBuckets(
+  /**
+   * Counts for a bucket may become inaccurate when existing durable state entities are updated since the timestamp is
+   * changed.
+   */
+  def countBucketsMayChange: Boolean = true
+
+  override def countBuckets(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
       limit: Int): Future[Seq[Bucket]] = {
-    // FIXME implement this, issue https://github.com/akka/akka-persistence-r2dbc/issues/212
-    Future.successful(Nil)
+
+    val toTimestamp = {
+      val now = Instant.now() // not important to use database time
+      if (fromTimestamp == Instant.EPOCH)
+        now
+      else {
+        // max buckets, just to have some upper bound
+        val t = fromTimestamp.plusSeconds(Buckets.BucketDurationSeconds * limit + Buckets.BucketDurationSeconds)
+        if (t.isAfter(now)) now else t
+      }
+    }
+
+    val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+      connection =>
+        connection
+          .createStatement(selectBucketsSql)
+          .bind(0, entityType)
+          .bind(1, minSlice)
+          .bind(2, maxSlice)
+          .bind(3, fromTimestamp)
+          .bind(4, toTimestamp)
+          .bind(5, limit),
+      row => {
+        val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
+        val count = row.get("count", classOf[java.lang.Long]).toLong
+        Bucket(bucketStartEpochSeconds, count)
+      })
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+
+    result
+
   }
 }

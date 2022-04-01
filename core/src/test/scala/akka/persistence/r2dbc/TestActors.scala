@@ -125,14 +125,14 @@ object TestActors {
                   "Persist [{}], pid [{}], seqNr [{}]",
                   command.payload,
                   pid.id,
-                  "???" /* FIXME Akka issue #30833 DurableStateBehavior.lastSequenceNumber(context) + 1 */ )
+                  DurableStateBehavior.lastSequenceNumber(context) + 1)
                 Effect.persist(command.payload)
               case command: PersistWithAck =>
                 context.log.debug(
                   "Persist [{}], pid [{}], seqNr [{}]",
                   command.payload,
                   pid.id,
-                  "???" /* FIXME Akka issue #30833 DurableStateBehavior.lastSequenceNumber(context) + 1 */ )
+                  DurableStateBehavior.lastSequenceNumber(context) + 1)
                 Effect.persist(command.payload).thenRun(_ => command.replyTo ! Done)
               case Ping(replyTo) =>
                 replyTo ! Done
