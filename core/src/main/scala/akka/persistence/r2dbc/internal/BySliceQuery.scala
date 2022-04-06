@@ -53,7 +53,7 @@ import org.slf4j.Logger
       else latest.timestamp
 
     def nextQueryToTimestamp(atLeastNumberOfEvents: Int): Option[Instant] = {
-      buckets.findTimeForEventsLimit(nextQueryFromTimestamp, atLeastNumberOfEvents) match {
+      buckets.findTimeForLimit(nextQueryFromTimestamp, atLeastNumberOfEvents) match {
         case Some(t) =>
           if (backtracking)
             if (t.isAfter(latest.timestamp)) Some(latest.timestamp) else Some(t)
@@ -79,25 +79,25 @@ import org.slf4j.Logger
   }
 
   /**
-   * Count of events per 10 seconds time bucket is retrieved from database (infrequently) with an aggregation query.
-   * This is used for estimating an upper bound of `db_timestamp < ?` in the eventsBySlices database query. It is
-   * important to reduce the result set in this way because the `LIMIT` is used after sorting the rows. See issue #/178
-   * for more background info..
+   * Count of events or state changes per 10 seconds time bucket is retrieved from database (infrequently) with an
+   * aggregation query. This is used for estimating an upper bound of `db_timestamp < ?` in the `eventsBySlices` and
+   * `changesBySlices` database queries. It is important to reduce the result set in this way because the `LIMIT` is
+   * used after sorting the rows. See issue #/178 for more background info..
    *
-   * @param eventsByBucket
-   *   Key is the epoch seconds for the start of the bucket. Value is the number of events in the bucket.
+   * @param countByBucket
+   *   Key is the epoch seconds for the start of the bucket. Value is the number of entries in the bucket.
    */
-  class Buckets(eventsByBucket: immutable.SortedMap[Buckets.EpochSeconds, Buckets.Count]) {
+  class Buckets(countByBucket: immutable.SortedMap[Buckets.EpochSeconds, Buckets.Count]) {
     import Buckets.{ Bucket, BucketDurationSeconds, Count, EpochSeconds }
 
     val createdAt: Instant = Instant.now()
 
-    def findTimeForEventsLimit(from: Instant, atLeastNumberOfEvents: Int): Option[Instant] = {
+    def findTimeForLimit(from: Instant, atLeastCounts: Int): Option[Instant] = {
       val fromEpochSeconds = from.toEpochMilli / 1000
-      val iter = eventsByBucket.iterator.dropWhile { case (key, _) => fromEpochSeconds >= key }
+      val iter = countByBucket.iterator.dropWhile { case (key, _) => fromEpochSeconds >= key }
 
       @tailrec def sumUntilFilled(key: EpochSeconds, sum: Count): (EpochSeconds, Count) = {
-        if (iter.isEmpty || sum >= atLeastNumberOfEvents)
+        if (iter.isEmpty || sum >= atLeastCounts)
           key -> sum
         else {
           val (nextKey, count) = iter.next()
@@ -106,34 +106,34 @@ import org.slf4j.Logger
       }
 
       val (key, sum) = sumUntilFilled(fromEpochSeconds, 0)
-      if (sum >= atLeastNumberOfEvents)
+      if (sum >= atLeastCounts)
         Some(Instant.ofEpochSecond(key + BucketDurationSeconds))
       else
         None
     }
 
     // Key is the epoch seconds for the start of the bucket.
-    // Value is the number of events in the bucket.
+    // Value is the number of entries in the bucket.
     def add(bucketCounts: Seq[Bucket]): Buckets =
-      new Buckets(eventsByBucket ++ bucketCounts.iterator.map { case Bucket(startTime, count) => startTime -> count })
+      new Buckets(countByBucket ++ bucketCounts.iterator.map { case Bucket(startTime, count) => startTime -> count })
 
     def clearUntil(time: Instant): Buckets = {
       val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
-      val newEventsByBucket = eventsByBucket.dropWhile { case (key, _) => epochSeconds >= key }
-      if (newEventsByBucket.size == eventsByBucket.size)
+      val newCountByBucket = countByBucket.dropWhile { case (key, _) => epochSeconds >= key }
+      if (newCountByBucket.size == countByBucket.size)
         this
-      else if (newEventsByBucket.isEmpty)
-        new Buckets(immutable.SortedMap(eventsByBucket.last)) // keep last
+      else if (newCountByBucket.isEmpty)
+        new Buckets(immutable.SortedMap(countByBucket.last)) // keep last
       else
-        new Buckets(newEventsByBucket)
+        new Buckets(newCountByBucket)
     }
 
-    def isEmpty: Boolean = eventsByBucket.isEmpty
+    def isEmpty: Boolean = countByBucket.isEmpty
 
-    def size: Int = eventsByBucket.size
+    def size: Int = countByBucket.size
 
     override def toString: String = {
-      s"Buckets(${eventsByBucket.mkString(", ")})"
+      s"Buckets(${countByBucket.mkString(", ")})"
     }
   }
 
@@ -156,12 +156,19 @@ import org.slf4j.Logger
         behindCurrentTime: FiniteDuration,
         backtracking: Boolean): Source[SerializedRow, NotUsed]
 
-    def eventCountBuckets(
+    /**
+     * For Durable State we always refresh the bucket counts at the interval. For Event Sourced we know that they don't
+     * change because events are append only.
+     */
+    def countBucketsMayChange: Boolean
+
+    def countBuckets(
         entityType: String,
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
         limit: Int): Future[Seq[Bucket]]
+
   }
 }
 
@@ -401,7 +408,11 @@ import org.slf4j.Logger
     if ((state.buckets.isEmpty || JDuration
         .between(state.buckets.createdAt, Instant.now())
         .compareTo(eventBucketCountInterval) > 0) &&
-      state.buckets.findTimeForEventsLimit(state.latest.timestamp, settings.querySettings.bufferSize).isEmpty) {
+      // For Durable State we always refresh the bucket counts at the interval. For Event Sourced we know
+      // that they don't change because events are append only.
+      (dao.countBucketsMayChange || state.buckets
+        .findTimeForLimit(state.latest.timestamp, settings.querySettings.bufferSize)
+        .isEmpty)) {
 
       val fromTimestamp =
         if (state.latestBacktracking.timestamp == Instant.EPOCH && state.latest.timestamp == Instant.EPOCH)
@@ -412,7 +423,7 @@ import org.slf4j.Logger
           state.latestBacktracking.timestamp
 
       val futureState =
-        dao.eventCountBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit).map { counts =>
+        dao.countBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit).map { counts =>
           val newBuckets = state.buckets.clearUntil(fromTimestamp).add(counts)
           val newState = state.copy(buckets = newBuckets)
           if (log.isDebugEnabled) {

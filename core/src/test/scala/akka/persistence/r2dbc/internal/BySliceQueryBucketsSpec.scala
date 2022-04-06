@@ -42,24 +42,24 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
 
   "BySliceQuery.Buckets" should {
     "find time for events limit" in {
-      buckets.findTimeForEventsLimit(startTime, 100) shouldBe Some(bucketEndTime(0))
+      buckets.findTimeForLimit(startTime, 100) shouldBe Some(bucketEndTime(0))
 
       // not including the bucket that includes the `from` time
-      buckets.findTimeForEventsLimit(firstBucketStartTime, 100) shouldBe Some(bucketEndTime(1))
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(9), 100) shouldBe Some(bucketEndTime(1))
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(10), 100) shouldBe Some(bucketEndTime(2))
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(11), 100) shouldBe Some(bucketEndTime(2))
+      buckets.findTimeForLimit(firstBucketStartTime, 100) shouldBe Some(bucketEndTime(1))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(9), 100) shouldBe Some(bucketEndTime(1))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(10), 100) shouldBe Some(bucketEndTime(2))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(11), 100) shouldBe Some(bucketEndTime(2))
 
       // 202 + 303 >= 500
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 500) shouldBe Some(bucketEndTime(2))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 500) shouldBe Some(bucketEndTime(2))
       // 202 + 303 >= 505
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 505) shouldBe Some(bucketEndTime(2))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 505) shouldBe Some(bucketEndTime(2))
       // 202 + 303 + 304 >= 506
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 506) shouldBe Some(bucketEndTime(3))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 506) shouldBe Some(bucketEndTime(3))
 
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 1000) shouldBe Some(bucketEndTime(4))
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 1400) shouldBe Some(bucketEndTime(5))
-      buckets.findTimeForEventsLimit(firstBucketStartTime.plusSeconds(3), 1500) shouldBe None
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 1000) shouldBe Some(bucketEndTime(4))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 1400) shouldBe Some(bucketEndTime(5))
+      buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 1500) shouldBe None
     }
 
     "clear until time" in {
