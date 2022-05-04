@@ -106,6 +106,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
       // setting lifetime due to issue https://github.com/r2dbc/r2dbc-pool/issues/129
       .maxLifeTime(JDuration.ofDays(365 * 100))
+      .backgroundEvictionInterval(JDuration.ofMillis((settings.maxIdleTime / 4).toMillis))
 
     if (settings.validationQuery.nonEmpty)
       poolConfiguration.validationQuery(settings.validationQuery)
