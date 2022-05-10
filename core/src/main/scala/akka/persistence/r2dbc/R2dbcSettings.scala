@@ -101,6 +101,7 @@ final class ConnectionFactorySettings(config: Config) {
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
+  val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
 
   val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
