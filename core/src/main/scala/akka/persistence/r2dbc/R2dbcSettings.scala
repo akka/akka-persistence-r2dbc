@@ -103,7 +103,7 @@ final class ConnectionFactorySettings(config: Config) {
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
   val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
 
-  val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
+  val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 

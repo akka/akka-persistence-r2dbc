@@ -72,6 +72,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
             .option(ConnectionFactoryOptions.USER, settings.user)
             .option(ConnectionFactoryOptions.PASSWORD, settings.password)
             .option(ConnectionFactoryOptions.DATABASE, settings.database)
+            .option(ConnectionFactoryOptions.CONNECT_TIMEOUT, JDuration.ofMillis(settings.connectTimeout.toMillis))
       }
 
     builder
@@ -114,7 +115,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .builder(connectionFactory)
       .initialSize(settings.initialSize)
       .maxSize(settings.maxSize)
-      .maxCreateConnectionTime(JDuration.ofMillis(settings.createTimeout.toMillis))
+      // Don't use maxCreateConnectionTime because it can cause connection leaks, see issue #182
+      // ConnectionFactoryOptions.CONNECT_TIMEOUT is used instead.
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
