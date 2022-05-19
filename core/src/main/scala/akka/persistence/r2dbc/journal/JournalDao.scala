@@ -15,6 +15,8 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
@@ -83,6 +85,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
 
   private val journalTable = journalSettings.journalTableWithSchema
+  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
 
   private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
@@ -161,7 +164,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(5, "") // FIXME event adapter
         .bind(6, write.serId)
         .bind(7, write.serManifest)
-        .bind(8, write.payload.get)
+        .bindPayload(8, write.payload.get)
 
       if (write.tags.isEmpty)
         stmt.bindNull(9, classOf[Array[String]])
@@ -300,7 +303,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
         .bind(5, "")
         .bind(6, 0)
         .bind(7, "")
-        .bind(8, Array.emptyByteArray)
+        .bindPayload(8, Array.emptyByteArray)
         .bind(9, true)
     }
 

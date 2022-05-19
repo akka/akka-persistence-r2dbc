@@ -31,8 +31,11 @@ import akka.persistence.r2dbc.internal.AdditionalColumnFactory
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.ChangeHandlerFactory
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
@@ -88,6 +91,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
+
+  private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
 
   private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
@@ -290,7 +295,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
   private def getPayload(row: Row): Option[Array[Byte]] = {
     val serId = row.get("state_ser_id", classOf[Integer])
-    val rowPayload = row.get("state_payload", classOf[Array[Byte]])
+    val rowPayload = row.getPayload("state_payload")
     if (serId == 0 && (rowPayload == null || rowPayload.isEmpty))
       None // delete marker
     else
@@ -352,7 +357,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(getAndIncIndex(), state.revision)
             .bind(getAndIncIndex(), state.serId)
             .bind(getAndIncIndex(), state.serManifest)
-            .bind(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
+            .bindPayload(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
           bindTags(stmt, getAndIncIndex())
           bindAdditionalColumns(stmt, additionalBindings)
         }
@@ -384,7 +389,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(getAndIncIndex(), state.revision)
             .bind(getAndIncIndex(), state.serId)
             .bind(getAndIncIndex(), state.serManifest)
-            .bind(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
+            .bindPayload(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
           bindTags(stmt, getAndIncIndex())
           bindAdditionalColumns(stmt, additionalBindings)
 
