@@ -182,7 +182,7 @@ class DurableStateEndToEndSpec
         val p = n % numberOfEntities
         val revision = revisionPerEntity.getOrElse(p, 0) + 1
         revisionPerEntity = revisionPerEntity.updated(p, revision)
-        entities(p) ! DurableStatePersister.Persist(s"s$p-$revision")
+        entities(p) ! DurableStatePersister.Persist(s"\"s$p-$revision\"")
       }
 
       val projectionName = UUID.randomUUID().toString
@@ -197,7 +197,7 @@ class DurableStateEndToEndSpec
         val p = n % numberOfEntities
         val revision = revisionPerEntity.getOrElse(p, 0) + 1
         revisionPerEntity = revisionPerEntity.updated(p, revision)
-        entities(p) ! DurableStatePersister.Persist(s"s$p-$revision")
+        entities(p) ! DurableStatePersister.Persist(s"\"s$p-$revision\"")
 
         // stop projections
         if (n == numberOfChanges / 2) {
@@ -235,7 +235,7 @@ class DurableStateEndToEndSpec
                 }
                 val revision = revisionPerEntity(p)
                 updates.last.revision shouldBe revision
-                updates.last.value shouldBe s"s$p-$revision"
+                updates.last.value shouldBe s"\"s$p-$revision\""
                 // processed events in right order
                 updates shouldBe updates.sortBy(_.revision)
               }

@@ -32,13 +32,29 @@ final class R2dbcSettings(config: Config) {
   val journalTable: String = config.getString("journal.table")
   val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
+  private def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type") match {
+    case "bytea"          => false
+    case "jsonb" | "json" => true
+    case t =>
+      throw new IllegalStateException(
+        s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'bytea', 'json' or 'jsonb' but found '$t'")
+  }
+  val journalPayloadCodec: PayloadCodec =
+    if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
   val journalPublishEvents: Boolean = config.getBoolean("journal.publish-events")
 
   val snapshotsTable: String = config.getString("snapshot.table")
   val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
 
+  val snapshotPayloadCodec: PayloadCodec =
+    if (useJsonPayload("snapshot")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
   val durableStateTable: String = config.getString("state.table")
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  val durableStatePayloadCodec: PayloadCodec =
+    if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 

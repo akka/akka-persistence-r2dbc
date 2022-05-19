@@ -90,14 +90,14 @@ object TestActors {
               replyTo ! Done
               Effect.none
             case GetState(replyTo) =>
-              replyTo ! state
+              replyTo ! state.replace(" ", "")
               Effect.none
             case Stop(replyTo) =>
               replyTo ! Done
               Effect.stop()
           }
         },
-        (state, event) => if (state == "") event.toString else s"$state|$event")
+        (state, event) => if (state == "") event.toString else s"[$state,$event]")
     }
   }
 

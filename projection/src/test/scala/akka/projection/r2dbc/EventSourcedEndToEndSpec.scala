@@ -19,6 +19,8 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.PayloadCodec
+import akka.persistence.r2dbc.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -132,6 +134,7 @@ class EventSourcedEndToEndSpec
   private val log = LoggerFactory.getLogger(getClass)
 
   private val journalSettings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
   private val projectionSettings = R2dbcProjectionSettings(system)
   private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
 
@@ -159,7 +162,7 @@ class EventSourcedEndToEndSpec
         .bind(3, seqNr)
         .bind(4, timestamp)
         .bind(5, stringSerializer.identifier)
-        .bind(6, stringSerializer.toBinary(event))
+        .bindPayload(6, stringSerializer.toBinary(event))
     }
     result.futureValue shouldBe 1
   }
@@ -193,7 +196,7 @@ class EventSourcedEndToEndSpec
   private def mkEvent(n: Int): String = {
     val template = "0000000"
     val s = n.toString
-    "e" + (template + s).takeRight(5)
+    "\"e" + (template + s).takeRight(5) + "\""
   }
 
   "A R2DBC projection with eventsBySlices source" must {
@@ -289,36 +292,36 @@ class EventSourcedEndToEndSpec
 
       val startTime = Instant.now()
       val oldTime = startTime.minus(projectionSettings.timeWindow).minusSeconds(60)
-      writeEvent(pid1, 1L, startTime, "e1-1")
+      writeEvent(pid1, 1L, startTime, "\"e1-1\"")
 
       val projectionName = UUID.randomUUID().toString
       val processedProbe = createTestProbe[Processed]()
       val projection = startProjections(entityType, projectionName, nrOfProjections = 1, processedProbe.ref).head
 
-      processedProbe.receiveMessage().envelope.event shouldBe "e1-1"
+      processedProbe.receiveMessage().envelope.event shouldBe "\"e1-1\""
 
       // old event for pid2, seqN3. will not be picked up by backtracking because outside time window
-      writeEvent(pid2, 3L, oldTime, "e2-3")
+      writeEvent(pid2, 3L, oldTime, "\"e2-3\"")
       // pid2, seqNr 3 is unknown when receiving 4 so will lookup timestamp of 3
       // and accept 4 because 3 was older than time window
-      writeEvent(pid2, 4L, startTime.plusMillis(1), "e2-4")
-      processedProbe.receiveMessage().envelope.event shouldBe "e2-4"
+      writeEvent(pid2, 4L, startTime.plusMillis(1), "\"e2-4\"")
+      processedProbe.receiveMessage().envelope.event shouldBe "\"e2-4\""
 
       // pid3, seqNr 6 is unknown when receiving 7 so will lookup 6, but not found
       // and that will be accepted (could have been deleted)
-      writeEvent(pid3, 7L, startTime.plusMillis(2), "e3-7")
-      processedProbe.receiveMessage().envelope.event shouldBe "e3-7"
+      writeEvent(pid3, 7L, startTime.plusMillis(2), "\"e3-7\"")
+      processedProbe.receiveMessage().envelope.event shouldBe "\"e3-7\""
 
       // pid3, seqNr 8 is missing (knows 7) when receiving 9
-      writeEvent(pid3, 9L, startTime.plusMillis(4), "e3-9")
+      writeEvent(pid3, 9L, startTime.plusMillis(4), "\"e3-9\"")
       processedProbe.expectNoMessage(journalSettings.querySettings.refreshInterval + 2000.millis)
 
       // but backtracking can fill in the gaps, backtracking will pick up pid3 seqNr 8 and 9
-      writeEvent(pid3, 8L, startTime.plusMillis(3), "e3-8")
+      writeEvent(pid3, 8L, startTime.plusMillis(3), "\"e3-8\"")
       val possibleDelay =
         journalSettings.querySettings.backtrackingBehindCurrentTime + journalSettings.querySettings.refreshInterval + processedProbe.remainingOrDefault
-      processedProbe.receiveMessage(possibleDelay).envelope.event shouldBe "e3-8"
-      processedProbe.receiveMessage(possibleDelay).envelope.event shouldBe "e3-9"
+      processedProbe.receiveMessage(possibleDelay).envelope.event shouldBe "\"e3-8\""
+      processedProbe.receiveMessage(possibleDelay).envelope.event shouldBe "\"e3-9\""
 
       projection ! ProjectionBehavior.Stop
     }

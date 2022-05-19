@@ -152,9 +152,18 @@ class MigrationToolSpec
     probe.expectMessage(Done)
   }
 
-  private def assertEvents(pid: PersistenceId, expectedEvents: Seq[String]): Unit =
-    assertState(pid, expectedEvents.mkString("|"))
-
+  private def assertEvents(pid: PersistenceId, expectedEvents: Seq[String]): Unit = {
+    assertState(
+      pid,
+      expectedEvents
+        .foldLeft(None: Option[String]) {
+          case (None, e) =>
+            Some(s"$e")
+          case (Some(s), e) =>
+            Some(s"[$s,$e]")
+        }
+        .getOrElse(""))
+  }
   private def assertState(pid: PersistenceId, expectedState: String): Unit = {
     val probe = testKit.createTestProbe[Any]()
     val targetPersister =
@@ -174,7 +183,7 @@ class MigrationToolSpec
     "migrate events of one persistenceId" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
 
-      val events = List("e-1", "e-2", "e-3")
+      val events = List("\"e-1\"", "\"e-2\"", "\"e-3\"")
       persistEvents(pid, events)
 
       migration.migrateEvents(pid.id).futureValue shouldBe 3L
@@ -185,7 +194,7 @@ class MigrationToolSpec
     "migrate events of a persistenceId several times" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
 
-      val events = List("e-1", "e-2", "e-3")
+      val events = List("\"e-1\"", "\"e-2\"", "\"e-3\"")
       persistEvents(pid, events)
 
       migration.migrateEvents(pid.id).futureValue shouldBe 3L
@@ -195,7 +204,7 @@ class MigrationToolSpec
       assertEvents(pid, events)
 
       // and running again should find new events
-      val moreEvents = List("e-4", "e-5")
+      val moreEvents = List("\"e-4\"", "\"e-5\"")
       persistEvents(pid, moreEvents)
       migration.migrateEvents(pid.id).futureValue shouldBe 2L
 
@@ -205,41 +214,41 @@ class MigrationToolSpec
     "migrate snapshot of one persistenceId" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
 
-      persistEvents(pid, List("e-1", "e-2-snap", "e-3"))
+      persistEvents(pid, List("\"e-1\"", "\"e-2-snap\"", "\"e-3\""))
 
       migration.migrateSnapshot(pid.id).futureValue shouldBe 1L
 
-      assertState(pid, "e-1|e-2-snap")
+      assertState(pid, "[\"e-1\",\"e-2-snap\"]")
     }
 
     "migrate snapshot of a persistenceId several times" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
 
-      persistEvents(pid, List("e-1", "e-2-snap", "e-3"))
+      persistEvents(pid, List("\"e-1\"", "\"e-2-snap\"", "\"e-3\""))
 
       migration.migrateSnapshot(pid.id).futureValue shouldBe 1L
-      assertState(pid, "e-1|e-2-snap")
+      assertState(pid, "[\"e-1\",\"e-2-snap\"]")
       // running again should be idempotent and not fail
       migration.migrateSnapshot(pid.id).futureValue shouldBe 0L
-      assertState(pid, "e-1|e-2-snap")
+      assertState(pid, "[\"e-1\",\"e-2-snap\"]")
 
       // and running again should find new snapshot
-      persistEvents(pid, List("e-4-snap", "e-5"))
+      persistEvents(pid, List("\"e-4-snap\"", "\"e-5\""))
       migration.migrateSnapshot(pid.id).futureValue shouldBe 1L
 
-      assertState(pid, "e-1|e-2-snap|e-3|e-4-snap")
+      assertState(pid, "[[[\"e-1\",\"e-2-snap\"],\"e-3\"],\"e-4-snap\"]")
     }
 
     "update event migration_progress" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.eventSeqNr) shouldBe None
 
-      persistEvents(pid, List("e-1", "e-2", "e-3"))
+      persistEvents(pid, List("\"e-1\"", "\"e-2\"", "\"e-3\""))
       migration.migrateEvents(pid.id).futureValue shouldBe 3L
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.eventSeqNr) shouldBe Some(3L)
 
       // store and migration some more
-      persistEvents(pid, List("e-4", "e-5"))
+      persistEvents(pid, List("\"e-4\"", "\"e-5\""))
       migration.migrateEvents(pid.id).futureValue shouldBe 2L
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.eventSeqNr) shouldBe Some(5L)
     }
@@ -248,12 +257,12 @@ class MigrationToolSpec
       val pid = PersistenceId.ofUniqueId(nextPid())
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.snapshotSeqNr) shouldBe None
 
-      persistEvents(pid, List("e-1", "e-2-snap", "e-3"))
+      persistEvents(pid, List("\"e-1\"", "\"e-2-snap\"", "\"e-3\""))
       migration.migrateSnapshot(pid.id).futureValue shouldBe 1L
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.snapshotSeqNr) shouldBe Some(2L)
 
       // store and migration some more
-      persistEvents(pid, List("e-4", "e-5-snap", "e-6"))
+      persistEvents(pid, List("\"e-4\"", "\"e-5-snap\"", "\"e-6\""))
       migration.migrateSnapshot(pid.id).futureValue shouldBe 1L
       migration.migrationDao.currentProgress(pid.id).futureValue.map(_.snapshotSeqNr) shouldBe Some(5L)
     }
@@ -261,7 +270,17 @@ class MigrationToolSpec
     "migrate all persistenceIds" in {
       val numberOfPids = 10
       val pids = (1 to numberOfPids).map(_ => PersistenceId.ofUniqueId(nextPid()))
-      val events = List("e-1", "e-2", "e-3", "e-4-snap", "e-5", "e-6-snap", "e-7", "e-8", "e-9")
+      val events =
+        List(
+          "\"e-1\"",
+          "\"e-2\"",
+          "\"e-3\"",
+          "\"e-4-snap\"",
+          "\"e-5\"",
+          "\"e-6-snap\"",
+          "\"e-7\"",
+          "\"e-8\"",
+          "\"e-9\"")
 
       pids.foreach { pid =>
         persistEvents(pid, events)

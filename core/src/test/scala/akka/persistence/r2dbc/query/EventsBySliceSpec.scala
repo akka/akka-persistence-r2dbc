@@ -112,7 +112,7 @@ class EventsBySliceSpec
     s"$queryType eventsBySlices" should {
       "return all events for NoOffset" in new Setup {
         for (i <- 1 to 20) {
-          persister ! PersistWithAck(s"e-$i", probe.ref)
+          persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
           probe.expectMessage(10.seconds, Done)
         }
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
@@ -120,14 +120,14 @@ class EventsBySliceSpec
             .runWith(sinkProbe)
             .request(21)
         for (i <- 1 to 20) {
-          result.expectNext().event shouldBe s"e-$i"
+          result.expectNext().event shouldBe s"\"e-$i\""
         }
         assertFinished(result)
       }
 
       "only return events after an offset" in new Setup {
         for (i <- 1 to 20) {
-          persister ! PersistWithAck(s"e-$i", probe.ref)
+          persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
           probe.expectMessage(Done)
         }
 
@@ -146,7 +146,7 @@ class EventsBySliceSpec
             .runWith(TestSink.probe[EventEnvelope[String]](system.classicSystem))
         withOffset.request(12)
         for (i <- 11 to 20) {
-          withOffset.expectNext().event shouldBe s"e-$i"
+          withOffset.expectNext().event shouldBe s"\"e-$i\""
         }
         assertFinished(withOffset)
       }
@@ -155,7 +155,7 @@ class EventsBySliceSpec
         val queryWithSmallBuffer = PersistenceQuery(testKit.system)
           .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
         for (i <- 1 to 10; n <- 1 to 10 by 2) {
-          persister ! PersistAll(List(s"e-$i-$n", s"e-$i-${n + 1}"))
+          persister ! PersistAll(List(s"\"e-$i-$n\"", s"\"e-$i-${n + 1}\""))
         }
         persister ! Ping(probe.ref)
         probe.expectMessage(10.seconds, Done)
@@ -164,7 +164,7 @@ class EventsBySliceSpec
             .runWith(sinkProbe)
             .request(101)
         for (i <- 1 to 10; n <- 1 to 10) {
-          result.expectNext().event shouldBe s"e-$i-$n"
+          result.expectNext().event shouldBe s"\"e-$i-$n\""
         }
         assertFinished(result)
       }
@@ -177,9 +177,9 @@ class EventsBySliceSpec
         val slice = query.sliceForPersistenceId(persistenceId.id)
 
         val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))
-        persister ! Persister.PersistWithAck("e-1", probe.ref)
+        persister ! Persister.PersistWithAck("\"e-1\"", probe.ref)
         probe.expectMessage(Done)
-        persister ! Persister.PersistWithAck("e-2", probe.ref)
+        persister ! Persister.PersistWithAck("\"e-2\"", probe.ref)
         probe.expectMessage(Done)
 
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
@@ -188,13 +188,13 @@ class EventsBySliceSpec
             .request(21)
 
         val env1 = result.expectNext()
-        env1.event shouldBe "e-1"
+        env1.event shouldBe "\"e-1\""
         val meta1 = env1.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
         meta1.originReplica.id shouldBe "dc-1"
         meta1.originSequenceNr shouldBe 1L
 
         val env2 = result.expectNext()
-        env2.event shouldBe "e-2"
+        env2.event shouldBe "\"e-2\""
         val meta2 = env2.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
         meta2.originReplica.id shouldBe "dc-1"
         meta2.originSequenceNr shouldBe 2L
@@ -204,7 +204,7 @@ class EventsBySliceSpec
 
       "support EventTimestampQuery" in new Setup {
         for (i <- 1 to 3) {
-          persister ! PersistWithAck(s"e-$i", probe.ref)
+          persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
           probe.expectMessage(10.seconds, Done)
         }
 
@@ -216,13 +216,13 @@ class EventsBySliceSpec
 
       "support LoadEventQuery" in new Setup {
         for (i <- 1 to 3) {
-          persister ! PersistWithAck(s"e-$i", probe.ref)
+          persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
           probe.expectMessage(10.seconds, Done)
         }
 
         query.isInstanceOf[LoadEventQuery] shouldBe true
-        query.loadEnvelope[String](persistenceId, 2L).futureValue.event shouldBe "e-2"
-        query.loadEnvelope[String](persistenceId, 1L).futureValue.event shouldBe "e-1"
+        query.loadEnvelope[String](persistenceId, 2L).futureValue.event shouldBe "\"e-2\""
+        query.loadEnvelope[String](persistenceId, 1L).futureValue.event shouldBe "\"e-1\""
         intercept[NoSuchElementException] {
           Await.result(query.loadEnvelope[String](persistenceId, 4L), patience.timeout)
         }
@@ -234,7 +234,7 @@ class EventsBySliceSpec
   // tests just relevant for current query
   "Current eventsBySlices" should {
     "filter events with the same timestamp based on seen sequence nrs" in new Setup {
-      persister ! PersistWithAck(s"e-1", probe.ref)
+      persister ! PersistWithAck("\"e-1\"", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventEnvelope[String] =
         query.currentEventsBySlices[String](entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
@@ -248,7 +248,7 @@ class EventsBySliceSpec
     }
 
     "not filter events with the same timestamp based on sequence nrs" in new Setup {
-      persister ! PersistWithAck(s"e-1", probe.ref)
+      persister ! PersistWithAck("\"e-1\"", probe.ref)
       probe.expectMessage(Done)
       val singleEvent: EventEnvelope[String] =
         query.currentEventsBySlices[String](entityType, slice, slice, NoOffset).runWith(Sink.head).futureValue
@@ -260,7 +260,7 @@ class EventsBySliceSpec
         .currentEventsBySlices[String](entityType, slice, slice, offsetWithoutSeen)
         .runWith(Sink.headOption)
         .futureValue
-      singleEvent2.get.event shouldBe "e-1"
+      singleEvent2.get.event shouldBe "\"e-1\""
     }
 
     "retrieve from several slices" in new Setup {
@@ -270,7 +270,7 @@ class EventsBySliceSpec
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (i <- 1 to numberOfEvents) {
-          ref ! PersistWithAck(s"e-$i", probe.ref)
+          ref ! PersistWithAck(s"\"e-$i\"", probe.ref)
           probe.expectMessage(Done)
         }
       }
@@ -302,17 +302,17 @@ class EventsBySliceSpec
   "Live eventsBySlices" should {
     "find new events" in new Setup {
       for (i <- 1 to 20) {
-        persister ! PersistWithAck(s"e-$i", probe.ref)
+        persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
         probe.expectMessage(Done)
       }
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query.eventsBySlices[String](entityType, slice, slice, NoOffset).runWith(sinkProbe).request(21)
       for (i <- 1 to 20) {
-        result.expectNext().event shouldBe s"e-$i"
+        result.expectNext().event shouldBe s"\"e-$i\""
       }
 
       for (i <- 21 to 40) {
-        persister ! PersistWithAck(s"e-$i", probe.ref)
+        persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
         // make sure the query doesn't get an element in its buffer with nothing to take it
         // resulting in it not finishing the query and giving up the session
         result.request(1)
@@ -322,7 +322,7 @@ class EventsBySliceSpec
       result.request(1)
 
       for (i <- 21 to 40) {
-        result.expectNext().event shouldBe s"e-$i"
+        result.expectNext().event shouldBe s"\"e-$i\""
       }
 
       result.cancel()
@@ -360,7 +360,7 @@ class EventsBySliceSpec
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (i <- 1 to numberOfEvents) {
-          ref ! Persist(s"e-$i")
+          ref ! Persist(s"\"e-$i\"")
         }
         ref
       }

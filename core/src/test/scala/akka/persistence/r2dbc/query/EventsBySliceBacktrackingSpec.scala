@@ -14,6 +14,8 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.PayloadCodec
+import akka.persistence.r2dbc.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
@@ -36,6 +38,7 @@ class EventsBySliceBacktrackingSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val query = PersistenceQuery(testKit.system)
     .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
@@ -60,7 +63,7 @@ class EventsBySliceBacktrackingSpec
         .bind(3, seqNr)
         .bind(4, timestamp)
         .bind(5, stringSerializer.identifier)
-        .bind(6, stringSerializer.toBinary(event))
+        .bindPayload(6, stringSerializer.toBinary(event))
     }
     result.futureValue shouldBe 1
   }
@@ -79,8 +82,8 @@ class EventsBySliceBacktrackingSpec
       // don't let behind-current-time be a reason for not finding events
       val startTime = Instant.now().minusSeconds(10 * 60)
 
-      writeEvent(slice1, pid1, 1L, startTime, "e1-1")
-      writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
+      writeEvent(slice1, pid1, 1L, startTime, "\"e1-1\"")
+      writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "\"e1-2\"")
 
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query
@@ -91,12 +94,12 @@ class EventsBySliceBacktrackingSpec
       val env1 = result.expectNext()
       env1.persistenceId shouldBe pid1
       env1.sequenceNr shouldBe 1L
-      env1.eventOption shouldBe Some("e1-1")
+      env1.eventOption shouldBe Some("\"e1-1\"")
 
       val env2 = result.expectNext()
       env2.persistenceId shouldBe pid1
       env2.sequenceNr shouldBe 2L
-      env2.eventOption shouldBe Some("e1-2")
+      env2.eventOption shouldBe Some("\"e1-2\"")
 
       // first backtracking query kicks in immediately after the first normal query has finished
       // and it also emits duplicates (by design)
@@ -106,7 +109,7 @@ class EventsBySliceBacktrackingSpec
       // event payload isn't included in backtracking results
       env3.eventOption shouldBe None
       // but it can be lazy loaded
-      query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.eventOption shouldBe Some("e1-1")
+      query.loadEnvelope[String](env3.persistenceId, env3.sequenceNr).futureValue.eventOption shouldBe Some("\"e1-1\"")
       // backtracking up to (and equal to) the same offset
       val env4 = result.expectNext()
       env4.persistenceId shouldBe pid1
@@ -115,13 +118,13 @@ class EventsBySliceBacktrackingSpec
 
       result.expectNoMessage(100.millis) // not e1-2
 
-      writeEvent(slice1, pid1, 3L, startTime.plusMillis(3), "e1-3")
+      writeEvent(slice1, pid1, 3L, startTime.plusMillis(3), "\"e1-3\"")
       val env5 = result.expectNext()
       env5.persistenceId shouldBe pid1
       env5.sequenceNr shouldBe 3L
 
       // before e1-3 so it will not be found by the normal query
-      writeEvent(slice2, pid2, 1L, startTime.plusMillis(2), "e2-1")
+      writeEvent(slice2, pid2, 1L, startTime.plusMillis(2), "\"e2-1\"")
 
       // no backtracking yet
       result.expectNoMessage(settings.querySettings.refreshInterval + 100.millis)
@@ -132,7 +135,7 @@ class EventsBySliceBacktrackingSpec
         pid1,
         4L,
         startTime.plusMillis(settings.querySettings.backtrackingWindow.toMillis / 2).plusMillis(4),
-        "e1-4")
+        "\"e1-4\"")
       val env6 = result.expectNext()
       env6.persistenceId shouldBe pid1
       env6.sequenceNr shouldBe 4L

@@ -69,7 +69,7 @@ class EventsByPersistenceIdSpec
         val pid = nextPid()
         val persister = testKit.spawn(Persister(pid))
         val probe = testKit.createTestProbe[Done]()
-        persister ! Persister.PersistWithAck("e-1", probe.ref)
+        persister ! Persister.PersistWithAck("\"e-1\"", probe.ref)
         probe.expectMessage(Done)
 
         val sub = doQuery(pid, 0, Long.MaxValue)
@@ -77,7 +77,7 @@ class EventsByPersistenceIdSpec
           .request(1)
 
         sub.expectNextPF {
-          case ClassicEventEnvelope(TimestampOffset(_, _, seen), `pid`, 1, "e-1") if seen == Map(pid -> 1) =>
+          case ClassicEventEnvelope(TimestampOffset(_, _, seen), `pid`, 1, "\"e-1\"") if seen == Map(pid -> 1) =>
         }
 
         assertFinished(sub)
@@ -88,7 +88,7 @@ class EventsByPersistenceIdSpec
         val persister = testKit.spawn(Persister(pid))
         val probe = testKit.createTestProbe[Done]()
         val events = (1 to 20).map { i =>
-          val payload = s"e-$i"
+          val payload = s"\"e-$i\""
           persister ! PersistWithAck(payload, probe.ref)
           probe.expectMessage(Done)
           payload
@@ -110,7 +110,7 @@ class EventsByPersistenceIdSpec
         val persister = testKit.spawn(Persister(pid))
         val probe = testKit.createTestProbe[Done]()
         val events = (1 to 20).map { i =>
-          val payload = s"e-$i"
+          val payload = s"\"e-$i\""
           persister ! PersistWithAck(payload, probe.ref)
           probe.expectMessage(Done)
           payload
@@ -133,7 +133,7 @@ class EventsByPersistenceIdSpec
         val probe = testKit.createTestProbe[Done]()
 
         (1 to 3).map { i =>
-          val payload = s"e-$i"
+          val payload = s"\"e-$i\""
           persister ! PersistWithAck(payload, probe.ref)
           probe.expectMessage(Done)
           payload
@@ -146,7 +146,7 @@ class EventsByPersistenceIdSpec
         val event = sub
           .request(2)
           .expectNext()
-        event should ===("e-2")
+        event should ===("\"e-2\"")
 
         assertFinished(sub, liveShouldFinish = true)
       }
@@ -157,9 +157,9 @@ class EventsByPersistenceIdSpec
         val entityId = "entity-1"
 
         val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))
-        persister ! Persister.PersistWithAck("e-1", probe.ref)
+        persister ! Persister.PersistWithAck("\"e-1\"", probe.ref)
         probe.expectMessage(Done)
-        persister ! Persister.PersistWithAck("e-2", probe.ref)
+        persister ! Persister.PersistWithAck("\"e-2\"", probe.ref)
         probe.expectMessage(Done)
 
         val sub = doQuery(PersistenceId(entityType, entityId).id, 0, Long.MaxValue)
@@ -167,13 +167,13 @@ class EventsByPersistenceIdSpec
           .request(10)
 
         val env1 = sub.expectNext()
-        env1.event shouldBe "e-1"
+        env1.event shouldBe "\"e-1\""
         val meta1 = env1.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
         meta1.originReplica.id shouldBe "dc-1"
         meta1.originSequenceNr shouldBe 1L
 
         val env2 = sub.expectNext()
-        env2.event shouldBe "e-2"
+        env2.event shouldBe "\"e-2\""
         val meta2 = env2.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
         meta2.originReplica.id shouldBe "dc-1"
         meta2.originSequenceNr shouldBe 2L
@@ -193,7 +193,7 @@ class EventsByPersistenceIdSpec
         .map(_.event)
         .runWith(TestSink())
       val events = (1 to 20).map { i =>
-        val payload = s"e-$i"
+        val payload = s"\"e-$i\""
         persister ! PersistWithAck(payload, probe.ref)
         probe.expectMessage(Done)
         payload
@@ -203,7 +203,7 @@ class EventsByPersistenceIdSpec
       sub.expectNextN(events)
 
       val events2 = (21 to 40).map { i =>
-        val payload = s"e-$i"
+        val payload = s"\"e-$i\""
         // make the live query can deliver an element it picks up so it can end its query and give up the sesion
         sub.request(1)
         persister ! PersistWithAck(payload, probe.ref)
