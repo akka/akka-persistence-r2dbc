@@ -10,6 +10,7 @@ import scala.concurrent.duration._
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 
@@ -32,12 +33,12 @@ final class R2dbcSettings(config: Config) {
   val journalTable: String = config.getString("journal.table")
   val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
-  private def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type") match {
-    case "bytea"          => false
-    case "jsonb" | "json" => true
+  private def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type").toUpperCase match {
+    case "BYTEA"          => false
+    case "JSONB" | "JSON" => true
     case t =>
       throw new IllegalStateException(
-        s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'bytea', 'json' or 'jsonb' but found '$t'")
+        s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'BYTEA', 'JSON' or 'JSONB' but found '$t'")
   }
   val journalPayloadCodec: PayloadCodec =
     if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec

@@ -12,8 +12,8 @@ import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.PayloadCodec.RichRow
-import akka.persistence.r2dbc.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig

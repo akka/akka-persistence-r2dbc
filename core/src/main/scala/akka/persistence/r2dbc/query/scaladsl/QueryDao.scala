@@ -20,11 +20,11 @@ import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.PayloadCodec
-import akka.persistence.r2dbc.PayloadCodec.RichRow
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger

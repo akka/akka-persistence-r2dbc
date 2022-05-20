@@ -14,9 +14,9 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.r2dbc.PayloadCodec
-import akka.persistence.r2dbc.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
