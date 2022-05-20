@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc
 
+import java.nio.ByteBuffer
 import io.r2dbc.postgresql.codec.Json
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
@@ -15,7 +16,7 @@ sealed trait PayloadCodec {
 object PayloadCodec {
   case object ByteArrayCodec extends PayloadCodec {
     override def encode(bytes: Array[Byte]): Array[Byte] = bytes
-    override def decode(payload: AnyRef): Array[Byte] = payload.asInstanceOf[Array[Byte]]
+    override def decode(payload: AnyRef): Array[Byte] = payload.asInstanceOf[ByteBuffer].array()
   }
   case object JsonCodec extends PayloadCodec {
     override def encode(bytes: Array[Byte]): Json = Json.of(bytes)
