@@ -10,8 +10,8 @@ import com.typesafe.config.Config
 
 final class R2dbcReadJournalProvider(system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends ReadJournalProvider {
-  override def scaladslReadJournal(): scaladsl.R2dbcReadJournal =
+  override val scaladslReadJournal: scaladsl.R2dbcReadJournal =
     new scaladsl.R2dbcReadJournal(system, config, cfgPath)
 
-  override def javadslReadJournal() = new javadsl.R2dbcReadJournal(scaladslReadJournal())
+  override val javadslReadJournal: javadsl.R2dbcReadJournal = new javadsl.R2dbcReadJournal(scaladslReadJournal)
 }
