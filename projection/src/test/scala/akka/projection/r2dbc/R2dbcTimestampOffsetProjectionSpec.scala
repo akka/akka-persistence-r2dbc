@@ -546,6 +546,37 @@ class R2dbcTimestampOffsetProjectionSpec
       offsetShouldBe(envelopes2.last.offset)
     }
 
+    "be able to skip envelopes but still store offset" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          new EventEnvelope(
+            env.offset,
+            env.persistenceId,
+            env.sequenceNr,
+            env.eventOption,
+            env.timestamp,
+            eventMetadata = Some(NotUsed),
+            env.entityType,
+            env.slice)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val projection =
+        R2dbcProjection.exactlyOnce(projectionId, Some(settings), sourceProvider, handler = () => new ConcatHandler)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
+      offsetShouldBe(envelopes.last.offset)
+    }
+
   }
 
   "A R2DBC grouped projection with TimestampOffset" must {
@@ -1052,6 +1083,40 @@ class R2dbcTimestampOffsetProjectionSpec
         offsetShouldBe(envelopes2.last.offset)
       }
       projectionRef ! ProjectionBehavior.Stop
+    }
+
+    "be able to skip envelopes but still store offset for async projection" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          new EventEnvelope(
+            env.offset,
+            env.persistenceId,
+            env.sequenceNr,
+            env.eventOption,
+            env.timestamp,
+            eventMetadata = Some(NotUsed),
+            env.entityType,
+            env.slice)
+        else
+          env
+      }
+
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val projection =
+        R2dbcProjection.atLeastOnce(projectionId, Some(settings), sourceProvider, handler = () => new ConcatHandler)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
+      eventually {
+        offsetShouldBe(envelopes.last.offset)
+      }
     }
   }
 
