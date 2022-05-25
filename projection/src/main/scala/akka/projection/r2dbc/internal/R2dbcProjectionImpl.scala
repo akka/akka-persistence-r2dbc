@@ -326,14 +326,11 @@ private[projection] object R2dbcProjectionImpl {
           .flatMap { ok =>
             if (ok) {
               if (skipEnvelope(env)) {
-                // FIXME this might not be correct? Is the offset stored or is it only added to inFlight and then ignored by the below `collect`?
-                offsetStore.addInflight(env)
-                Future.successful(None)
-              } else {
-                loadEnvelope(env, sourceProvider).map { loadedEnvelope =>
-                  offsetStore.addInflight(loadedEnvelope)
-                  Some(loadedEnvelope)
-                }
+                log.debug("atLeastOnceFlow doesn't support of skipping envelopes. Envelope [{}] still emitted.", env)
+              }
+              loadEnvelope(env, sourceProvider).map { loadedEnvelope =>
+                offsetStore.addInflight(loadedEnvelope)
+                Some(loadedEnvelope)
               }
             } else {
               Future.successful(None)
