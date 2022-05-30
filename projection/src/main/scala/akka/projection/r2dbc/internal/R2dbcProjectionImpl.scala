@@ -326,7 +326,7 @@ private[projection] object R2dbcProjectionImpl {
           .flatMap { ok =>
             if (ok) {
               if (skipEnvelope(env)) {
-                log.debug("atLeastOnceFlow doesn't support of skipping envelopes. Envelope [{}] still emitted.", env)
+                log.info("atLeastOnceFlow doesn't support of skipping envelopes. Envelope [{}] still emitted.", env)
               }
               loadEnvelope(env, sourceProvider).map { loadedEnvelope =>
                 offsetStore.addInflight(loadedEnvelope)
