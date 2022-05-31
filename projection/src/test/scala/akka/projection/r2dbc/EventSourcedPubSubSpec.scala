@@ -126,7 +126,7 @@ class EventSourcedPubSubSpec
   private def mkEvent(n: Int): String = {
     val template = "0000000"
     val s = n.toString
-    "\"e" + (template + s).takeRight(5) + "\""
+    "e" + (template + s).takeRight(5)
   }
 
   def expectProcessed(processedProbe: TestProbe[Processed], expectedFrom: Int, expectedTo: Int): Vector[Processed] = {

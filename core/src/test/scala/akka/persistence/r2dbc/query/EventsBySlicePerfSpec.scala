@@ -54,7 +54,7 @@ class EventsBySlicePerfSpec
       persistenceIds.zipWithIndex.foreach { case (pid, i) =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (n <- 1 to numberOfEvents) {
-          ref ! Persist(s"\"e-$n\"")
+          ref ! Persist(s"e-$n")
         }
         ref ! TestActors.Persister.Stop(probe.ref)
         if (i > writeConcurrency && i % writeConcurrency == 0) {

@@ -50,7 +50,7 @@ class PersistTimestampSpec
       (1 to 100).foreach { n =>
         val p = n % numberOfEntities
         // mix some persist 1 and persist 3 events
-        val event = s"\"e$p-$n\""
+        val event = s"e$p-$n"
         if (n % 5 == 0) {
           // same event stored 3 times
           entities(p) ! Persister.PersistAll((0 until 3).map(_ => event).toList)

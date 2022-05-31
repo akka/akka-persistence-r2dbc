@@ -79,29 +79,29 @@ class EventsBySlicePubSubSpec
       }
 
       for (i <- 1 to 20) {
-        persister ! PersistWithAck(s"\"e-$i\"", probe.ref)
+        persister ! PersistWithAck(s"e-$i", probe.ref)
         probe.expectMessage(Done)
       }
 
       // 10 was requested
       for (i <- 1 to 10) {
-        result.expectNext().event shouldBe s"\"e-$i\""
+        result.expectNext().event shouldBe s"e-$i"
       }
       result.expectNoMessage()
 
       result.request(100)
       for (i <- 11 to 20) {
-        result.expectNext().event shouldBe s"\"e-$i\""
+        result.expectNext().event shouldBe s"e-$i"
       }
 
       for (i <- 21 to 30) {
-        persister ! Persist(s"\"e-$i\"")
-        result.expectNext().event shouldBe s"\"e-$i\""
+        persister ! Persist(s"e-$i")
+        result.expectNext().event shouldBe s"e-$i"
       }
 
-      persister ! PersistAll(List("\"e-31\"", "\"e-32\"", "\"e-33\""))
+      persister ! PersistAll(List("e-31", "e-32", "e-33"))
       for (i <- 31 to 33) {
-        result.expectNext().event shouldBe s"\"e-$i\""
+        result.expectNext().event shouldBe s"e-$i"
       }
 
       result.cancel()

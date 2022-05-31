@@ -50,8 +50,8 @@ class CurrentPersistenceIdsQuerySpec
     val probe = createTestProbe[Done]
     pids.foreach { pid =>
       val persister = spawn(TestActors.Persister(pid))
-      persister ! Persister.PersistWithAck("\"e-1\"", probe.ref)
-      persister ! Persister.PersistWithAck("\"e-2\"", probe.ref)
+      persister ! Persister.PersistWithAck("e-1", probe.ref)
+      persister ! Persister.PersistWithAck("e-2", probe.ref)
       persister ! Persister.Stop(probe.ref)
     }
 

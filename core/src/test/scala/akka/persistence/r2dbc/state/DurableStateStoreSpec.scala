@@ -34,7 +34,7 @@ class DurableStateStoreSpec
     "save and retrieve a value" in {
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "my-persistenceId").id
-      val value = "\"Genuinely Collaborative\""
+      val value = "Genuinely Collaborative"
 
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
@@ -49,11 +49,11 @@ class DurableStateStoreSpec
     "update a value" in {
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-updated").id
-      val value = "\"Genuinely Collaborative\""
+      val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
 
-      val updatedValue = "\"Open to Feedback\""
+      val updatedValue = "Open to Feedback"
       store.upsertObject(persistenceId, 2L, updatedValue, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(updatedValue), 2L))
     }
@@ -61,11 +61,11 @@ class DurableStateStoreSpec
     "detect and reject concurrent inserts" in {
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-inserted-concurrently")
-      val value = "\"Genuinely Collaborative\""
+      val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId.id, revision = 1L, value, entityType).futureValue
       store.getObject(persistenceId.id).futureValue should be(GetObjectResult(Some(value), 1L))
 
-      val updatedValue = "\"Open to Feedback\""
+      val updatedValue = "Open to Feedback"
       val failure =
         store.upsertObject(persistenceId.id, revision = 1L, updatedValue, entityType).failed.futureValue
       failure.getMessage should include(
@@ -78,16 +78,16 @@ class DurableStateStoreSpec
 
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "id-to-be-updated-concurrently")
-      val value = "\"Genuinely Collaborative\""
+      val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId.id, revision = 1L, value, entityType).futureValue
       store.getObject(persistenceId.id).futureValue should be(GetObjectResult(Some(value), 1L))
 
-      val updatedValue = "\"Open to Feedback\""
+      val updatedValue = "Open to Feedback"
       store.upsertObject(persistenceId.id, revision = 2L, updatedValue, entityType).futureValue
       store.getObject(persistenceId.id).futureValue should be(GetObjectResult(Some(updatedValue), 2L))
 
       // simulate an update by a different node that didn't see the first one:
-      val updatedValue2 = "\"Genuine and Sincere in all Communications\""
+      val updatedValue2 = "Genuine and Sincere in all Communications"
       val failure =
         store.upsertObject(persistenceId.id, revision = 2L, updatedValue2, entityType).failed.futureValue
       failure.getMessage should include(
@@ -97,7 +97,7 @@ class DurableStateStoreSpec
     "support deletions" in {
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "to-be-added-and-removed").id
-      val value = "\"Genuinely Collaborative\""
+      val value = "Genuinely Collaborative"
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
       store.deleteObject(persistenceId).futureValue

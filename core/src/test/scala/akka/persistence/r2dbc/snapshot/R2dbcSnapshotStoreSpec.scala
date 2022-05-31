@@ -19,7 +19,6 @@ import akka.testkit.TestProbe
 import org.scalatest.Outcome
 import org.scalatest.Pending
 
-@org.scalatest.Ignore // TODO: Remove once data can be made json-compatible
 class R2dbcSnapshotStoreSpec extends SnapshotStoreSpec(TestConfig.config) with TestDbLifecycle {
   def typedSystem: ActorSystem[_] = system.toTyped
 

@@ -110,7 +110,7 @@ class DurableStateBySliceSpec
     s"$queryType changesBySlices" should {
       "return latest state for NoOffset" in new Setup {
         for (i <- 1 to 20) {
-          persister ! PersistWithAck(s"\"s-$i\"", probe.ref)
+          persister ! PersistWithAck(s"s-$i", probe.ref)
           probe.expectMessage(10.seconds, Done)
         }
 
@@ -120,14 +120,14 @@ class DurableStateBySliceSpec
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))
 
-        fishForState(s"\"s-20\"", updatedDurableStateProbe)
+        fishForState(s"s-20", updatedDurableStateProbe)
         assertFinished(updatedDurableStateProbe, done)
         killSwitch.shutdown()
       }
 
       "only return states after an offset" in new Setup {
         for (i <- 1 to 20) {
-          persister ! PersistWithAck(s"\"s-$i\"", probe.ref)
+          persister ! PersistWithAck(s"s-$i", probe.ref)
           probe.expectMessage(Done)
         }
 
@@ -137,7 +137,7 @@ class DurableStateBySliceSpec
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))
 
-        val result = fishForState(s"\"s-20\"", updatedDurableStateProbe).last
+        val result = fishForState(s"s-20", updatedDurableStateProbe).last
 
         val offset = result.offset
 
@@ -145,9 +145,9 @@ class DurableStateBySliceSpec
           queryType match {
             case Live =>
               // don't wait for ack
-              persister ! Persist(s"\"s-$i\"")
+              persister ! Persist(s"s-$i")
             case Current =>
-              persister ! PersistWithAck(s"\"s-$i\"", probe.ref)
+              persister ! PersistWithAck(s"s-$i", probe.ref)
               probe.expectMessage(Done)
           }
         }
@@ -160,7 +160,7 @@ class DurableStateBySliceSpec
             .via(killSwitch.flow)
             .runWith(Sink.foreach(updatedDurableStateProbe2.ref.tell))
 
-        val result2 = fishForState(s"\"s-30\"", updatedDurableStateProbe2)
+        val result2 = fishForState(s"s-30", updatedDurableStateProbe2)
 
         result2.map(_.revision).min shouldBe >(result.revision)
 
@@ -173,7 +173,7 @@ class DurableStateBySliceSpec
   // tests just relevant for current query
   "Current changesBySlices" should {
     "filter states with the same timestamp based on seen sequence nrs" in new Setup {
-      persister ! PersistWithAck(s"\"s-1\"", probe.ref)
+      persister ! PersistWithAck(s"s-1", probe.ref)
       probe.expectMessage(Done)
       val singleState: UpdatedDurableState[String] =
         query
@@ -191,7 +191,7 @@ class DurableStateBySliceSpec
     }
 
     "not filter states with the same timestamp based on sequence nrs" in new Setup {
-      persister ! PersistWithAck(s"\"s-1\"", probe.ref)
+      persister ! PersistWithAck(s"s-1", probe.ref)
       probe.expectMessage(Done)
       val singleState: UpdatedDurableState[String] =
         query
@@ -208,7 +208,7 @@ class DurableStateBySliceSpec
         .collect { case u: UpdatedDurableState[String] => u }
         .runWith(Sink.headOption)
         .futureValue
-      singleState2.get.value shouldBe "\"s-1\""
+      singleState2.get.value shouldBe "s-1"
     }
 
   }
@@ -217,7 +217,7 @@ class DurableStateBySliceSpec
   "Live changesBySlices" should {
     "find new changes" in new Setup {
       for (i <- 1 to 20) {
-        persister ! PersistWithAck(s"\"s-$i\"", probe.ref)
+        persister ! PersistWithAck(s"s-$i", probe.ref)
         probe.expectMessage(Done)
       }
       val done =
@@ -227,14 +227,14 @@ class DurableStateBySliceSpec
           .via(killSwitch.flow)
           .runWith(Sink.foreach(updatedDurableStateProbe.ref.tell))
 
-      fishForState(s"\"s-20\"", updatedDurableStateProbe)
+      fishForState(s"s-20", updatedDurableStateProbe)
 
       for (i <- 21 to 40) {
-        persister ! PersistWithAck(s"\"s-$i\"", probe.ref)
+        persister ! PersistWithAck(s"s-$i", probe.ref)
         probe.expectMessage(Done)
       }
 
-      fishForState(s"\"s-40\"", updatedDurableStateProbe)
+      fishForState(s"s-40", updatedDurableStateProbe)
       killSwitch.shutdown()
     }
 

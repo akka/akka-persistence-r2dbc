@@ -43,7 +43,7 @@ class PersistTagsSpec
       }
 
       entities.foreach { ref =>
-        ref ! Persister.Persist("\"e1\"")
+        ref ! Persister.Persist("e1")
       }
 
       val pingProbe = createTestProbe[Done]()

@@ -16,7 +16,6 @@ object R2dbcJournalPerfSpec {
   val config = R2dbcJournalSpec.testConfig()
 }
 
-@org.scalatest.Ignore // TODO: Remove once data can be made json-compatible
 class R2dbcJournalPerfSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) with TestDbLifecycle {
   override def eventsCount: Int = 200
 

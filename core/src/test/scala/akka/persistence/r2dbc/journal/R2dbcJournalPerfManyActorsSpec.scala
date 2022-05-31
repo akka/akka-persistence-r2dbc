@@ -17,7 +17,6 @@ import akka.persistence.journal.JournalPerfSpec.ResetCounter
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.testkit.TestProbe
 
-@org.scalatest.Ignore // TODO: Remove once data can be made json-compatible
 class R2dbcJournalPerfManyActorsSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) with TestDbLifecycle {
   override def eventsCount: Int = 10
 

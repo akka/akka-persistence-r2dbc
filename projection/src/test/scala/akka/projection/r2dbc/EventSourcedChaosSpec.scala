@@ -115,7 +115,7 @@ class EventSourcedChaosSpec
   private def mkEvent(n: Int): String = {
     val template = "0000000"
     val s = n.toString
-    "\"e" + (template + s).takeRight(5) + "\""
+    "e" + (template + s).takeRight(5)
   }
 
   "A R2DBC projection under random conditions" must {

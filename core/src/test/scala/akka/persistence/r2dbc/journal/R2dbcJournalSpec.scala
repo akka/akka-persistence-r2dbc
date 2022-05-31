@@ -32,13 +32,11 @@ object R2dbcJournalSpec {
   }
 }
 
-@org.scalatest.Ignore // TODO: Remove once data can be made json-compatible
 class R2dbcJournalSpec extends JournalSpec(R2dbcJournalSpec.config) with TestDbLifecycle {
   override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
   override def typedSystem: ActorSystem[_] = system.toTyped
 }
 
-@org.scalatest.Ignore // TODO: Remove once data can be made json-compatible
 class R2dbcJournalWithMetaSpec extends JournalSpec(R2dbcJournalSpec.configWithMeta) with TestDbLifecycle {
   override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
   protected override def supportsMetadata: CapabilityFlag = CapabilityFlag.on()
