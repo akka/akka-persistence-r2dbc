@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS akka_projection_timestamp_offset_store (
   -- timestamp_consumed is when the offset was stored
   -- the consumer lag is timestamp_consumed - timestamp_offset
   timestamp_consumed timestamp with time zone NOT NULL,
-  PRIMARY KEY(slice ASC, projection_name ASC, timestamp_offset ASC, persistence_id ASC, seq_nr ASC)
+  PRIMARY KEY(slice ASC, projection_name ASC, projection_key ASC, timestamp_offset ASC, persistence_id ASC, seq_nr ASC)
 ) SPLIT AT VALUES ((127), (255), (383), (511), (639), (767), (895));
 
 CREATE TABLE IF NOT EXISTS akka_projection_management (
