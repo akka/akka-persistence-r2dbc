@@ -307,23 +307,32 @@ import org.slf4j.Logger
     }
 
     def delayNextQuery(state: QueryState): Option[FiniteDuration] = {
-      val delay = ContinuousQuery.adjustNextDelay(
-        state.rowCount,
-        settings.querySettings.bufferSize,
-        settings.querySettings.refreshInterval)
+      if (switchFromBacktracking(state)) {
+        // switch from from backtracking immediately
+        None
+      } else {
+        val delay = ContinuousQuery.adjustNextDelay(
+          state.rowCount,
+          settings.querySettings.bufferSize,
+          settings.querySettings.refreshInterval)
 
-      if (log.isDebugEnabled)
-        delay.foreach { d =>
-          log.debug(
-            "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
-            logPrefix,
-            state.queryCount,
-            minSlice,
-            maxSlice,
-            d.toMillis)
-        }
+        if (log.isDebugEnabled)
+          delay.foreach { d =>
+            log.debug(
+              "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
+              logPrefix,
+              state.queryCount,
+              minSlice,
+              maxSlice,
+              d.toMillis)
+          }
 
-      delay
+        delay
+      }
+    }
+
+    def switchFromBacktracking(state: QueryState): Boolean = {
+      state.backtracking && state.rowCount < settings.querySettings.bufferSize - 1
     }
 
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
@@ -348,10 +357,11 @@ import org.slf4j.Logger
             idleCount = newIdleCount,
             backtracking = true,
             latestBacktracking = fromOffset)
-        } else if (state.backtracking && state.rowCount < settings.querySettings.bufferSize - 1) {
+        } else if (switchFromBacktracking(state)) {
           // switch from backtracking
           state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount, backtracking = false)
         } else {
+          // continue
           state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount)
         }
 
