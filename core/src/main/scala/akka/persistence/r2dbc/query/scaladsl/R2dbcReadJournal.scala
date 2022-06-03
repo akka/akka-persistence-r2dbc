@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.query.scaladsl
 import java.time.Instant
 
 import scala.collection.immutable
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 
@@ -35,6 +36,7 @@ import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
+import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
@@ -166,9 +168,49 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               pubSub.eventTopic(entityType, slice) ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
             }
           }
-      dbSource.merge(pubSubSource)
+      dbSource.merge(pubSubSource).via(deduplicate(settings.querySettings.deduplicateCapacity))
     } else
       dbSource
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def deduplicate[Event](
+      capacity: Int): Flow[EventEnvelope[Event], EventEnvelope[Event], NotUsed] = {
+    if (capacity == 0)
+      Flow[EventEnvelope[Event]]
+    else {
+      val evictThreshold = (capacity * 1.1).toInt
+      Flow[EventEnvelope[Event]]
+        .statefulMapConcat(() => {
+          // cache of seen pid/seqNr
+          var seen = mutable.LinkedHashSet.empty[(String, Long)]
+          env => {
+            if (env.eventOption.isEmpty) {
+              // don't deduplicate from backtracking
+              env :: Nil
+            } else {
+              val entry = env.persistenceId -> env.sequenceNr
+              val result = {
+                if (seen.contains(entry)) {
+                  Nil
+                } else {
+                  seen.add(entry)
+                  env :: Nil
+                }
+              }
+
+              if (seen.size >= evictThreshold) {
+                // weird that add modifies the instance but drop returns a new instance
+                seen = seen.drop(seen.size - capacity)
+              }
+
+              result
+            }
+          }
+        })
+    }
   }
 
   override def currentEventsByPersistenceId(
