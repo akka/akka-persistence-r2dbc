@@ -15,6 +15,7 @@ import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.r2dbc.Dialect
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
@@ -51,7 +52,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): String = {
+      backtracking: Boolean,
+      minSlice: Int,
+      maxSlice: Int): String = {
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
@@ -68,11 +71,16 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
+    val sliceCondition = settings.dialect match {
+      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
+      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
+    }
+
     sql"""
       $selectColumns
       FROM $journalTable
       WHERE entity_type = ?
-      AND slice BETWEEN ? AND ?
+      AND $sliceCondition
       AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
@@ -137,17 +145,20 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       connection => {
         val stmt = connection
           .createStatement(
-            eventsBySlicesRangeSql(toDbTimestampParam = toTimestamp.isDefined, behindCurrentTime, backtracking))
+            eventsBySlicesRangeSql(
+              toDbTimestampParam = toTimestamp.isDefined,
+              behindCurrentTime,
+              backtracking,
+              minSlice,
+              maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
+          .bind(1, fromTimestamp)
         toTimestamp match {
           case Some(until) =>
-            stmt.bind(4, until)
-            stmt.bind(5, settings.querySettings.bufferSize)
+            stmt.bind(2, until)
+            stmt.bind(3, settings.querySettings.bufferSize)
           case None =>
-            stmt.bind(4, settings.querySettings.bufferSize)
+            stmt.bind(2, settings.querySettings.bufferSize)
         }
         stmt
       },
