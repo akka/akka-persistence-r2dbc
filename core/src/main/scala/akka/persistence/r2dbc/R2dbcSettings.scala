@@ -12,6 +12,7 @@ import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
+import akka.util.Helpers.toRootLowerCase
 
 /**
  * INTERNAL API
@@ -42,7 +43,12 @@ final class R2dbcSettings(config: Config) {
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
-  val dialect: String = config.getString("dialect")
+  val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
+    case "yugabyte" => Dialect.Yugabyte
+    case "postgres" => Dialect.Postgres
+    case other =>
+      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres].")
+  }
 
   val querySettings = new QuerySettings(config.getConfig("query"))
 
@@ -61,6 +67,21 @@ final class R2dbcSettings(config: Config) {
       case _     => config.getDuration("log-db-calls-exceeding").asScala
     }
 
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+sealed trait Dialect
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+object Dialect {
+  case object Postgres extends Dialect
+  case object Yugabyte extends Dialect
 }
 
 /**

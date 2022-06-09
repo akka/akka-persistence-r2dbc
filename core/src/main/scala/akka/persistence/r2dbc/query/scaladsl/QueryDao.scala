@@ -15,6 +15,7 @@ import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.r2dbc.Dialect
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
@@ -51,7 +52,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   private def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): String = {
+      backtracking: Boolean,
+      minSlice: Int,
+      maxSlice: Int): String = {
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
@@ -72,22 +75,31 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       $selectColumns
       FROM $journalTable
       WHERE entity_type = ?
-      AND slice BETWEEN ? AND ?
+      AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
   }
 
-  private val selectBucketsSql = sql"""
-    SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-    FROM $journalTable
-    WHERE entity_type = ?
-    AND slice BETWEEN ? AND ?
-    AND db_timestamp >= ? AND db_timestamp <= ?
-    AND deleted = false
-    GROUP BY bucket ORDER BY bucket LIMIT ?
-    """
+  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
+    settings.dialect match {
+      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
+      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
+    }
+  }
+
+  private def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
+    sql"""
+      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+      FROM $journalTable
+      WHERE entity_type = ?
+      AND ${sliceCondition(minSlice, maxSlice)}
+      AND db_timestamp >= ? AND db_timestamp <= ?
+      AND deleted = false
+      GROUP BY bucket ORDER BY bucket LIMIT ?
+      """
+  }
 
   private val selectTimestampOfEventSql = sql"""
     SELECT db_timestamp FROM $journalTable
@@ -137,17 +149,20 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       connection => {
         val stmt = connection
           .createStatement(
-            eventsBySlicesRangeSql(toDbTimestampParam = toTimestamp.isDefined, behindCurrentTime, backtracking))
+            eventsBySlicesRangeSql(
+              toDbTimestampParam = toTimestamp.isDefined,
+              behindCurrentTime,
+              backtracking,
+              minSlice,
+              maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
+          .bind(1, fromTimestamp)
         toTimestamp match {
           case Some(until) =>
-            stmt.bind(4, until)
-            stmt.bind(5, settings.querySettings.bufferSize)
+            stmt.bind(2, until)
+            stmt.bind(3, settings.querySettings.bufferSize)
           case None =>
-            stmt.bind(4, settings.querySettings.bufferSize)
+            stmt.bind(2, settings.querySettings.bufferSize)
         }
         stmt
       },
@@ -208,13 +223,11 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection =>
         connection
-          .createStatement(selectBucketsSql)
+          .createStatement(selectBucketsSql(minSlice, maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
-          .bind(4, toTimestamp)
-          .bind(5, limit),
+          .bind(1, fromTimestamp)
+          .bind(2, toTimestamp)
+          .bind(3, limit),
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get("count", classOf[java.lang.Long]).toLong
