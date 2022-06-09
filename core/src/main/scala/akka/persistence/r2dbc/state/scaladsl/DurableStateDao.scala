@@ -16,6 +16,7 @@ import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.r2dbc.Dialect
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
@@ -72,14 +73,23 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
     FROM $stateTable WHERE persistence_id = ?"""
 
-  private val selectBucketsSql = sql"""
+  private def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
+    sql"""
      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
      FROM $stateTable
      WHERE entity_type = ?
-     AND slice BETWEEN ? AND ?
+     AND ${sliceCondition(minSlice, maxSlice)}
      AND db_timestamp >= ? AND db_timestamp <= ?
      GROUP BY bucket ORDER BY bucket LIMIT ?
      """
+  }
+
+  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
+    settings.dialect match {
+      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
+      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
+    }
+  }
 
   private val insertStateSql: String = sql"""
     INSERT INTO $stateTable
@@ -120,7 +130,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private def stateBySlicesRangeSql(
       maxDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): String = {
+      backtracking: Boolean,
+      minSlice: Int,
+      maxSlice: Int): String = {
 
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""
@@ -140,7 +152,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       $selectColumns
       FROM $stateTable
       WHERE entity_type = ?
-      AND slice BETWEEN ? AND ?
+      AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       ORDER BY db_timestamp, revision
       LIMIT ?"""
@@ -281,17 +293,20 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       connection => {
         val stmt = connection
           .createStatement(
-            stateBySlicesRangeSql(maxDbTimestampParam = toTimestamp.isDefined, behindCurrentTime, backtracking))
+            stateBySlicesRangeSql(
+              maxDbTimestampParam = toTimestamp.isDefined,
+              behindCurrentTime,
+              backtracking,
+              minSlice,
+              maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
+          .bind(1, fromTimestamp)
         toTimestamp match {
           case Some(until) =>
-            stmt.bind(4, until)
-            stmt.bind(5, settings.querySettings.bufferSize)
+            stmt.bind(2, until)
+            stmt.bind(3, settings.querySettings.bufferSize)
           case None =>
-            stmt.bind(4, settings.querySettings.bufferSize)
+            stmt.bind(2, settings.querySettings.bufferSize)
         }
         stmt
       },
@@ -374,13 +389,11 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection =>
         connection
-          .createStatement(selectBucketsSql)
+          .createStatement(selectBucketsSql(minSlice, maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
-          .bind(4, toTimestamp)
-          .bind(5, limit),
+          .bind(1, fromTimestamp)
+          .bind(2, toTimestamp)
+          .bind(3, limit),
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get("count", classOf[java.lang.Long]).toLong

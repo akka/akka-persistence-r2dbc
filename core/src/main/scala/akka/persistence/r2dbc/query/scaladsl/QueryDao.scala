@@ -71,31 +71,35 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
-    val sliceCondition = settings.dialect match {
-      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
-      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
-    }
-
     sql"""
       $selectColumns
       FROM $journalTable
       WHERE entity_type = ?
-      AND $sliceCondition
+      AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
   }
 
-  private val selectBucketsSql = sql"""
-    SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-    FROM $journalTable
-    WHERE entity_type = ?
-    AND slice BETWEEN ? AND ?
-    AND db_timestamp >= ? AND db_timestamp <= ?
-    AND deleted = false
-    GROUP BY bucket ORDER BY bucket LIMIT ?
-    """
+  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
+    settings.dialect match {
+      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
+      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
+    }
+  }
+
+  private def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
+    sql"""
+      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+      FROM $journalTable
+      WHERE entity_type = ?
+      AND ${sliceCondition(minSlice, maxSlice)}
+      AND db_timestamp >= ? AND db_timestamp <= ?
+      AND deleted = false
+      GROUP BY bucket ORDER BY bucket LIMIT ?
+      """
+  }
 
   private val selectTimestampOfEventSql = sql"""
     SELECT db_timestamp FROM $journalTable
@@ -219,13 +223,11 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection =>
         connection
-          .createStatement(selectBucketsSql)
+          .createStatement(selectBucketsSql(minSlice, maxSlice))
           .bind(0, entityType)
-          .bind(1, minSlice)
-          .bind(2, maxSlice)
-          .bind(3, fromTimestamp)
-          .bind(4, toTimestamp)
-          .bind(5, limit),
+          .bind(1, fromTimestamp)
+          .bind(2, toTimestamp)
+          .bind(3, limit),
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get("count", classOf[java.lang.Long]).toLong
