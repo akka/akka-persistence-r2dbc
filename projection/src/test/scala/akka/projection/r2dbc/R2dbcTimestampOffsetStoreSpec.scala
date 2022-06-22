@@ -8,6 +8,7 @@ import java.time.Instant
 import java.time.{ Duration => JDuration }
 import java.util.UUID
 
+import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
@@ -54,8 +55,7 @@ class R2dbcTimestampOffsetStoreSpec
     """).withFallback(TestConfig.config))
     with AnyWordSpecLike
     with TestDbLifecycle
-    with TestData
-    with LogCapturing {
+    with TestData {
   import R2dbcTimestampOffsetStoreSpec.TestTimestampSourceProvider
 
   override def typedSystem: ActorSystem[_] = system
@@ -219,6 +219,45 @@ class R2dbcTimestampOffsetStoreSpec
       offsetStore.getState().byPid("p4").seqNr shouldBe 9L
       offsetStore.getState().byPid("p5").seqNr shouldBe 1L
       offsetStore.getState().byPid("p6").seqNr shouldBe 6L
+    }
+
+    import scala.concurrent.duration._
+
+    "perf save batch of TimestampOffsets" in {
+      val projectionId = genRandomProjectionId()
+      val offsetStore = createOffsetStore(projectionId)
+
+      val iterations = 50000
+      val batchSize = 50
+
+      // warmup
+      (1 to 5000).foreach { i =>
+        val offsets = (1 to batchSize).map { n =>
+          TimestampOffset(Instant.now(), Map(s"p$n" -> 1L))
+        }
+        Await.result(offsetStore.saveOffsets(offsets), 5.seconds)
+      }
+
+      val totalStartTime = System.nanoTime()
+      var startTime = System.nanoTime()
+      var count = 0
+
+      (1 to iterations).foreach { i =>
+        val offsets = (1 to batchSize).map { n =>
+          TimestampOffset(Instant.now(), Map(s"p$n" -> 1L))
+        }
+        count += batchSize
+        Await.result(offsetStore.saveOffsets(offsets), 5.seconds)
+
+        if (i % 1000 == 0) {
+          val totalDurationMs = (System.nanoTime() - totalStartTime) / 1000 / 1000
+          val durationMs = (System.nanoTime() - startTime) / 1000 / 1000
+          println(
+            s"#${i * batchSize}: $count took $durationMs ms, RPS ${1000L * count / durationMs}, Total RPS ${1000L * i * batchSize / totalDurationMs}")
+          startTime = System.nanoTime()
+          count = 0
+        }
+      }
     }
 
     "not update when earlier seqNr" in {

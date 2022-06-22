@@ -437,47 +437,48 @@ private[projection] class R2dbcOffsetStore(
   private def saveTimestampOffsetInTx[Offset](conn: Connection, records: immutable.IndexedSeq[Record]): Future[Done] = {
     idle.set(false)
     val oldState = state.get()
-    val filteredRecords = {
-      if (records.size <= 1)
-        records.filterNot(oldState.isDuplicate)
-      else {
-        // use last record for each pid
-        records
-          .groupBy(_.pid)
-          .valuesIterator
-          .collect {
-            case recordsByPid if !oldState.isDuplicate(recordsByPid.last) => recordsByPid.last
-          }
-          .toVector
-      }
-    }
+    val filteredRecords = records
+//    val filteredRecords = {
+//      if (records.size <= 1)
+//        records.filterNot(oldState.isDuplicate)
+//      else {
+//        // use last record for each pid
+//        records
+//          .groupBy(_.pid)
+//          .valuesIterator
+//          .collect {
+//            case recordsByPid if !oldState.isDuplicate(recordsByPid.last) => recordsByPid.last
+//          }
+//          .toVector
+//      }
+//    }
     if (filteredRecords.isEmpty) {
       FutureDone
     } else {
-      val newState = oldState.add(filteredRecords)
-
-      // accumulate some more than the timeWindow before evicting
-      val evictedNewState =
-        if (newState.size > evictKeepNumberOfEntriesThreshold && newState.window.compareTo(evictWindow) > 0) {
-          val evictUntil = newState.latestTimestamp.minus(settings.timeWindow)
-          val s = newState.evict(evictUntil, settings.keepNumberOfEntries)
-          logger.debug(
-            "Evicted [{}] records until [{}], keeping [{}] records. Latest [{}].",
-            newState.size - s.size,
-            evictUntil,
-            s.size,
-            newState.latestTimestamp)
-          s
-        } else
-          newState
+//      val newState = oldState.add(filteredRecords)
+//
+//      // accumulate some more than the timeWindow before evicting
+//      val evictedNewState =
+//        if (newState.size > evictKeepNumberOfEntriesThreshold && newState.window.compareTo(evictWindow) > 0) {
+//          val evictUntil = newState.latestTimestamp.minus(settings.timeWindow)
+//          val s = newState.evict(evictUntil, settings.keepNumberOfEntries)
+//          logger.debug(
+//            "Evicted [{}] records until [{}], keeping [{}] records. Latest [{}].",
+//            newState.size - s.size,
+//            evictUntil,
+//            s.size,
+//            newState.latestTimestamp)
+//          s
+//        } else
+//          newState
 
       val offsetInserts = insertTimestampOffsetInTx(conn, filteredRecords)
 
       offsetInserts.map { _ =>
-        if (state.compareAndSet(oldState, evictedNewState))
-          cleanupInflight(evictedNewState)
-        else
-          throw new IllegalStateException("Unexpected concurrent modification of state from saveOffset.")
+//        if (state.compareAndSet(oldState, evictedNewState))
+//          cleanupInflight(evictedNewState)
+//        else
+//          throw new IllegalStateException("Unexpected concurrent modification of state from saveOffset.")
         Done
       }
     }
@@ -507,16 +508,23 @@ private[projection] class R2dbcOffsetStore(
     // FIXME change to trace
     logger.debug("saving timestamp offset [{}], {}", records.last.timestamp, records)
 
-    val statement = conn.createStatement(insertTimestampOffsetSql)
-
     if (records.size == 1) {
+      val statement = conn.createStatement(insertTimestampOffsetSql)
       val boundStatement = bindRecord(statement, records.head)
       R2dbcExecutor.updateOneInTx(boundStatement)
     } else {
-      val statements = records.map { rec =>
-        insertTimestampOffsetBatchSql(rec.pid, rec.seqNr, rec.timestamp)
-      }
-      R2dbcExecutor.updateBatchInTx(conn, statements)
+      val statement = conn.createStatement(insertTimestampOffsetSql)
+      val boundStatement =
+        records.foldLeft(statement) { (stmt, rec) =>
+          stmt.add()
+          bindRecord(stmt, rec)
+        }
+      R2dbcExecutor.updateBatchInTx(boundStatement)
+
+//      val statements = records.map { rec =>
+//        insertTimestampOffsetBatchSql(rec.pid, rec.seqNr, rec.timestamp)
+//      }
+//      R2dbcExecutor.updateBatchInTx(conn, statements)
     }
   }
 
