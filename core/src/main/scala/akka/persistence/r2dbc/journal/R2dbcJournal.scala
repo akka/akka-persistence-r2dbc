@@ -189,27 +189,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
         pubSub.foreach { p =>
           messages.iterator
             .flatMap(_.payload.iterator)
-            .foreach { pr =>
-              val untagged: PersistentRepr =
-                pr.payload match {
-                  case Tagged(tPayload, tags) =>
-                    // eventsByTag not implemented yet (see issue #82), so for now there's no need
-                    // to propagate the tags to subscribers.  When there is, having pubsub topics per tag
-                    // seems to be the way to go?
-                    PersistentRepr(
-                      payload = tPayload,
-                      sequenceNr = pr.sequenceNr,
-                      persistenceId = pr.persistenceId,
-                      manifest = pr.manifest,
-                      deleted = pr.deleted,
-                      sender = pr.sender,
-                      writerUuid = pr.writerUuid)
-
-                  case _ => pr
-                }
-
-              p.publish(untagged, timestamp)
-            }
+            .foreach(pr => p.publish(pr, timestamp))
         }
         Done
       }
