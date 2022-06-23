@@ -56,27 +56,20 @@ import akka.persistence.typed.PersistenceId
     val slice = persistenceExt.sliceForPersistenceId(pid)
 
     val offset = TimestampOffset(timestamp, timestamp, Map(pid -> pr.sequenceNr))
-    val notTagged =
+    val payload =
       pr.payload match {
         case Tagged(payload, _) =>
           // eventsByTag not implemented (see issue #82), but events can still be tagged, so we unwrap this tagged event.
-          PersistentRepr(
-            payload = payload,
-            sequenceNr = pr.sequenceNr,
-            persistenceId = pr.persistenceId,
-            manifest = pr.manifest,
-            deleted = pr.deleted,
-            sender = pr.sender,
-            writerUuid = pr.writerUuid)
+          payload
 
-        case _ => pr
+        case other => other
       }
 
     val envelope = new EventEnvelope(
       offset,
       pid,
       pr.sequenceNr,
-      Option(notTagged.payload),
+      Option(payload),
       timestamp.toEpochMilli,
       pr.metadata,
       entityType,
