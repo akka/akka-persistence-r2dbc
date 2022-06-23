@@ -17,6 +17,7 @@ import akka.actor.typed.pubsub.Topic
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.PersistentRepr
+import akka.persistence.journal.Tagged
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.typed.PersistenceId
@@ -55,11 +56,20 @@ import akka.persistence.typed.PersistenceId
     val slice = persistenceExt.sliceForPersistenceId(pid)
 
     val offset = TimestampOffset(timestamp, timestamp, Map(pid -> pr.sequenceNr))
+    val payload =
+      pr.payload match {
+        case Tagged(payload, _) =>
+          // eventsByTag not implemented (see issue #82), but events can still be tagged, so we unwrap this tagged event.
+          payload
+
+        case other => other
+      }
+
     val envelope = new EventEnvelope(
       offset,
       pid,
       pr.sequenceNr,
-      Option(pr.payload),
+      Option(payload),
       timestamp.toEpochMilli,
       pr.metadata,
       entityType,
