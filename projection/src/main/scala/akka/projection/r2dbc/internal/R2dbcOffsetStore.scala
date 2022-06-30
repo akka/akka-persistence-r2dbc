@@ -187,6 +187,14 @@ private[projection] class R2dbcOffsetStore(
     VALUES (?,?,?,?,?,?, transaction_timestamp())"""
 
   private def insertTimestampOffsetBatchSql(pid: Pid, seqNr: SeqNr, offsetTimestamp: Instant): String = {
+    def validateStringParam(name: String, value: String): Unit = {
+      if (value.contains('\''))
+        throw new IllegalArgumentException(s"Illegal $name parameter [$value]")
+    }
+    validateStringParam("projectionId.name", projectionId.name)
+    validateStringParam("projectionId.key", projectionId.key)
+    validateStringParam("pid", pid)
+
     val slice = persistenceExt.sliceForPersistenceId(pid)
     sql"""
       INSERT INTO $timestampOffsetTable
@@ -506,7 +514,6 @@ private[projection] class R2dbcOffsetStore(
 
     // FIXME change to trace
     logger.debug("saving timestamp offset [{}], {}", records.last.timestamp, records)
-
 
     if (records.size == 1) {
       val statement = conn.createStatement(insertTimestampOffsetSql)
