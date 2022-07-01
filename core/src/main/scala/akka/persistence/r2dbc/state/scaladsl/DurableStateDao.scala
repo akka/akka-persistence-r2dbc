@@ -22,6 +22,8 @@ import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
@@ -68,6 +70,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
   private val stateTable = settings.durableStateTableWithSchema
+  private implicit val statePayloadCodec = settings.durableStatePayloadCodec
 
   private val selectStateSql: String = sql"""
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
@@ -170,7 +173,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           revision = row.get("revision", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = Instant.EPOCH, // not needed here
-          payload = row.get("state_payload", classOf[Array[Byte]]),
+          payload = row.getPayload("state_payload"),
           serId = row.get("state_ser_id", classOf[Integer]),
           serManifest = row.get("state_ser_manifest", classOf[String]),
           tags = Set.empty // tags not fetched in queries (yet)
@@ -202,7 +205,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(3, state.revision)
               .bind(4, state.serId)
               .bind(5, state.serManifest)
-              .bind(6, state.payload)
+              .bindPayload(6, state.payload)
             bindTags(stmt, 7)
           }
           .recoverWith { case _: R2dbcDataIntegrityViolationException =>
@@ -219,7 +222,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(0, state.revision)
             .bind(1, state.serId)
             .bind(2, state.serManifest)
-            .bind(3, state.payload)
+            .bindPayload(3, state.payload)
           bindTags(stmt, 4)
 
           if (settings.dbTimestampMonotonicIncreasing) {
@@ -328,7 +331,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             revision = row.get("revision", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = row.get("state_payload", classOf[Array[Byte]]),
+            payload = row.getPayload("state_payload"),
             serId = row.get("state_ser_id", classOf[Integer]),
             serManifest = row.get("state_ser_manifest", classOf[String]),
             tags = Set.empty // tags not fetched in queries (yet)

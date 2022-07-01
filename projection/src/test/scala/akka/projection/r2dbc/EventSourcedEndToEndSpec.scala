@@ -20,6 +20,8 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
@@ -132,6 +134,7 @@ class EventSourcedEndToEndSpec
   private val log = LoggerFactory.getLogger(getClass)
 
   private val journalSettings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
   private val projectionSettings = R2dbcProjectionSettings(system)
   private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
 
@@ -159,7 +162,7 @@ class EventSourcedEndToEndSpec
         .bind(3, seqNr)
         .bind(4, timestamp)
         .bind(5, stringSerializer.identifier)
-        .bind(6, stringSerializer.toBinary(event))
+        .bindPayload(6, stringSerializer.toBinary(event))
     }
     result.futureValue shouldBe 1
   }
