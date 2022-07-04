@@ -20,8 +20,6 @@ object Dependencies {
 
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.3.4"
-
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE"
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.0.RELEASE"
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.1.RELEASE"
@@ -41,6 +39,8 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
+    val postgresql = "org.postgresql" % "postgresql" % "42.3.4" % Test
+
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
@@ -55,7 +55,6 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
-    postgresql,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
@@ -68,7 +67,6 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
-    postgresql,
     akkaProjectionCore,
     TestDeps.akkaProjectionEventSourced,
     TestDeps.akkaProjectionDurableState,
@@ -80,7 +78,7 @@ object Dependencies {
     TestDeps.scalaTest)
 
   val migration =
-    Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.logback, TestDeps.scalaTest)
+    Seq("com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test, TestDeps.postgresql, TestDeps.logback, TestDeps.scalaTest)
 
   val docs =
     Seq(
