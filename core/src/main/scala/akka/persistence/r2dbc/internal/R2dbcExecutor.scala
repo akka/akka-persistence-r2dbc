@@ -55,21 +55,6 @@ import reactor.core.publisher.Mono
       .asFuture()
   }
 
-  /**
-   * Batch update of SQL statements without bind parameters.
-   */
-  def updateBatchInTx(conn: Connection, statements: immutable.IndexedSeq[String])(implicit
-      ec: ExecutionContext): Future[Int] = {
-    val batch = conn.createBatch()
-    statements.foreach(batch.add)
-    val consumer: BiConsumer[Int, Integer] = (acc, elem) => acc + elem.intValue()
-    Flux
-      .from[Result](batch.execute())
-      .concatMap(_.getRowsUpdated)
-      .collect(() => 0, consumer)
-      .asFuture()
-  }
-
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
     // connection not intended for concurrent calls, make sure statements are executed one at a time
