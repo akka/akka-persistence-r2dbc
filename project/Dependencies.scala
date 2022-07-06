@@ -21,7 +21,7 @@ object Dependencies {
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE"
-    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.0.RELEASE"
+    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.1.RELEASE"
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.1.RELEASE"
   }
 
