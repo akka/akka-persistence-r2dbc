@@ -27,6 +27,7 @@ import akka.projection.r2dbc.internal.R2dbcOffsetStore
 import akka.projection.r2dbc.internal.R2dbcOffsetStore.Pid
 import akka.projection.r2dbc.internal.R2dbcOffsetStore.Record
 import akka.projection.r2dbc.internal.R2dbcOffsetStore.SeqNr
+import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
 
@@ -45,7 +46,12 @@ object R2dbcTimestampOffsetStoreSpec {
 }
 
 class R2dbcTimestampOffsetStoreSpec
-    extends ScalaTestWithActorTestKit(TestConfig.config)
+    extends ScalaTestWithActorTestKit(
+      ConfigFactory
+        .parseString("""
+    # to be able to test eviction
+    akka.projection.r2dbc.offset-store.keep-number-of-entries = 0
+    """).withFallback(TestConfig.config))
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
@@ -84,6 +90,17 @@ class R2dbcTimestampOffsetStoreSpec
       entityType,
       slice)
   }
+
+  def backtrackingEnvelope(env: EventEnvelope[String]): EventEnvelope[String] =
+    new EventEnvelope[String](
+      env.offset,
+      env.persistenceId,
+      env.sequenceNr,
+      eventOption = None,
+      env.timestamp,
+      env.eventMetadata,
+      env.entityType,
+      env.slice)
 
   def createUpdatedDurableState(
       pid: Pid,
@@ -340,12 +357,16 @@ class R2dbcTimestampOffsetStoreSpec
       // seqNr 1 is always accepted
       val env1 = createEnvelope("p4", 1L, startTime.plusMillis(1), "e4-1")
       offsetStore.isAccepted(env1).futureValue shouldBe true
+      offsetStore.isAccepted(backtrackingEnvelope(env1)).futureValue shouldBe true
       // but not if already inflight, seqNr 1 was accepted
       offsetStore.addInflight(env1)
-      offsetStore.isAccepted(createEnvelope("p4", 1L, startTime.plusMillis(1), "e4-1")).futureValue shouldBe false
+      val env1Later = createEnvelope("p4", 1L, startTime.plusMillis(1), "e4-1")
+      offsetStore.isAccepted(env1Later).futureValue shouldBe false
+      offsetStore.isAccepted(backtrackingEnvelope(env1Later)).futureValue shouldBe false
       // subsequent seqNr is accepted
       val env2 = createEnvelope("p4", 2L, startTime.plusMillis(2), "e4-2")
       offsetStore.isAccepted(env2).futureValue shouldBe true
+      offsetStore.isAccepted(backtrackingEnvelope(env2)).futureValue shouldBe true
       offsetStore.addInflight(env2)
       // but not when gap
       offsetStore.isAccepted(createEnvelope("p4", 4L, startTime.plusMillis(3), "e4-4")).futureValue shouldBe false
@@ -364,6 +385,10 @@ class R2dbcTimestampOffsetStoreSpec
       offsetStore.addInflight(env3)
       // and then it's not accepted again
       offsetStore.isAccepted(env3).futureValue shouldBe false
+      offsetStore.isAccepted(backtrackingEnvelope(env3)).futureValue shouldBe false
+      // and not when later seqNr is inflight
+      offsetStore.isAccepted(env2).futureValue shouldBe false
+      offsetStore.isAccepted(backtrackingEnvelope(env2)).futureValue shouldBe false
 
       // +1 to known, and then also subsequent are accepted (needed for grouped)
       val env4 = createEnvelope("p3", 6L, startTime.plusMillis(5), "e3-6")

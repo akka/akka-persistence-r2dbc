@@ -15,3 +15,4 @@ target/
 ext-lib-src/
 .classpath_nb
 .bsp
+metals.sbt

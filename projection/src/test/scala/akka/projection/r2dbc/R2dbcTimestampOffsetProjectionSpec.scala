@@ -260,6 +260,17 @@ class R2dbcTimestampOffsetProjectionSpec
       slice)
   }
 
+  def backtrackingEnvelope(env: EventEnvelope[String]): EventEnvelope[String] =
+    new EventEnvelope[String](
+      env.offset,
+      env.persistenceId,
+      env.sequenceNr,
+      eventOption = None,
+      env.timestamp,
+      env.eventMetadata,
+      env.entityType,
+      env.slice)
+
   def createEnvelopes(pid: Pid, numberOfEvents: Int): immutable.IndexedSeq[EventEnvelope[String]] = {
     (1 to numberOfEvents).map { n =>
       createEnvelope(pid, n, tick().instant(), s"e$n")
@@ -268,6 +279,7 @@ class R2dbcTimestampOffsetProjectionSpec
 
   def createEnvelopesWithDuplicates(pid1: Pid, pid2: Pid): Vector[EventEnvelope[String]] = {
     val startTime = Instant.now()
+
     Vector(
       createEnvelope(pid1, 1, startTime, s"e1-1"),
       createEnvelope(pid1, 2, startTime.plusMillis(1), s"e1-2"),
@@ -334,6 +346,18 @@ class R2dbcTimestampOffsetProjectionSpec
     }
   }
 
+  def markAsNotUsed[A](env: EventEnvelope[A]): EventEnvelope[A] = {
+    new EventEnvelope(
+      env.offset,
+      env.persistenceId,
+      env.sequenceNr,
+      env.eventOption,
+      env.timestamp,
+      eventMetadata = Some(NotUsed),
+      env.entityType,
+      env.slice)
+  }
+
   "A R2DBC exactly-once projection with TimestampOffset" must {
 
     "persist projection and offset in the same write operation (transactional)" in {
@@ -355,12 +379,6 @@ class R2dbcTimestampOffsetProjectionSpec
     }
 
     "skip failing events when using RecoveryStrategy.skip" in {
-      // FIXME for exactlyOnce it is not added to OffsetStore inflight and that is why e5 is not accepted
-      // but the solution should not be to just add it to inflight because that can cause a leak and growing
-      // inflight Map that is not cleared up correctly.
-      // Would be better if the offset was saved for skipped envelopes.
-      pending
-
       implicit val pid1 = UUID.randomUUID().toString
       val projectionId = genRandomProjectionId()
       val envelopes = createEnvelopes(pid1, 6)
@@ -381,13 +399,28 @@ class R2dbcTimestampOffsetProjectionSpec
       offsetShouldBe(envelopes.last.offset)
     }
 
-    "skip failing events after retrying when using RecoveryStrategy.retryAndSkip" in {
-      // FIXME for exactlyOnce it is not added to OffsetStore inflight and that is why e5 is not accepted
-      // but the solution should not be to just add it to inflight because that can cause a leak and growing
-      // inflight Map that is not cleared up correctly.
-      // Would be better if the offset was saved for skipped envelopes.
-      pending
+    "store offset for failing events when using RecoveryStrategy.skip" in {
+      implicit val pid1 = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      val envelopes = createEnvelopes(pid1, 6)
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
 
+      val bogusEventHandler = new ConcatHandler(_.sequenceNr == 6)
+
+      val projectionFailing =
+        R2dbcProjection
+          .exactlyOnce(projectionId, Some(settings), sourceProvider, handler = () => bogusEventHandler)
+          .withRecoveryStrategy(HandlerRecoveryStrategy.skip)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projectionFailing) {
+        projectedValueShouldBe("e1|e2|e3|e4|e5")
+      }
+      offsetShouldBe(envelopes.last.offset)
+    }
+
+    "skip failing events after retrying when using RecoveryStrategy.retryAndSkip" in {
       implicit val pid1 = UUID.randomUUID().toString
       val projectionId = genRandomProjectionId()
       val envelopes = createEnvelopes(pid1, 6)
@@ -422,8 +455,10 @@ class R2dbcTimestampOffsetProjectionSpec
       progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 1, "e1")))
       progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 2, "e2")))
       progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 3, "e3")))
-      // Offset 4 is not stored so it is not reported.
+      // Offset 4 is stored even though it failed and was skipped
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 4, "e4")))
       progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 5, "e5")))
+      progressProbe.expectMessage(TestStatusObserver.OffsetProgress(Envelope(pid1, 6, "e6")))
 
       offsetShouldBe(envelopes.last.offset)
     }
@@ -535,6 +570,29 @@ class R2dbcTimestampOffsetProjectionSpec
       offsetShouldBe(envelopes2.last.offset)
     }
 
+    "be able to skip envelopes but still store offset" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val projection =
+        R2dbcProjection.exactlyOnce(projectionId, Some(settings), sourceProvider, handler = () => new ConcatHandler)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
+      offsetShouldBe(envelopes.last.offset)
+    }
+
   }
 
   "A R2DBC grouped projection with TimestampOffset" must {
@@ -636,6 +694,37 @@ class R2dbcTimestampOffsetProjectionSpec
         projectedValueShouldBe("e2-1|e2-2|e2-3|e2-4")(pid2)
       }
       offsetShouldBe(envelopes2.last.offset)
+    }
+
+    "be able to skip envelopes but still store offset" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val handlerProbe = createTestProbe[String]("calls-to-handler")
+
+      val projection =
+        R2dbcProjection
+          .groupedWithin(projectionId, Some(settings), sourceProvider, handler = () => groupedHandler(handlerProbe.ref))
+          .withGroup(3, 3.seconds)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
+
+      // handler probe is called twice
+      handlerProbe.expectMessage("called")
+      handlerProbe.expectMessage("called")
+
+      offsetShouldBe(envelopes.last.offset)
     }
 
     "handle grouped async projection" in {
@@ -765,6 +854,44 @@ class R2dbcTimestampOffsetProjectionSpec
       }
       projectionRef ! ProjectionBehavior.Stop
     }
+
+    "be able to skip envelopes but still store offset for grouped async projection" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val result = new StringBuffer()
+
+      def handler(): Handler[immutable.Seq[EventEnvelope[String]]] =
+        new Handler[immutable.Seq[EventEnvelope[String]]] {
+          override def process(envelopes: immutable.Seq[EventEnvelope[String]]): Future[Done] = {
+            Future {
+              envelopes.foreach(env => result.append(env.event).append("|"))
+            }.map(_ => Done)
+          }
+        }
+
+      val projection =
+        R2dbcProjection
+          .groupedWithinAsync(projectionId, Some(settings), sourceProvider, handler = () => handler())
+          .withGroup(2, 3.seconds)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        result.toString shouldBe "e1|e2|e5|"
+      }
+
+      eventually {
+        offsetShouldBe(envelopes.last.offset)
+      }
+    }
   }
 
   "A R2DBC at-least-once projection with TimestampOffset" must {
@@ -874,6 +1001,30 @@ class R2dbcTimestampOffsetProjectionSpec
 
       bogusEventHandler.attempts shouldBe 1
 
+      eventually {
+        offsetShouldBe(envelopes.last.offset)
+      }
+    }
+
+    "be able to skip envelopes but still store offset" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val projection =
+        R2dbcProjection.atLeastOnce(projectionId, Some(settings), sourceProvider, handler = () => new ConcatHandler)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
       eventually {
         offsetShouldBe(envelopes.last.offset)
       }
@@ -1042,6 +1193,32 @@ class R2dbcTimestampOffsetProjectionSpec
       }
       projectionRef ! ProjectionBehavior.Stop
     }
+
+    "be able to skip envelopes but still store offset for async projection" in {
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      val projection =
+        R2dbcProjection.atLeastOnce(projectionId, Some(settings), sourceProvider, handler = () => new ConcatHandler)
+
+      offsetShouldBeEmpty()
+      projectionTestKit.run(projection) {
+        projectedValueShouldBe("e1|e2|e5")
+      }
+      eventually {
+        offsetShouldBe(envelopes.last.offset)
+      }
+    }
   }
 
   "A R2DBC flow projection with TimestampOffset" must {
@@ -1081,6 +1258,8 @@ class R2dbcTimestampOffsetProjectionSpec
       val envelopes = createEnvelopesWithDuplicates(pid1, pid2)
       val sourceProvider = createSourceProvider(envelopes)
       implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      info(s"pid1 [$pid1], pid2 [$pid2]")
 
       val flowHandler =
         FlowWithContext[EventEnvelope[String], ProjectionContext]
@@ -1147,6 +1326,43 @@ class R2dbcTimestampOffsetProjectionSpec
         offsetShouldBe(envelopes2.last.offset)
       }
       projectionRef ! ProjectionBehavior.Stop
+    }
+
+    "not support skipping envelopes but still store offset" in {
+      // This is a limitation for atLeastOnceFlow and this test is just
+      // capturing current behavior of not supporting the feature of skipping
+      // envelopes that are marked with NotUsed in the eventMetadata.
+      implicit val pid = UUID.randomUUID().toString
+      val projectionId = genRandomProjectionId()
+      val envelopes = createEnvelopes(pid, 6).map { env =>
+        if (env.event == "e3" || env.event == "e4" || env.event == "e6")
+          markAsNotUsed(env)
+        else
+          env
+      }
+      val sourceProvider = createSourceProvider(envelopes)
+      implicit val offsetStore = createOffsetStore(projectionId, sourceProvider)
+
+      offsetShouldBeEmpty()
+
+      val flowHandler =
+        FlowWithContext[EventEnvelope[String], ProjectionContext]
+          .mapAsync(1) { env =>
+            withRepo(_.concatToText(env.persistenceId, env.event))
+          }
+
+      val projection =
+        R2dbcProjection
+          .atLeastOnceFlow(projectionId, Some(settings), sourceProvider, handler = flowHandler)
+          .withSaveOffset(1, 1.minute)
+
+      projectionTestKit.run(projection) {
+        // e3, e4, e6 are still included
+        projectedValueShouldBe("e1|e2|e3|e4|e5|e6")
+      }
+      eventually {
+        offsetShouldBe(envelopes.last.offset)
+      }
     }
   }
 

@@ -128,10 +128,14 @@ object R2dbcOffsetStore {
     def window: JDuration =
       JDuration.between(oldestTimestamp, latestTimestamp)
 
-    def evict(until: Instant): State = {
-      if (oldestTimestamp.isBefore(until))
-        State(byPid.valuesIterator.filterNot(_.timestamp.isBefore(until)).toVector)
-      else
+    def evict(until: Instant, keepNumberOfEntries: Int): State = {
+      if (oldestTimestamp.isBefore(until) && size > keepNumberOfEntries) {
+        val sorted = byPid.valuesIterator.toVector.sortBy(_.timestamp)
+        State(
+          sorted
+            .take(size - keepNumberOfEntries)
+            .filterNot(_.timestamp.isBefore(until)) :++ sorted.takeRight(keepNumberOfEntries))
+      } else
         this
     }
   }
@@ -159,6 +163,7 @@ private[projection] class R2dbcOffsetStore(
   private val logger = LoggerFactory.getLogger(this.getClass)
 
   private val evictWindow = settings.timeWindow.plus(settings.evictInterval)
+  private val evictKeepNumberOfEntriesThreshold = (settings.keepNumberOfEntries * 1.1).toInt
 
   private val offsetSerialization = new OffsetSerialization(system)
   import offsetSerialization.fromStorageRepresentation
@@ -320,11 +325,10 @@ private[projection] class R2dbcOffsetStore(
     recordsFut.map { records =>
       val newState = State(records)
       logger.debug(
-        "readTimestampOffset state with [{}] persistenceIds, oldest [{}], latest [{}], records {}",
+        "readTimestampOffset state with [{}] persistenceIds, oldest [{}], latest [{}]",
         newState.byPid.size,
         newState.oldestTimestamp,
-        newState.latestTimestamp,
-        records)
+        newState.latestTimestamp)
       if (!state.compareAndSet(oldState, newState))
         throw new IllegalStateException("Unexpected concurrent modification of state from readOffset.")
       clearInflight()
@@ -446,9 +450,15 @@ private[projection] class R2dbcOffsetStore(
 
       // accumulate some more than the timeWindow before evicting
       val evictedNewState =
-        if (newState.window.compareTo(evictWindow) > 0) {
-          val s = newState.evict(newState.latestTimestamp.minus(settings.timeWindow))
-          logger.debug("Evicted [{}] records, keeping [{}] records.", newState.size - s.size, s.size)
+        if (newState.size > evictKeepNumberOfEntriesThreshold && newState.window.compareTo(evictWindow) > 0) {
+          val evictUntil = newState.latestTimestamp.minus(settings.timeWindow)
+          val s = newState.evict(evictUntil, settings.keepNumberOfEntries)
+          logger.debug(
+            "Evicted [{}] records until [{}], keeping [{}] records. Latest [{}].",
+            newState.size - s.size,
+            evictUntil,
+            s.size,
+            newState.latestTimestamp)
           s
         } else
           newState
@@ -516,6 +526,11 @@ private[projection] class R2dbcOffsetStore(
           }
         case _ => true
       }
+    if (newInflight.size >= 10000) {
+      throw new IllegalStateException(
+        s"Too many envelopes in-flight [${newInflight.size}]. " +
+        "Please report this issue at https://github.com/akka/akka-persistence-r2dbc")
+    }
     if (!inflight.compareAndSet(currentInflight, newInflight))
       cleanupInflight(newState) // CAS retry, concurrent update of inflight
   }
@@ -641,7 +656,8 @@ private[projection] class R2dbcOffsetStore(
             pid,
             recordWithOffset.offset)
         } else if (recordWithOffset.envelopeLoaded) {
-          logger.info(
+          // This may happen rather frequently when using `publish-events`, after reconnecting and such.
+          logger.debug(
             "Rejecting unknown sequence number [{}] for pid [{}] (might be accepted later): {}",
             seqNr,
             pid,
@@ -660,6 +676,10 @@ private[projection] class R2dbcOffsetStore(
         val ok = seqNr == prevSeqNr + 1
         if (ok) {
           FutureTrue
+        } else if (seqNr <= currentInflight.getOrElse(pid, 0L)) {
+          // currentInFlight contains those that have been processed or about to be processed in Flow,
+          // but offset not saved yet => ok to handle as duplicate
+          FutureFalse
         } else if (recordWithOffset.envelopeLoaded) {
           logUnexpected()
           FutureFalse
@@ -682,7 +702,15 @@ private[projection] class R2dbcOffsetStore(
         // Backtracking will emit missed event again.
         timestampOf(pid, seqNr - 1).map {
           case Some(previousTimestamp) =>
-            if (previousTimestamp.isBefore(currentState.latestTimestamp.minus(settings.timeWindow))) {
+            val before = currentState.latestTimestamp.minus(settings.timeWindow)
+            if (previousTimestamp.isBefore(before)) {
+              logger.debug(
+                "Accepting envelope with pid [{}], seqNr [{}], where previous event timestamp [{}] " +
+                "is before time window [{}].",
+                pid,
+                seqNr,
+                previousTimestamp,
+                before)
               true
             } else if (recordWithOffset.envelopeLoaded) {
               logUnknown()
@@ -761,7 +789,7 @@ private[projection] class R2dbcOffsetStore(
       Future.successful(0)
     } else {
       val currentState = getState()
-      if (currentState.window.compareTo(settings.timeWindow) < 0) {
+      if (currentState.size <= settings.keepNumberOfEntries || currentState.window.compareTo(settings.timeWindow) < 0) {
         // it hasn't filled up the window yet
         Future.successful(0)
       } else {

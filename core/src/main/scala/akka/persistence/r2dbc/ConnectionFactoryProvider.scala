@@ -8,6 +8,7 @@ import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 import akka.Done
@@ -71,6 +72,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
             .option(ConnectionFactoryOptions.USER, settings.user)
             .option(ConnectionFactoryOptions.PASSWORD, settings.password)
             .option(ConnectionFactoryOptions.DATABASE, settings.database)
+            .option(ConnectionFactoryOptions.CONNECT_TIMEOUT, JDuration.ofMillis(settings.connectTimeout.toMillis))
       }
 
     builder
@@ -96,16 +98,30 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
     val connectionFactory = createConnectionFactory(settings)
 
+    val evictionInterval = {
+      import settings.{ maxIdleTime, maxLifeTime }
+      if (maxIdleTime <= Duration.Zero && maxLifeTime <= Duration.Zero) {
+        JDuration.ZERO
+      } else if (maxIdleTime <= Duration.Zero) {
+        JDuration.ofMillis((maxLifeTime / 4).toMillis)
+      } else if (maxLifeTime <= Duration.Zero) {
+        JDuration.ofMillis((maxIdleTime / 4).toMillis)
+      } else {
+        JDuration.ofMillis((maxIdleTime.min(maxIdleTime) / 4).toMillis)
+      }
+    }
+
     val poolConfiguration = ConnectionPoolConfiguration
       .builder(connectionFactory)
       .initialSize(settings.initialSize)
       .maxSize(settings.maxSize)
-      .maxCreateConnectionTime(JDuration.ofMillis(settings.createTimeout.toMillis))
+      // Don't use maxCreateConnectionTime because it can cause connection leaks, see issue #182
+      // ConnectionFactoryOptions.CONNECT_TIMEOUT is used instead.
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
-      // setting lifetime due to issue https://github.com/r2dbc/r2dbc-pool/issues/129
-      .maxLifeTime(JDuration.ofDays(365 * 100))
+      .maxLifeTime(JDuration.ofMillis(settings.maxLifeTime.toMillis))
+      .backgroundEvictionInterval(evictionInterval)
 
     if (settings.validationQuery.nonEmpty)
       poolConfiguration.validationQuery(settings.validationQuery)

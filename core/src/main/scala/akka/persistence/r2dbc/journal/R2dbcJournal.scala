@@ -183,18 +183,20 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     writeAndPublishResult.map(_ => Nil)(ExecutionContexts.parasitic)
   }
 
-  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Instant]): Future[Done] = {
-    if (pubSub.isDefined) {
-      dbTimestamp.map { timestamp =>
-        pubSub.foreach { p =>
-          messages.iterator.flatMap(_.payload.iterator).foreach(pr => p.publish(pr, timestamp))
+  private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Instant]): Future[Done] =
+    pubSub match {
+      case Some(ps) =>
+        dbTimestamp.map { timestamp =>
+          messages.iterator
+            .flatMap(_.payload.iterator)
+            .foreach(pr => ps.publish(pr, timestamp))
+
+          Done
         }
-        Done
-      }
-    } else {
-      dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
+
+      case None =>
+        dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
     }
-  }
 
   private def logEventsByTagsNotImplemented(): Unit = {
     if (!eventsByTagNotImplementedLogged) {

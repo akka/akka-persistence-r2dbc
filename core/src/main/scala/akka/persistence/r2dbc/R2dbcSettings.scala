@@ -12,6 +12,7 @@ import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
+import akka.util.Helpers.toRootLowerCase
 
 /**
  * INTERNAL API
@@ -42,7 +43,12 @@ final class R2dbcSettings(config: Config) {
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
-  val dialect: String = config.getString("dialect")
+  val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
+    case "yugabyte" => Dialect.Yugabyte
+    case "postgres" => Dialect.Postgres
+    case other =>
+      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres].")
+  }
 
   val querySettings = new QuerySettings(config.getConfig("query"))
 
@@ -67,6 +73,21 @@ final class R2dbcSettings(config: Config) {
  * INTERNAL API
  */
 @InternalStableApi
+sealed trait Dialect
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+object Dialect {
+  case object Postgres extends Dialect
+  case object Yugabyte extends Dialect
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
 final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
   val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").asScala
@@ -75,6 +96,7 @@ final class QuerySettings(config: Config) {
   val backtrackingBehindCurrentTime: FiniteDuration = config.getDuration("backtracking.behind-current-time").asScala
   val bufferSize: Int = config.getInt("buffer-size")
   val persistenceIdsBufferSize: Int = config.getInt("persistence-ids.buffer-size")
+  val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
 }
 
 /**
@@ -101,8 +123,9 @@ final class ConnectionFactorySettings(config: Config) {
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
+  val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
 
-  val createTimeout: FiniteDuration = config.getDuration("create-timeout").asScala
+  val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
