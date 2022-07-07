@@ -93,7 +93,7 @@ object MigrationTool {
  *
  * Note: tags are not migrated.
  */
-class MigrationTool(system: ActorSystem[_]) {
+class MigrationTool(system: ActorSystem[_], entityTypeExtractor: String => String = PersistenceId.extractEntityType) {
   import MigrationTool.Result
   import system.executionContext
   private implicit val sys: ActorSystem[_] = system
@@ -229,7 +229,7 @@ class MigrationTool(system: ActorSystem[_]) {
   }
 
   private def serializedJournalRow(env: ClassicEventEnvelope): SerializedJournalRow = {
-    val entityType = PersistenceId.extractEntityType(env.persistenceId)
+    val entityType = entityTypeExtractor(env.persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(env.persistenceId)
 
     val event = env.event.asInstanceOf[AnyRef]
