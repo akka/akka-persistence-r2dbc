@@ -19,7 +19,9 @@ inThisBuild(
       "Contributors",
       "https://gitter.im/akka/dev",
       url("https://github.com/akka/akka-persistence-r2dbc/graphs/contributors")),
-    licenses := Seq(("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0"))),
+    licenses := Seq(
+      ("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))
+    ), // FIXME change s/main/v1.0.0/ when released
     description := "An Akka Persistence backed by SQL database with R2DBC",
     // add snapshot repo when Akka version overriden
     resolvers ++=
@@ -36,7 +38,7 @@ def common: Seq[Setting[_]] =
     sonatypeProfileName := "com.lightbend",
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
     Compile / javacOptions ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
-    headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>""")),
+    headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2022 Lightbend Inc. <https://www.lightbend.com>""")),
     Test / logBuffered := false,
     Test / parallelExecution := false,
     // show full stack traces and test case durations

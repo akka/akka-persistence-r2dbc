@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2022 Lightbend Inc. <https://www.lightbend.com>
+ */
+
 package jdocs.home.query;
 
 import akka.NotUsed;

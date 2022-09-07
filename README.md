@@ -13,7 +13,7 @@ Under development.
 
 ## License
 
-Akka Persistence RD2BC is Open Source and available under the Apache 2 License.
+Akka Persistence Cassandra is licensed under the Business Source License 1.1, see LICENSE.
 
 ## Support
 
