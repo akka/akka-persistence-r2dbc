@@ -22,7 +22,7 @@ object Dependencies {
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE"
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.2.RELEASE"
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.1.RELEASE"
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.2.RELEASE"
   }
 
   object TestDeps {
