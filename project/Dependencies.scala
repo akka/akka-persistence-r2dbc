@@ -7,9 +7,9 @@ import sbt._
 object Dependencies {
   val Scala212 = "2.12.16"
   val Scala213 = "2.13.8"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.19")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.7.0-M1")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.2.4"
+  val AkkaProjectionVersion = "1.3.0-M1"
   val AkkaProjectionVersionInDocs = "current"
 
   object Compile {
@@ -39,7 +39,7 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.3.4" % Test
+    val postgresql = "org.postgresql" % "postgresql" % "42.5.0" % Test
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
@@ -79,7 +79,7 @@ object Dependencies {
 
   val migration =
     Seq(
-      "com.lightbend.akka" %% "akka-persistence-jdbc" % "5.0.4" % Test,
+      "com.lightbend.akka" %% "akka-persistence-jdbc" % "5.1.0" % Test,
       TestDeps.postgresql,
       TestDeps.logback,
       TestDeps.scalaTest)
