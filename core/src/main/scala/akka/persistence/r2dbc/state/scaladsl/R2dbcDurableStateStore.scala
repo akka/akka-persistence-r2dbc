@@ -101,8 +101,15 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     stateDao.writeState(serializedRow)
 
   }
+
+  @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
   override def deleteObject(persistenceId: String): Future[Done] =
+    deleteObject(persistenceId, revision = 0)
+
+  override def deleteObject(persistenceId: String, revision: Long): Future[Done] = {
+    // FIXME #276 use revision
     stateDao.deleteState(persistenceId)
+  }
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     persistenceExt.sliceForPersistenceId(persistenceId)
