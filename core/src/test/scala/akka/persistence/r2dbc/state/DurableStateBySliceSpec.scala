@@ -14,6 +14,7 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.testkit.typed.scaladsl.TestProbe
 import akka.actor.typed.ActorSystem
+import akka.persistence.query.DeletedDurableState
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
@@ -21,6 +22,7 @@ import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
+import akka.persistence.r2dbc.TestActors.DurableStatePersister.DeleteWithAck
 import akka.persistence.r2dbc.TestActors.DurableStatePersister.Persist
 import akka.persistence.r2dbc.TestActors.DurableStatePersister.PersistWithAck
 import akka.persistence.r2dbc.TestConfig
@@ -167,6 +169,28 @@ class DurableStateBySliceSpec
         assertFinished(updatedDurableStateProbe2, withOffsetDone)
         killSwitch.shutdown()
       }
+
+      "emit DeletedDurableState for latest deleted state" in new Setup {
+        for (i <- 1 to 3) {
+          persister ! PersistWithAck(s"s-$i", probe.ref)
+          probe.expectMessage(10.seconds, Done)
+        }
+
+        persister ! DeleteWithAck(probe.ref)
+        probe.expectMessage(10.seconds, Done)
+
+        val deletedDurableStateProbe = createTestProbe[DeletedDurableState[String]]()
+
+        val done =
+          doQuery(entityType, slice, slice, NoOffset)
+            .collect { case d: DeletedDurableState[String] => d }
+            .via(killSwitch.flow)
+            .runWith(Sink.foreach(deletedDurableStateProbe.ref.tell))
+
+        deletedDurableStateProbe.receiveMessage().revision shouldBe 4
+        assertFinished(updatedDurableStateProbe, done)
+        killSwitch.shutdown()
+      }
     }
   }
 
@@ -235,6 +259,41 @@ class DurableStateBySliceSpec
       }
 
       fishForState(s"s-40", updatedDurableStateProbe)
+      killSwitch.shutdown()
+    }
+
+    "find delete" in new Setup {
+      for (i <- 1 to 19) {
+        persister ! PersistWithAck(s"s-$i", probe.ref)
+        probe.expectMessage(Done)
+      }
+
+      val deletedDurableStateProbe = createTestProbe[DeletedDurableState[String]]()
+
+      val done =
+        query
+          .changesBySlices(entityType, slice, slice, NoOffset)
+          .via(killSwitch.flow)
+          .runWith(Sink.foreach {
+            case u: UpdatedDurableState[String] => updatedDurableStateProbe.ref.tell(u)
+            case u: DeletedDurableState[String] => deletedDurableStateProbe.ref.tell(u)
+          })
+      fishForState(s"s-19", updatedDurableStateProbe).last.revision shouldBe 19
+
+      persister ! DeleteWithAck(probe.ref)
+      probe.expectMessage(Done)
+      deletedDurableStateProbe.receiveMessage().revision shouldBe 20
+
+      for (i <- 21 to 40) {
+        persister ! PersistWithAck(s"s-$i", probe.ref)
+        probe.expectMessage(Done)
+      }
+      fishForState(s"s-40", updatedDurableStateProbe).last.revision shouldBe 40
+
+      persister ! DeleteWithAck(probe.ref)
+      probe.expectMessage(Done)
+      deletedDurableStateProbe.receiveMessage().revision shouldBe 41
+
       killSwitch.shutdown()
     }
 
