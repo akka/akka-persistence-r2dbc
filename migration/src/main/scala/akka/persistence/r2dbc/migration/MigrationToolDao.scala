@@ -7,10 +7,10 @@ package akka.persistence.r2dbc.migration
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
-
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao.log
@@ -59,7 +59,7 @@ import io.r2dbc.spi.ConnectionFactory
           .bind(0, persistenceId)
           .bind(1, seqNr)
       }
-      .map(_ => Done)(ExecutionContext.parasitic)
+      .map(_ => Done)(ExecutionContexts.parasitic)
   }
 
   def updateSnapshotProgress(persistenceId: String, seqNr: Long): Future[Done] = {
@@ -76,7 +76,7 @@ import io.r2dbc.spi.ConnectionFactory
           .bind(0, persistenceId)
           .bind(1, seqNr)
       }
-      .map(_ => Done)(ExecutionContext.parasitic)
+      .map(_ => Done)(ExecutionContexts.parasitic)
   }
 
   def currentProgress(persistenceId: String): Future[Option[CurrentProgress]] = {

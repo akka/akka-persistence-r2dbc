@@ -5,15 +5,14 @@
 package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
-
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
@@ -248,7 +247,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debug(
+          log.debugN(
             "currentEventsByPersistenceId query [{}] for persistenceId [{}], from [{}] to [{}]. Found [{}] rows in previous query.",
             state.queryCount,
             persistenceId,
@@ -260,7 +259,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           queryDao
             .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr))
       } else {
-        log.debug(
+        log.debugN(
           "currentEventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
           state.queryCount,
           persistenceId,
@@ -271,7 +270,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     }
 
     if (log.isDebugEnabled())
-      log.debug(
+      log.debugN(
         "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].",
         persistenceId,
         fromSequenceNr,
@@ -318,7 +317,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         settings.querySettings.refreshInterval)
 
       delay.foreach { d =>
-        log.debug(
+        log.debugN(
           "eventsByPersistenceId query [{}] for persistenceId [{}] delay next [{}] ms.",
           state.queryCount,
           persistenceId,
@@ -331,7 +330,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     def nextQuery(
         state: ByPersistenceIdState): (ByPersistenceIdState, Option[Source[SerializedJournalRow, NotUsed]]) = {
       if (state.latestSeqNr >= toSequenceNr) {
-        log.debug(
+        log.debugN(
           "eventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
           state.queryCount,
           persistenceId,
@@ -340,7 +339,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       } else {
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
-        log.debug(
+        log.debugN(
           "eventsByPersistenceId query [{}] for persistenceId [{}], from [{}]. Found [{}] rows in previous query.",
           newState.queryCount,
           persistenceId,
@@ -403,7 +402,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debug(
+          log.debugN(
             "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
             state.queryCount,
             state.latestPid,

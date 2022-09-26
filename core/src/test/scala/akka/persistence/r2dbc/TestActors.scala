@@ -7,6 +7,7 @@ package akka.persistence.r2dbc
 import akka.Done
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.{ ActorRef, Behavior }
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
@@ -65,14 +66,14 @@ object TestActors {
         { (state, command) =>
           command match {
             case command: Persist =>
-              context.log.debug(
+              context.log.debugN(
                 "Persist [{}], pid [{}], seqNr [{}]",
                 command.payload,
                 pid.id,
                 EventSourcedBehavior.lastSequenceNumber(context) + 1)
               Effect.persist(command.payload)
             case command: PersistWithAck =>
-              context.log.debug(
+              context.log.debugN(
                 "Persist [{}], pid [{}], seqNr [{}]",
                 command.payload,
                 pid.id,
@@ -80,7 +81,7 @@ object TestActors {
               Effect.persist(command.payload).thenRun(_ => command.replyTo ! Done)
             case command: PersistAll =>
               if (context.log.isDebugEnabled)
-                context.log.debug(
+                context.log.debugN(
                   "PersistAll [{}], pid [{}], seqNr [{}]",
                   command.payloads.mkString(","),
                   pid.id,
@@ -121,14 +122,14 @@ object TestActors {
           { (_, command) =>
             command match {
               case command: Persist =>
-                context.log.debug(
+                context.log.debugN(
                   "Persist [{}], pid [{}], seqNr [{}]",
                   command.payload,
                   pid.id,
                   DurableStateBehavior.lastSequenceNumber(context) + 1)
                 Effect.persist(command.payload)
               case command: PersistWithAck =>
-                context.log.debug(
+                context.log.debugN(
                   "Persist [{}], pid [{}], seqNr [{}]",
                   command.payload,
                   pid.id,

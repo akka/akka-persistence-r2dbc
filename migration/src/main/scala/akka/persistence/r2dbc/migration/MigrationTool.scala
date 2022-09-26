@@ -5,18 +5,18 @@
 package akka.persistence.r2dbc.migration
 
 import java.time.Instant
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.LoggerOps
+import akka.dispatch.ExecutionContexts
 import akka.pattern.ask
 import akka.persistence.Persistence
 import akka.persistence.SelectedSnapshot
@@ -152,7 +152,7 @@ class MigrationTool(system: ActorSystem[_]) {
           } yield persistenceId -> Result(1, eventCount, snapshotCount)
         }
         .map { case (pid, result @ Result(_, events, snapshots)) =>
-          log.debug(
+          log.debugN(
             "Migrated persistenceId [{}] with [{}] events{}.",
             pid,
             events,
@@ -162,7 +162,7 @@ class MigrationTool(system: ActorSystem[_]) {
         .runWith(Sink.fold(Result.empty) { case (acc, Result(_, events, snapshots)) =>
           val result = Result(acc.persistenceIds + 1, acc.events + events, acc.snapshots + snapshots)
           if (result.persistenceIds % 100 == 0)
-            log.info(
+            log.infoN(
               "Migrated [{}] persistenceIds with [{}] events and [{}] snapshots.",
               result.persistenceIds,
               result.events,
@@ -172,7 +172,7 @@ class MigrationTool(system: ActorSystem[_]) {
 
     result.transform {
       case s @ Success(Result(persistenceIds, events, snapshots)) =>
-        log.info(
+        log.infoN(
           "Migration successful. Migrated [{}] persistenceIds with [{}] events and [{}] snapshots.",
           persistenceIds,
           events,
@@ -282,7 +282,7 @@ class MigrationTool(system: ActorSystem[_]) {
             val serializedRow = serializedSnapotRow(selectedSnapshot)
             targetSnapshotDao
               .store(serializedRow)
-              .map(_ => snapshotMetadata.sequenceNr)(ExecutionContext.parasitic)
+              .map(_ => snapshotMetadata.sequenceNr)(ExecutionContexts.parasitic)
           }
           _ <- migrationDao.updateSnapshotProgress(persistenceId, seqNr)
         } yield 1

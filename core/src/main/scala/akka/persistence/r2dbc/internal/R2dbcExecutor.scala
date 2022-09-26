@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.internal
 
 import java.util.function.BiConsumer
-
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.compat.java8.FutureConverters._
@@ -13,10 +12,11 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
-
 import akka.Done
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalStableApi
+import akka.dispatch.ExecutionContexts
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Result
@@ -43,7 +43,7 @@ import reactor.core.publisher.Mono
 
   def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] =
     stmt.execute().asFuture().flatMap { result =>
-      result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContext.parasitic)
+      result.getRowsUpdated.asFuture().map(_.intValue())(ExecutionContexts.parasitic)
     }
 
   def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Int] = {
@@ -58,10 +58,10 @@ import reactor.core.publisher.Mono
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
     // connection not intended for concurrent calls, make sure statements are executed one at a time
-    statements.foldLeft(Future.successful(IndexedSeq.empty[Int])) { (acc, stmt) =>
+    statements.foldLeft(Future.successful(IndexedSeq.empty[Int].toIndexedSeq)) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
-          res.getRowsUpdated.asFuture().map(seq :+ _.intValue())(ExecutionContext.parasitic)
+          res.getRowsUpdated.asFuture().map(seq :+ _.intValue())(ExecutionContexts.parasitic)
         }
       }
     }
@@ -79,8 +79,8 @@ import reactor.core.publisher.Mono
       val consumer: BiConsumer[mutable.Builder[A, IndexedSeq[A]], A] = (builder, elem) => builder += elem
       Flux
         .from[A](result.map((row, _) => mapRow(row)))
-        .collect(() => IndexedSeq.newBuilder[A], consumer)
-        .map(_.result())
+        .collect[scala.collection.mutable.Builder[A, IndexedSeq[A]]](() => immutable.IndexedSeq.newBuilder[A], consumer)
+        .map[immutable.IndexedSeq[A]](builder => builder.result().toIndexedSeq)
         .asFuture()
     }
   }
@@ -114,7 +114,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
         if (durationMicros >= logDbCallsExceedingMicros)
           log.info("{} - getConnection took [{}] µs", logPrefix, durationMicros)
         connection
-      }(ExecutionContext.parasitic)
+      }(ExecutionContexts.parasitic)
   }
 
   /**
@@ -197,7 +197,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
   def updateInBatchReturning[A](logPrefix: String)(
       statementFactory: Connection => Statement,
       mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
-    import scala.jdk.CollectionConverters._
+    import scala.collection.JavaConverters._
     withConnection(logPrefix) { connection =>
       val stmt = statementFactory(connection)
       Flux
@@ -228,7 +228,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
         }
 
       mappedRows.failed.foreach { exc =>
-        log.debug("{} - Select failed: {}", logPrefix, exc)
+        log.debugN("{} - Select failed: {}", logPrefix, exc)
         connection.close().asFutureDone()
       }
 
@@ -236,7 +236,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
         connection.close().asFutureDone().map { _ =>
           val durationMicros = durationInMicros(startTime)
           if (durationMicros >= logDbCallsExceedingMicros)
-            log.info("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
+            log.infoN("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
           r
         }
       }
@@ -263,7 +263,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
 
         result.failed.foreach { exc =>
           if (log.isDebugEnabled())
-            log.debug("{} - DB call failed: {}", logPrefix, exc.toString)
+            log.debugN("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
           rollbackAndClose(connection)
         }
@@ -298,7 +298,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
           }
 
         result.failed.foreach { exc =>
-          log.debug("{} - DB call failed: {}", logPrefix, exc)
+          log.debugN("{} - DB call failed: {}", logPrefix, exc)
           // auto-commit so nothing to rollback
           connection.close().asFutureDone()
         }
@@ -307,7 +307,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
           connection.close().asFutureDone().map { _ =>
             val durationMicros = durationInMicros(startTime)
             if (durationMicros >= logDbCallsExceedingMicros)
-              log.info("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
+              log.infoN("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
             r
           }
         }
@@ -316,10 +316,10 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
   }
 
   private def commitAndClose(connection: Connection): Future[Done] = {
-    connection.commitTransaction().asFutureDone().andThen(_ => connection.close().asFutureDone())
+    connection.commitTransaction().asFutureDone().andThen { case _ => connection.close().asFutureDone() }
   }
 
   private def rollbackAndClose(connection: Connection): Future[Done] = {
-    connection.rollbackTransaction().asFutureDone().andThen(_ => connection.close().asFutureDone())
+    connection.rollbackTransaction().asFutureDone().andThen { case _ => connection.close().asFutureDone() }
   }
 }
