@@ -7,10 +7,10 @@ package akka.persistence.r2dbc.state.scaladsl
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.Persistence
 import akka.persistence.query.DurableStateChange
@@ -144,7 +144,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debug(
+          log.debugN(
             "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
             state.queryCount,
             state.latestPid,

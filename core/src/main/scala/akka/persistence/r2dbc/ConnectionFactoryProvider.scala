@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
-import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
+import scala.collection.JavaConverters._
 
 import akka.Done
 import akka.actor.CoordinatedShutdown

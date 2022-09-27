@@ -12,7 +12,7 @@ This plugin depends on Akka $akka.version$ or later, and note that it is importa
 dependencies are in the same version, so it is recommended to depend on them explicitly to avoid problems 
 with transient dependencies causing an unlucky mix of versions.
 
-The plugin is published for Scala 2.13.
+The plugin is published for Scala 2.13 and 2.12.
 
 ## Enabling
 

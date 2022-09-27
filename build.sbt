@@ -31,7 +31,7 @@ inThisBuild(
 
 def common: Seq[Setting[_]] =
   Seq(
-    crossScalaVersions := Seq(Dependencies.Scala213),
+    crossScalaVersions := Seq(Dependencies.Scala213, Dependencies.Scala212),
     scalaVersion := Dependencies.Scala213,
     crossVersion := CrossVersion.binary,
     scalafmtOnCompile := true,

@@ -4,25 +4,20 @@
 
 package akka.persistence.r2dbc.state.scaladsl
 
-import java.time.Instant
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.concurrent.duration.Duration
-import scala.concurrent.duration.FiniteDuration
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.Dialect
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
@@ -30,6 +25,12 @@ import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
+import java.time.Instant
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * INTERNAL API
@@ -267,7 +268,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     if (log.isDebugEnabled())
       result.foreach(_ => log.debug("Deleted durable state for persistenceId [{}]", persistenceId))
 
-    result.map(_ => Done)(ExecutionContext.parasitic)
+    result.map(_ => Done)(ExecutionContexts.parasitic)
   }
 
   override def currentDbTimestamp(): Future[Instant] = {
@@ -335,7 +336,8 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           ))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows =>
+        log.debugN("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -401,7 +403,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debugN("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     result
 

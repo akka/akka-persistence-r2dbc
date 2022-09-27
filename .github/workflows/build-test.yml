@@ -33,6 +33,31 @@ jobs:
         run: |-
           sbt -jvm-opts .jvmopts-ci scalafmtCheckAll scalafmtSbtCheck headerCheck
 
+  compile-with-scala-2_12:
+    name: Compile with Scala 2.12
+    runs-on: ubuntu-18.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
+          fetch-depth: 0
+      - name: Checkout GitHub merge
+        if: github.event.pull_request
+        run: |-
+          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
+          git checkout scratch
+      - name: Set up JDK 11
+        uses: olafurpg/setup-scala@v10
+        with:
+          java-version: adopt@1.11.0-9
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v5
+      - name: Code style check and binary-compatibility check
+        run: |-
+          sbt -jvm-opts .jvmopts-ci ++2.12 compile Test/compile
+
   test-postgres:
     name: Run test with Postgres
     runs-on: ubuntu-18.04

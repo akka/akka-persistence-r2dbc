@@ -7,14 +7,13 @@ package akka.persistence.r2dbc.internal
 import scala.collection.immutable
 import java.time.Instant
 import java.time.{ Duration => JDuration }
-
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
@@ -216,7 +215,7 @@ import org.slf4j.Logger
         }
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debug(
+          log.debugN(
             "{} next query [{}] from slices [{} - {}], between time [{} - {}]. Found [{}] rows in previous query.",
             logPrefix,
             state.queryCount,
@@ -239,7 +238,7 @@ import org.slf4j.Logger
             .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
-          log.debug(
+          log.debugN(
             "{} query [{}] from slices [{} - {}] completed. Found [{}] rows in previous query.",
             logPrefix,
             state.queryCount,
@@ -255,7 +254,7 @@ import org.slf4j.Logger
       .futureSource[Envelope, NotUsed] {
         dao.currentDbTimestamp().map { currentDbTime =>
           if (log.isDebugEnabled())
-            log.debug(
+            log.debugN(
               "{} query slices [{} - {}], from time [{}] until now [{}].",
               logPrefix,
               minSlice,
@@ -283,7 +282,7 @@ import org.slf4j.Logger
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
-      log.debug(
+      log.debugN(
         "Starting {} query from slices [{} - {}], from time [{}].",
         logPrefix,
         minSlice,
@@ -318,7 +317,7 @@ import org.slf4j.Logger
 
         if (log.isDebugEnabled)
           delay.foreach { d =>
-            log.debug(
+            log.debugN(
               "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
               logPrefix,
               state.queryCount,
@@ -373,7 +372,7 @@ import org.slf4j.Logger
       val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize)
 
       if (log.isDebugEnabled())
-        log.debug(
+        log.debugN(
           "{} next query [{}]{} from slices [{} - {}], between time [{} - {}]. {}",
           logPrefix,
           newState.queryCount,
@@ -438,7 +437,7 @@ import org.slf4j.Logger
           val newState = state.copy(buckets = newBuckets)
           if (log.isDebugEnabled) {
             val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
-            log.debug(
+            log.debugN(
               "{} retrieved [{}] event count buckets, with a total of [{}], from slices [{} - {}], from time [{}]",
               logPrefix,
               counts.size,
@@ -469,7 +468,7 @@ import org.slf4j.Logger
               throw new IllegalStateException(
                 s"Too many events stored with the same timestamp [$currentTimestamp], buffer size [${settings.querySettings.bufferSize}]")
             }
-            log.trace(
+            log.traceN(
               "filtering [{}] [{}] as db timestamp is the same as last offset and is in seen [{}]",
               row.persistenceId,
               row.seqNr,

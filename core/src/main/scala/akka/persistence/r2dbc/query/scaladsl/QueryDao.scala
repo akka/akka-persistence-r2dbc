@@ -5,14 +5,13 @@
 package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.Dialect
@@ -197,7 +196,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] events from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debugN("Read [{}] events from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -235,7 +234,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debugN("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     result
   }
