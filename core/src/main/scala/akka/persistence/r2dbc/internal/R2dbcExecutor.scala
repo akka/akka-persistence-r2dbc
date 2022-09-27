@@ -58,7 +58,7 @@ import reactor.core.publisher.Mono
   def updateInTx(statements: immutable.IndexedSeq[Statement])(implicit
       ec: ExecutionContext): Future[immutable.IndexedSeq[Int]] =
     // connection not intended for concurrent calls, make sure statements are executed one at a time
-    statements.foldLeft(Future.successful(IndexedSeq.empty[Int].toIndexedSeq)) { (acc, stmt) =>
+    statements.foldLeft(Future.successful(Vector.empty[Int])) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
           res.getRowsUpdated.asFuture().map(seq :+ _.intValue())(ExecutionContexts.parasitic)
@@ -228,7 +228,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
         }
 
       mappedRows.failed.foreach { exc =>
-        log.debugN("{} - Select failed: {}", logPrefix, exc)
+        log.debug2("{} - Select failed: {}", logPrefix, exc)
         connection.close().asFutureDone()
       }
 
@@ -263,7 +263,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
 
         result.failed.foreach { exc =>
           if (log.isDebugEnabled())
-            log.debugN("{} - DB call failed: {}", logPrefix, exc.toString)
+            log.debug2("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
           rollbackAndClose(connection)
         }
@@ -298,7 +298,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
           }
 
         result.failed.foreach { exc =>
-          log.debugN("{} - DB call failed: {}", logPrefix, exc)
+          log.debug2("{} - DB call failed: {}", logPrefix, exc)
           // auto-commit so nothing to rollback
           connection.close().asFutureDone()
         }

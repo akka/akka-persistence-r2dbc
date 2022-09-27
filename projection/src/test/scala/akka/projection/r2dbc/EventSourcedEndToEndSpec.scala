@@ -109,7 +109,7 @@ object EventSourcedEndToEndSpec {
     private val log = LoggerFactory.getLogger(getClass)
 
     override def process(session: R2dbcSession, envelope: EventEnvelope[String]): Future[Done] = {
-      log.debugN("{} Processed {}", projectionId.key, envelope.event)
+      log.debug2("{} Processed {}", projectionId.key, envelope.event)
       probe ! Processed(projectionId, envelope)
       Future.successful(Done)
     }

@@ -225,7 +225,7 @@ class EventSourcedPubSubSpec
             p.envelope.offset.asInstanceOf[TimestampOffset].timestamp == p.envelope.offset
               .asInstanceOf[TimestampOffset]
               .readTimestamp)
-        log.infoN("via pub-sub {}: {}", pid, viaPubSub.map(_.envelope.sequenceNr).mkString(", "))
+        log.info2("via pub-sub {}: {}", pid, viaPubSub.map(_.envelope.sequenceNr).mkString(", "))
       }
 
       val countViaPubSub = processed.count(p =>

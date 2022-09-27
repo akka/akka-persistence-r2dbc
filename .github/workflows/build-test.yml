@@ -56,7 +56,7 @@ jobs:
         uses: coursier/cache-action@v5
       - name: Code style check and binary-compatibility check
         run: |-
-          sbt -jvm-opts .jvmopts-ci ++2.12.16 compile Test/compile
+          sbt -jvm-opts .jvmopts-ci ++2.12 compile Test/compile
 
   test-postgres:
     name: Run test with Postgres

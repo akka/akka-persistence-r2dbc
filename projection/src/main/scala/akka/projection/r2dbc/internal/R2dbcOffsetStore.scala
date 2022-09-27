@@ -495,8 +495,7 @@ private[projection] class R2dbcOffsetStore(
 
     require(records.nonEmpty)
 
-    // FIXME change to trace
-    logger.debugN("saving timestamp offset [{}], {}", records.last.timestamp, records)
+    logger.trace2("saving timestamp offset [{}], {}", records.last.timestamp, records)
 
     val statement = conn.createStatement(insertTimestampOffsetSql)
 
