@@ -22,6 +22,7 @@ import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
+import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -44,7 +45,7 @@ import scala.concurrent.duration.FiniteDuration
       revision: Long,
       dbTimestamp: Instant,
       readDbTimestamp: Instant,
-      payload: Array[Byte],
+      payload: Option[Array[Byte]],
       serId: Int,
       serManifest: String,
       tags: Set[String])
@@ -97,7 +98,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags, db_timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, transaction_timestamp())"""
 
-  private val updateStateSql: String = {
+  private def updateStateSql(updateTags: Boolean): String = {
     val timestamp =
       if (settings.dbTimestampMonotonicIncreasing)
         "transaction_timestamp()"
@@ -109,14 +110,16 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       if (settings.durableStateAssertSingleWriter) " AND revision = ?"
       else ""
 
+    val tags = if (updateTags) "tags = ?," else ""
+
     sql"""
       UPDATE $stateTable
-      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, tags = ?, db_timestamp = $timestamp
+      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?, $tags db_timestamp = $timestamp
       WHERE persistence_id = ?
       $revisionCondition"""
   }
 
-  private val deleteStateSql: String =
+  private val hardDeleteStateSql: String =
     sql"DELETE from $stateTable WHERE persistence_id = ?"
 
   private val currentDbTimestampSql =
@@ -145,7 +148,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
     val selectColumns =
       if (backtracking)
-        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp "
+        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id "
       else
         "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
@@ -171,18 +174,24 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
           revision = row.get("revision", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = Instant.EPOCH, // not needed here
-          payload = row.get("state_payload", classOf[Array[Byte]]),
+          payload = getPayload(row),
           serId = row.get("state_ser_id", classOf[Integer]),
           serManifest = row.get("state_ser_manifest", classOf[String]),
           tags = Set.empty // tags not fetched in queries (yet)
         ))
   }
 
-  def writeState(state: SerializedStateRow): Future[Done] = {
-    require(state.revision > 0)
+  private def getPayload(row: Row): Option[Array[Byte]] = {
+    val serId = row.get("state_ser_id", classOf[Integer])
+    val rowPayload = row.get("state_payload", classOf[Array[Byte]])
+    if (serId == 0 && (rowPayload == null || rowPayload.isEmpty))
+      None // delete marker
+    else
+      Option(rowPayload)
+  }
 
-    val entityType = PersistenceId.extractEntityType(state.persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
+  def upsertState(state: SerializedStateRow): Future[Done] = {
+    require(state.revision > 0)
 
     def bindTags(stmt: Statement, i: Int): Statement = {
       if (state.tags.isEmpty)
@@ -193,6 +202,9 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
     val result = {
       if (state.revision == 1) {
+        val entityType = PersistenceId.extractEntityType(state.persistenceId)
+        val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
+
         r2dbcExecutor
           .updateOne(s"insert [${state.persistenceId}]") { connection =>
             val stmt = connection
@@ -203,7 +215,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(3, state.revision)
               .bind(4, state.serId)
               .bind(5, state.serManifest)
-              .bind(6, state.payload)
+              .bind(6, state.payload.getOrElse(Array.emptyByteArray))
             bindTags(stmt, 7)
           }
           .recoverWith { case _: R2dbcDataIntegrityViolationException =>
@@ -216,11 +228,11 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
         r2dbcExecutor.updateOne(s"update [${state.persistenceId}]") { connection =>
           val stmt = connection
-            .createStatement(updateStateSql)
+            .createStatement(updateStateSql(updateTags = true))
             .bind(0, state.revision)
             .bind(1, state.serId)
             .bind(2, state.serManifest)
-            .bind(3, state.payload)
+            .bind(3, state.payload.getOrElse(Array.emptyByteArray))
           bindTags(stmt, 4)
 
           if (settings.dbTimestampMonotonicIncreasing) {
@@ -257,16 +269,89 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
     }
   }
 
-  def deleteState(persistenceId: String): Future[Done] = {
+  def deleteState(persistenceId: String, revision: Long): Future[Done] = {
+    if (revision == 0) {
+      hardDeleteState(persistenceId)
+    } else {
+      val result = {
+        if (revision == 1) {
+          val entityType = PersistenceId.extractEntityType(persistenceId)
+          val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+
+          r2dbcExecutor
+            .updateOne(s"insert delete marker [$persistenceId]") { connection =>
+              connection
+                .createStatement(insertStateSql)
+                .bind(0, slice)
+                .bind(1, entityType)
+                .bind(2, persistenceId)
+                .bind(3, revision)
+                .bind(4, 0)
+                .bind(5, "")
+                .bind(6, Array.emptyByteArray)
+                .bindNull(7, classOf[Array[String]])
+            }
+            .recoverWith { case _: R2dbcDataIntegrityViolationException =>
+              Future.failed(new IllegalStateException(
+                s"Insert delete marker with revision 1 failed: durable state for persistence id [$persistenceId] already exists"))
+            }
+        } else {
+          val previousRevision = revision - 1
+
+          r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
+            val stmt = connection
+              .createStatement(updateStateSql(updateTags = false))
+              .bind(0, revision)
+              .bind(1, 0)
+              .bind(2, "")
+              .bind(3, Array.emptyByteArray)
+
+            if (settings.dbTimestampMonotonicIncreasing) {
+              if (settings.durableStateAssertSingleWriter)
+                stmt
+                  .bind(4, persistenceId)
+                  .bind(5, previousRevision)
+              else
+                stmt
+                  .bind(4, persistenceId)
+            } else {
+              stmt
+                .bind(4, persistenceId)
+                .bind(5, previousRevision)
+                .bind(6, persistenceId)
+
+              if (settings.durableStateAssertSingleWriter)
+                stmt.bind(7, previousRevision)
+              else
+                stmt
+            }
+          }
+        }
+      }
+
+      result.map { updatedRows =>
+        if (updatedRows != 1)
+          throw new IllegalStateException(
+            s"Delete failed: durable state for persistence id [${persistenceId}] could not be updated to revision [${revision}]")
+        else {
+          log.debug("Deleted durable state for persistenceId [{}] to revision [{}]", persistenceId, revision)
+          Done
+        }
+      }
+
+    }
+  }
+
+  private def hardDeleteState(persistenceId: String): Future[Done] = {
     val result =
-      r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
+      r2dbcExecutor.updateOne(s"hard delete [$persistenceId]") { connection =>
         connection
-          .createStatement(deleteStateSql)
+          .createStatement(hardDeleteStateSql)
           .bind(0, persistenceId)
       }
 
     if (log.isDebugEnabled())
-      result.foreach(_ => log.debug("Deleted durable state for persistenceId [{}]", persistenceId))
+      result.foreach(_ => log.debug("Hard deleted durable state for persistenceId [{}]", persistenceId))
 
     result.map(_ => Done)(ExecutionContexts.parasitic)
   }
@@ -312,24 +397,31 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
         stmt
       },
       row =>
-        if (backtracking)
+        if (backtracking) {
+          val serId = row.get("state_ser_id", classOf[Integer])
+          // would have been better with an explicit deleted column as in the journal table,
+          // but not worth the schema change
+          val isDeleted = serId == 0
+
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get("revision", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = null, // lazy loaded for backtracking
+            // payload = null => lazy loaded for backtracking (ugly, but not worth changing UpdatedDurableState in Akka)
+            // payload = None => DeletedDurableState (no lazy loading)
+            payload = if (isDeleted) None else null,
             serId = 0,
             serManifest = "",
             tags = Set.empty // tags not fetched in queries (yet)
           )
-        else
+        } else
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get("revision", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = row.get("state_payload", classOf[Array[Byte]]),
+            payload = getPayload(row),
             serId = row.get("state_ser_id", classOf[Integer]),
             serManifest = row.get("state_ser_manifest", classOf[String]),
             tags = Set.empty // tags not fetched in queries (yet)

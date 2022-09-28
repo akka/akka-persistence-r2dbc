@@ -135,12 +135,16 @@ Java
 Scala
 :  @@snip [create](/docs/src/test/scala/docs/home/query/QueryDocCompileOnly.scala) { #currentChangesBySlices }
 
-The emitted `DurableStateChange` can be a `UpdatedDurableState` or `DeletedDurableState`, but `DeletedDurableState` is not implemented yet.
+The emitted `DurableStateChange` can be a `UpdatedDurableState` or `DeletedDurableState`.
 
 It will emit an `UpdatedDurableState` when the durable state is updated. When the state is updated again another
 `UpdatedDurableState` is emitted. It will always emit an `UpdatedDurableState` for the latest revision of the state,
 but there is no guarantee that all intermediate changes are emitted if the state is updated several times. Note that
 `UpdatedDurableState` contains the full current state, and it is not a delta from previous revision of state.
+
+It will emit an `DeletedDurableState` when the durable state is deleted. When the state is updated again a new
+`UpdatedDurableState` is emitted. There is no guarantee that all intermediate changes are emitted if the state is
+updated or deleted several times.
 
 `changesBySlices` should be used via @ref:[R2dbcProjection](projection.md), which will automatically handle the similar difficulties
 with duplicates as described for @ref[eventsBySlices](#eventsbyslices). When using `R2dbcProjection` the changes
