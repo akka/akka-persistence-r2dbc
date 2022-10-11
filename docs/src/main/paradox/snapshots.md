@@ -29,3 +29,11 @@ The following can be overridden in your `application.conf` for the snapshot spec
 
 The snapshot plugin is used whenever a snapshot write is triggered through the
 @extref:[Akka Persistence APIs](akka:typed/persistence-snapshot.html).
+
+## Retention
+
+The R2DBC snapshot plugin only ever keeps *one* snapshot per persistence id in the database. 
+If a `keepNSnapshots > 1` is specified for an `EventSourcedBehavior` that setting will be ignored.
+
+The reason for this is that there is no real benefit to keep multiple snapshots around on a relational 
+database with a high consistency.
