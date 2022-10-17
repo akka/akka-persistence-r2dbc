@@ -10,7 +10,7 @@ on:
 jobs:
   check-code-style:
     name: Checks
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
 
   compile-with-scala-2_12:
     name: Compile with Scala 2.12
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -60,7 +60,7 @@ jobs:
 
   test-postgres:
     name: Run test with Postgres
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -94,7 +94,7 @@ jobs:
 
   test-yugabyte:
     name: Run tests with Yugabyte
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -128,7 +128,7 @@ jobs:
 
   test-docs:
     name: Docs
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
