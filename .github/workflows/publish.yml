@@ -9,7 +9,7 @@ on:
 jobs:
   sbt:
     name: sbt publish
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -37,7 +37,7 @@ jobs:
 
   documentation:
     name: Documentation
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
