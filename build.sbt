@@ -67,6 +67,8 @@ lazy val root = (project in file("."))
   .settings(
     name := "akka-persistence-r2dbc-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
+  .enablePlugins(ScalaUnidocPlugin)
+  .disablePlugins(SitePlugin)
   .aggregate(core, projection, migration, docs)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
@@ -103,14 +105,17 @@ lazy val migration = (project in file("migration"))
 
 lazy val docs = project
   .in(file("docs"))
-  .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PublishRsyncPlugin)
+  .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PreprocessPlugin, PublishRsyncPlugin)
   .dependsOn(core, projection, migration)
   .settings(common)
   .settings(dontPublish)
   .settings(
     name := "Akka Persistence R2DBC",
     libraryDependencies ++= Dependencies.docs,
+    makeSite := makeSite.dependsOn(LocalRootProject / ScalaUnidoc / doc).value,
     previewPath := (Paradox / siteSubdirName).value,
+    Preprocess / siteSubdirName := s"api/akka-projection/${projectInfoVersion.value}",
+    Preprocess / sourceDirectory := (LocalRootProject / ScalaUnidoc / unidoc / target).value,
     Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
     paradoxGroups := Map("Language" -> Seq("Java", "Scala")),
     Compile / paradoxProperties ++= Map(
