@@ -7,9 +7,10 @@ import sbt._
 object Dependencies {
   val Scala212 = "2.12.17"
   val Scala213 = "2.13.10"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.7.0-M5")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.7.0")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.3.0-M4"
+  val AkkaProjectionVersion = "1.3.0"
+  val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
 
   object Compile {
@@ -20,9 +21,9 @@ object Dependencies {
 
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
 
-    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE"
-    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.2.RELEASE"
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.2.RELEASE"
+    val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "0.9.1.RELEASE" // ApacheV2
+    val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "0.9.2.RELEASE" // ApacheV2
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "0.9.2.RELEASE" // ApacheV2
   }
 
   object TestDeps {
@@ -39,7 +40,7 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.5.0" % Test
+    val postgresql = "org.postgresql" % "postgresql" % "42.5.0" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
@@ -79,7 +80,7 @@ object Dependencies {
 
   val migration =
     Seq(
-      "com.lightbend.akka" %% "akka-persistence-jdbc" % "5.1.0" % Test,
+      "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,
       TestDeps.scalaTest)
