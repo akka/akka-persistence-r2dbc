@@ -19,6 +19,7 @@ Key links:
 - [ ] Check that open PRs and issues assigned to the milestone are reasonable
 - [ ] Create a new milestone for the [next version](https://github.com/akka/akka-persistence-r2dbc/milestones)
 - [ ] Close the [$VERSION$ milestone](https://github.com/akka/akka-persistence-r2dbc/milestones?direction=asc&sort=due_date)
+- [ ] For minor or major versions, update the Change date in the LICENSE file and update the `licenses` url in the build.
 - [ ] Make sure all important PRs have been merged
 - [ ] Wait until [main build finished](https://github.com/akka/akka-persistence-r2dbc/actions) after merging the latest PR
 - [ ] Update the [draft release](https://github.com/akka/akka-persistence-r2dbc/releases) with the next tag version `v$VERSION$`, title and release description. Use the `Publish release` button, which will create the tag.
