@@ -9,12 +9,9 @@ The documentation can be found [here](https://doc.akka.io/docs/akka-persistence-
 
 ## Project status
 
-Under development.
+This library is ready to be used in production, APIs are stable, and the Lightbend subscription covers support for this project.
 
 ## License
 
-Akka Persistence Cassandra is licensed under the Business Source License 1.1, see LICENSE.
+Akka Persistence R2DBC is licensed under the Business Source License 1.1, see LICENSE.
 
-## Support
-
-This project is under development and not ready for production usage yet. The Lightbend subscription does not cover support for this project.
