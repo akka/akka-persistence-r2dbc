@@ -31,7 +31,7 @@ import org.slf4j.Logger
 
   object QueryState {
     val empty: QueryState =
-      QueryState(TimestampOffset.Zero, 0, 0, 0, backtracking = false, TimestampOffset.Zero, Buckets.empty)
+      QueryState(TimestampOffset.Zero, 0, 0, 0, backtrackingCount = 0, TimestampOffset.Zero, Buckets.empty)
   }
 
   final case class QueryState(
@@ -39,9 +39,11 @@ import org.slf4j.Logger
       rowCount: Int,
       queryCount: Long,
       idleCount: Long,
-      backtracking: Boolean,
+      backtrackingCount: Int,
       latestBacktracking: TimestampOffset,
       buckets: Buckets) {
+
+    def backtracking: Boolean = backtrackingCount > 0
 
     def currentOffset: TimestampOffset =
       if (backtracking) latestBacktracking
@@ -331,7 +333,8 @@ import org.slf4j.Logger
     }
 
     def switchFromBacktracking(state: QueryState): Boolean = {
-      state.backtracking && state.rowCount < settings.querySettings.bufferSize - 1
+      // backtrackingCount is for fairness, to not run too many backtracking queries in a row
+      state.backtracking && (state.backtrackingCount >= 3 || state.rowCount < settings.querySettings.bufferSize - 1)
     }
 
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
@@ -354,14 +357,19 @@ import org.slf4j.Logger
             rowCount = 0,
             queryCount = state.queryCount + 1,
             idleCount = newIdleCount,
-            backtracking = true,
+            backtrackingCount = 1,
             latestBacktracking = fromOffset)
         } else if (switchFromBacktracking(state)) {
           // switch from backtracking
-          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount, backtracking = false)
+          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount, backtrackingCount = 0)
         } else {
           // continue
-          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount)
+          val newBacktrackingCount = if (state.backtracking) state.backtrackingCount + 1 else 0
+          state.copy(
+            rowCount = 0,
+            queryCount = state.queryCount + 1,
+            idleCount = newIdleCount,
+            backtrackingCount = newBacktrackingCount)
         }
 
       val behindCurrentTime =
