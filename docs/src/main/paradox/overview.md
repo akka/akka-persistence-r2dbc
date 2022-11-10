@@ -8,13 +8,6 @@ It is specifically designed to work well for distributed SQL databases.
 [Create an issue](https://github.com/akka/akka-persistence-r2dbc/issues) if you would like to @ref[contribute](contributing.md)
 support for other databases that has a [R2DBC driver](https://r2dbc.io/drivers/).
 
-@@@ warning
-
-The project is currently under development and there are no guarantees for binary compatibility
-and the schema may change.
-
-@@@
-
 ## Project Info
 
 @@project-info{ projectId="core" }
