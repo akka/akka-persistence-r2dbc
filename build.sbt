@@ -19,9 +19,7 @@ inThisBuild(
       "Contributors",
       "https://gitter.im/akka/dev",
       url("https://github.com/akka/akka-persistence-r2dbc/graphs/contributors")),
-    licenses := Seq(
-      ("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))
-    ), // FIXME change s/main/v1.0.1/ when released
+    licenses := Seq(("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/v1.0.1/LICENSE"))),
     description := "An Akka Persistence backed by SQL database with R2DBC",
     // add snapshot repo when Akka version overriden
     resolvers ++=
