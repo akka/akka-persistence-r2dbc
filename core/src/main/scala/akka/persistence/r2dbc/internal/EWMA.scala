@@ -6,7 +6,11 @@ package akka.persistence.r2dbc.internal
 
 import scala.concurrent.duration.FiniteDuration
 
+import akka.annotation.InternalApi
+
 /**
+ * INTERNAL API
+ *
  * The exponentially weighted moving average (EWMA) approach captures short-term movements in volatility for a
  * conditional volatility forecasting model. By virtue of its alpha, or decay factor, this provides a statistical
  * streaming data model that is exponentially biased towards newer entries.
@@ -26,7 +30,7 @@ import scala.concurrent.duration.FiniteDuration
  *   the current exponentially weighted moving average, e.g. Y(n - 1), or, the sampled value resulting from the previous
  *   smoothing iteration. This value is always used as the previous EWMA to calculate the new EWMA.
  */
-final case class EWMA(value: Double, alpha: Double) {
+@InternalApi private[akka] final case class EWMA(value: Double, alpha: Double) {
 
   require(0.0 <= alpha && alpha <= 1.0, "alpha must be between 0.0 and 1.0")
 
@@ -47,7 +51,10 @@ final case class EWMA(value: Double, alpha: Double) {
 
 }
 
-object EWMA {
+/**
+ * INTERNAL API
+ */
+@InternalApi private[akka] object EWMA {
 
   /**
    * math.log(2)
