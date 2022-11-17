@@ -133,3 +133,12 @@ final class ConnectionFactorySettings(config: Config) {
 
   val statementCacheSize: Int = config.getInt("statement-cache-size")
 }
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+final class PublishEventsDynamicSettings(config: Config) {
+  val throughputThreshold: Int = config.getInt("throughput-threshold")
+  val throughputCollectInterval: FiniteDuration = config.getDuration("throughput-collect-interval").asScala
+}

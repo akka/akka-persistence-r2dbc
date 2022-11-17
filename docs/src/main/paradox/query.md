@@ -94,16 +94,22 @@ The `eventsBySlices` query polls the database periodically to find new events. B
 few seconds, see `akka.persistence.r2dbc.query.refresh-interval` in the @ref:[Configuration](#configuration).
 This interval can be reduced for lower latency, with the drawback of querying the database more frequently.
 
-If you need latency below a few 100 milliseconds you can enable a feature that will publish the events within
-the Akka Cluster instead of reducing `refresh-interval`. Running `eventsBySlices` will subscribe to the events
-and emit them directly without waiting for next query poll. The tradeoff is that more CPU and network resources
-are used. The events must still be retrieved from the database, but at a lower polling frequency,
-because delivery of published messages are not guaranteed.
+To reduce the latency there is a feature that will publish the events within the Akka Cluster. Running
+`eventsBySlices` will subscribe to the events and emit them directly without waiting for next query poll.
+The tradeoff is that more CPU and network resources are used. The events must still be retrieved from the database,
+but at a lower polling frequency, because delivery of published messages are not guaranteed.
 
-Enable publishing of events with configuration:
+This feature is enabled by default and it will measure the throughput and automatically disable/enable if
+the exponentially weighted moving average of measured throughput exceeds the configured threshold.
 
 ```
-akka.persistence.r2dbc.journal.publish-events = on
+akka.persistence.r2dbc.publish-events-dynamic.throughput-threshold = 300
+```
+
+Disable publishing of events with configuration:
+
+```
+akka.persistence.r2dbc.journal.publish-events = off
 ```
 
 ## Durable state queries
