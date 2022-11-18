@@ -103,7 +103,7 @@ This feature is enabled by default and it will measure the throughput and automa
 the exponentially weighted moving average of measured throughput exceeds the configured threshold.
 
 ```
-akka.persistence.r2dbc.publish-events-dynamic.throughput-threshold = 300
+akka.persistence.r2dbc.journal.publish-events-dynamic.throughput-threshold = 400
 ```
 
 Disable publishing of events with configuration:
