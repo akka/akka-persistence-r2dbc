@@ -5,7 +5,9 @@
 package akka.persistence.r2dbc.query
 
 import java.time.Instant
+
 import scala.concurrent.duration._
+
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -23,11 +25,20 @@ import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
+import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
 
+object EventsBySliceBacktrackingSpec {
+  private val config = ConfigFactory
+    .parseString("""
+    akka.persistence.r2dbc.journal.publish-events = off
+    """)
+    .withFallback(TestConfig.config)
+}
+
 class EventsBySliceBacktrackingSpec
-    extends ScalaTestWithActorTestKit(TestConfig.config)
+    extends ScalaTestWithActorTestKit(EventsBySliceBacktrackingSpec.config)
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData

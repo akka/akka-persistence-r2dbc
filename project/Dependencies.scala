@@ -27,6 +27,7 @@ object Dependencies {
   }
 
   object TestDeps {
+    val akkaStreamTyped = "com.typesafe.akka" %% "akka-stream-typed" % AkkaVersion % Test
     val akkaPersistenceTyped = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion % Test
     val akkaShardingTyped = "com.typesafe.akka" %% "akka-cluster-sharding-typed" % AkkaVersion % Test
     val akkaPersistenceTck = "com.typesafe.akka" %% "akka-persistence-tck" % AkkaVersion % Test
@@ -60,6 +61,7 @@ object Dependencies {
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
     TestDeps.akkaJackson,
+    TestDeps.akkaStreamTyped,
     TestDeps.logback,
     TestDeps.scalaTest)
 

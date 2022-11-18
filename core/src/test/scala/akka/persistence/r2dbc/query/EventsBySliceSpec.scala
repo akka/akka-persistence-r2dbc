@@ -53,6 +53,8 @@ object EventsBySliceSpec {
     akka.persistence.r2dbc.query.behind-current-time = 500 millis
     akka.persistence.r2dbc-small-buffer = $${akka.persistence.r2dbc}
 
+    akka.persistence.r2dbc.journal.publish-events = off
+
     # this is used by the "read in chunks" test
     akka.persistence.r2dbc-small-buffer.query {
       buffer-size = 4
