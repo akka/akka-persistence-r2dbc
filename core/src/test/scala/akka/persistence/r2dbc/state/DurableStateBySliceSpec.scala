@@ -179,6 +179,12 @@ class DurableStateBySliceSpec
         persister ! DeleteWithAck(probe.ref)
         probe.expectMessage(10.seconds, Done)
 
+        // FIXME can be removed when updating to Akka 2.8, issue https://github.com/akka/akka/pull/31753
+        if (queryType == queryType) {
+          // let the delete be written to the database
+          Thread.sleep(3000)
+        }
+
         val deletedDurableStateProbe = createTestProbe[DeletedDurableState[String]]()
 
         val done =
