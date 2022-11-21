@@ -1,3 +1,5 @@
+import com.typesafe.tools.mima.plugin.MimaKeys.mimaPreviousArtifacts
+import com.typesafe.tools.mima.plugin.MimaKeys.mimaReportSignatureProblems
 import sbt.Keys.parallelExecution
 import xerial.sbt.Sonatype.autoImport.sonatypeProfileName
 
@@ -55,7 +57,14 @@ def common: Seq[Setting[_]] =
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     },
     projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value),
-    Global / excludeLintKeys += projectInfoVersion)
+    Global / excludeLintKeys += projectInfoVersion,
+    Global / excludeLintKeys += mimaReportSignatureProblems,
+    Global / excludeLintKeys += mimaPreviousArtifacts,
+    mimaReportSignatureProblems := true,
+    mimaPreviousArtifacts :=
+      Set(
+        organization.value %% moduleName.value % previousStableVersion.value
+          .getOrElse(throw new Error("Unable to determine previous version"))))
 
 lazy val dontPublish = Seq(publish / skip := true, Compile / publishArtifact := false)
 
@@ -66,7 +75,7 @@ lazy val root = (project in file("."))
     name := "akka-persistence-r2dbc-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
   .enablePlugins(ScalaUnidocPlugin)
-  .disablePlugins(SitePlugin)
+  .disablePlugins(SitePlugin, MimaPlugin)
   .aggregate(core, projection, migration, docs)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
@@ -100,10 +109,12 @@ lazy val migration = (project in file("migration"))
     })
   .dependsOn(core % "compile->compile;test->test")
   .enablePlugins(AutomateHeaderPlugin)
+  .disablePlugins(MimaPlugin)
 
 lazy val docs = project
   .in(file("docs"))
   .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PreprocessPlugin, PublishRsyncPlugin)
+  .disablePlugins(MimaPlugin)
   .dependsOn(core, projection, migration)
   .settings(common)
   .settings(dontPublish)
