@@ -11,7 +11,7 @@ Variables to be expanded in this template:
 - $VERSION$=???
 
 Key links:
-  - akka/akka-persistence-r2dbc milestone: https://github.com/akka/akka-peristence-r2dbc/milestone/?
+  - akka/akka-persistence-r2dbc milestone: https://github.com/akka/akka-persistence-r2dbc/milestone/?
 -->
 
 ### Cutting the release
