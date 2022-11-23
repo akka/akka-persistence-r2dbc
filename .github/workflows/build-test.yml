@@ -7,6 +7,9 @@ on:
       - main
     tags-ignore: [ v.* ]
 
+permissions:
+  contents: read
+
 jobs:
   check-code-style:
     name: Checks
@@ -57,10 +60,10 @@ jobs:
       - name: Cache Coursier cache
         uses: coursier/cache-action@v6.4.0
 
-      - name: Set up JDK 17
+      - name: Set up JDK 8
         uses: coursier/setup-action@v1.3.0
         with:
-          jvm: temurin:1.11.0
+          jvm: temurin:1.8.0
 
       - name: Code style check and binary-compatibility check
         run: |-

@@ -1,0 +1,125 @@
+name: Nightly Builds
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-postgres:
+    name: Run test with Postgres
+    runs-on: ubuntu-22.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # cover relevant combinations when combined with the matrix Yugabyte tests
+          - { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '' }
+          # { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
+          - { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+          # { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '' }
+          # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
+          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK ${{ matrix.jdkVersion }}
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: ${{ matrix.jvmName }}
+
+      - name: Start DB
+        run: |-
+          docker-compose -f docker/docker-compose-postgres.yml up -d
+          # TODO: could we poll the port instead of sleep?
+          sleep 10
+          docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt ++${{ matrix.scalaVersion }} \
+            test ${{ matrix.extraOpts }}
+
+      - name: Email on failure
+        if: ${{ failure() }}
+        uses: dawidd6/action-send-mail@6063705cefe50cb915fc53bb06d4049cae2953b2
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{secrets.MAIL_USERNAME}}
+          password: ${{secrets.MAIL_PASSWORD}}
+          subject: "Failed: ${{ github.workflow }} / ${{ github.job }}"
+          to: ${{secrets.MAIL_SEND_TO}}
+          from: AP R2DBC CI
+          body: |
+            Job ${{ github.job }} in workflow ${{ github.workflow }} of ${{github.repository}} failed!
+            https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+
+  test-yugabyte:
+    name: Run tests with Yugabyte
+    runs-on: ubuntu-22.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # cover relevant combinations when combined with the matrix Postgres tests
+          # { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '' }
+          - { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
+          # { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+          - { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '' }
+          - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
+          # { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK ${{ matrix.jdkVersion }}
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: ${{ matrix.jvmName }}
+
+      - name: Start DB
+        run: |-
+          docker-compose -f docker/docker-compose-yugabyte.yml up -d
+          # TODO: could we poll the port instead of sleep?
+          sleep 10
+          docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
+
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt ++${{ matrix.scalaVersion }} \
+            -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte \
+            test ${{ matrix.extraOpts }}
+
+      - name: Email on failure
+        if: ${{ failure() }}
+        uses: dawidd6/action-send-mail@6063705cefe50cb915fc53bb06d4049cae2953b2
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{secrets.MAIL_USERNAME}}
+          password: ${{secrets.MAIL_PASSWORD}}
+          subject: "Failed: ${{ github.workflow }} / ${{ github.job }}"
+          to: ${{secrets.MAIL_SEND_TO}}
+          from: AP R2DBC CI
+          body: |
+            Job ${{ github.job }} in workflow ${{ github.workflow }} of ${{github.repository}} failed!
+            https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
