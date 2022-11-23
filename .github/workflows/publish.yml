@@ -6,6 +6,9 @@ on:
       - main
     tags: ["*"]
 
+permissions:
+  contents: read
+
 jobs:
   sbt:
     name: sbt publish
