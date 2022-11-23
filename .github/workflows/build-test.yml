@@ -14,24 +14,29 @@ jobs:
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
+
       - name: Checkout GitHub merge
         if: github.event.pull_request
         run: |-
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
           git checkout scratch
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
+
       - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 17
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.17.0
+
       - name: Code style check and binary-compatibility check
         run: |-
-          sbt -jvm-opts .jvmopts-ci scalafmtCheckAll scalafmtSbtCheck headerCheck
+          cp .jvmopts-ci .jvmopts
+          sbt scalafmtCheckAll scalafmtSbtCheck headerCheck
 
   compile-with-scala-2_12:
     name: Compile with Scala 2.12
@@ -39,7 +44,7 @@ jobs:
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
@@ -48,15 +53,19 @@ jobs:
         run: |-
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
           git checkout scratch
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
+
       - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 17
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
+
       - name: Code style check and binary-compatibility check
         run: |-
-          sbt -jvm-opts .jvmopts-ci ++2.12 compile Test/compile
+          cp .jvmopts-ci .jvmopts
+          sbt ++2.12 compile Test/compile
 
   test-postgres:
     name: Run test with Postgres
@@ -64,7 +73,7 @@ jobs:
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           fetch-depth: 0
 
@@ -74,13 +83,13 @@ jobs:
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
           git checkout scratch
 
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
-
       - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 11
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
 
       - name: Start DB
         run: |-
@@ -89,8 +98,10 @@ jobs:
           sleep 10
           docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
-      - name: test
-        run: sbt test
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt test
 
   test-yugabyte:
     name: Run tests with Yugabyte
@@ -98,7 +109,7 @@ jobs:
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           fetch-depth: 0
 
@@ -108,13 +119,13 @@ jobs:
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
           git checkout scratch
 
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
-
       - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 11
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
 
       - name: Start DB
         run: |-
@@ -123,8 +134,10 @@ jobs:
           sleep 10
           docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
 
-      - name: test
-        run: sbt -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte test
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte test
 
   test-docs:
     name: Docs
@@ -132,20 +145,25 @@ jobs:
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           fetch-depth: 0
+
       - name: Checkout GitHub merge
         if: github.event.pull_request
         run: |-
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
           git checkout scratch
-      - name: Set up JDK 11
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.11.0-9
+
       - name: Cache Coursier cache
-        uses: coursier/cache-action@v5
-      - name: Test Maven Java
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 11
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
+
+      - name: Run Paradox
         run: |-
-          sbt -jvm-opts .jvmopts-ci docs/paradox
+          cp .jvmopts-ci .jvmopts
+          sbt docs/paradox
