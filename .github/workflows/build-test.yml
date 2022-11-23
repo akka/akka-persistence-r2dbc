@@ -42,7 +42,7 @@ jobs:
           sbt scalafmtCheckAll scalafmtSbtCheck headerCheck
 
   compile-with-scala-2_12:
-    name: Compile with Scala 2.12 on JDK 8
+    name: Compile with Scala 2.12
     runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
@@ -71,7 +71,7 @@ jobs:
           sbt ++2.12 compile Test/compile
 
   test-postgres:
-    name: Run test with Postgres on JDK 11
+    name: Run test with Postgres
     runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
@@ -107,7 +107,7 @@ jobs:
           sbt test
 
   test-yugabyte:
-    name: Run tests with Yugabyte on JDK 11
+    name: Run tests with Yugabyte
     runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
