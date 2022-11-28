@@ -44,7 +44,7 @@ object TestClock {
    * Increase the clock with this duration (truncated to the resolution)
    */
   def tick(duration: Duration): Instant = {
-    val newInstant = _instant.plus(duration.truncatedTo(resolution))
+    val newInstant = _instant.plus(duration).truncatedTo(resolution)
     _instant = newInstant
     newInstant
   }
