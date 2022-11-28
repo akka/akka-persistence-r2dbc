@@ -28,6 +28,7 @@ import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -109,7 +110,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
     def atomicWrite(atomicWrite: AtomicWrite): Future[Instant] = {
-      val timestamp = if (journalSettings.useAppTimestamp) Instant.now() else JournalDao.EmptyDbTimestamp
+      val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
           val (event, tags) = pr.payload match {

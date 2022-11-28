@@ -20,6 +20,7 @@ import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -87,7 +88,7 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
-      val startTime = Instant.now().minusSeconds(10 * 60)
+      val startTime = InstantFactory.now().minusSeconds(10 * 60)
 
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")

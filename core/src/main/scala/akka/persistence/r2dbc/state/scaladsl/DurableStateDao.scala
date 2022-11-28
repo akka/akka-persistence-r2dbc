@@ -26,12 +26,14 @@ import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
+import akka.persistence.r2dbc.internal.InstantFactory
 
 /**
  * INTERNAL API
@@ -470,7 +472,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
       limit: Int): Future[Seq[Bucket]] = {
 
     val toTimestamp = {
-      val now = Instant.now() // not important to use database time
+      val now = InstantFactory.now() // not important to use database time
       if (fromTimestamp == Instant.EPOCH)
         now
       else {
