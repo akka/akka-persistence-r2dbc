@@ -15,7 +15,7 @@ import org.scalatest.wordspec.AnyWordSpec
 
 class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
 
-  private val startTime = Instant.now()
+  private val startTime = InstantFactory.now()
   private val firstBucketStartTime = startTime.plusSeconds(60)
   private val firstBucketStartEpochSeconds = firstBucketStartTime.toEpochMilli / 1000
 
