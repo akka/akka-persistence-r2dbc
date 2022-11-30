@@ -279,14 +279,12 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
           r2dbcExecutor
             .update(s"delete [$persistenceId]") { connection =>
-              val deleteStatement = connection
-                .createStatement(deleteEventsSql)
-                .bind(0, persistenceId)
-                .bind(1, toSequenceNr)
-              if (neverUsePersistenceIdAgain)
-                Vector(deleteStatement)
-              else
-                Vector(deleteStatement, bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
+              Vector(
+                connection
+                  .createStatement(deleteEventsSql)
+                  .bind(0, persistenceId)
+                  .bind(1, toSequenceNr),
+                bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
             }
             .map(_.head)
         }
