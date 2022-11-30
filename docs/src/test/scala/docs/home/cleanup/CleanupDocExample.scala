@@ -21,7 +21,10 @@ object CleanupDocExample {
   val persistenceIdParallelism = 10
 
   // forall persistence ids, delete all events before the snapshot
-  queries.currentPersistenceIds().mapAsync(persistenceIdParallelism)(pid => cleanup.cleanupBeforeSnapshot(pid)).run()
+  queries
+    .currentPersistenceIds()
+    .mapAsync(persistenceIdParallelism)(pid => cleanup.cleanupBeforeSnapshot(pid))
+    .run()
 
   //#cleanup
 

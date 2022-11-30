@@ -14,6 +14,7 @@ import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
+import akka.annotation.InternalApi
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
@@ -22,8 +23,9 @@ import akka.persistence.r2dbc.snapshot.SnapshotDao
 import org.slf4j.LoggerFactory
 
 /**
- * Tool for deleting all events and/or snapshots for a given list of `persistenceIds` without using persistent actors.
- * It's important that the actors with corresponding `persistenceId` are not running at the same time as using the tool.
+ * Scala API: Tool for deleting all events and/or snapshots for a given list of `persistenceIds` without using
+ * persistent actors. It's important that the actors with corresponding `persistenceId` are not running at the same time
+ * as using the tool.
  *
  * WARNING: deleting events is generally discouraged in event sourced systems.
  *
@@ -37,13 +39,15 @@ import org.slf4j.LoggerFactory
 @ApiMayChange
 final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, configPath: String) {
 
-  // FIXME javadsl
   // FIXME add DurableStateCleanup
 
   def this(systemProvider: ClassicActorSystemProvider) =
     this(systemProvider, "akka.persistence.r2dbc.cleanup")
 
-  private implicit val system: ActorSystem[_] = {
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] implicit val system: ActorSystem[_] = {
     import akka.actor.typed.scaladsl.adapter._
     systemProvider.classicSystem.toTyped
   }
@@ -65,9 +69,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.
    *
    * @param persistenceId
-   * the persistence id to delete for
+   *   the persistence id to delete for
    * @param toSequenceNr
-   * sequence nr (inclusive) to delete up to
+   *   sequence nr (inclusive) to delete up to
    */
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long): Future[Done] = {
     log.debug("deleteEventsTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
@@ -143,9 +147,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   }
 
   private def foreach(
-    persistenceIds: immutable.Seq[String],
-    operationName: String,
-    pidOperation: String => Future[Done]): Future[Done] = {
+      persistenceIds: immutable.Seq[String],
+      operationName: String,
+      pidOperation: String => Future[Done]): Future[Done] = {
     val size = persistenceIds.size
     log.info("Cleanup started {} of [{}] persistenceId.", operationName, size)
 

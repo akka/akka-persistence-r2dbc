@@ -31,7 +31,7 @@ not emit further events after that and typically stop itself if it receives more
 The cleanup tool can be combined with the @ref[query plugin](./query.md) which has a query to get all persistence ids.
 
 Java
-: TODO
+: @@snip [cleanup](/docs/src/test/java/jdocs/home/cleanup/CleanupDocExample.java) { #cleanup }
 
 Scala
 : @@snip [cleanup](/docs/src/test/scala/docs/home/cleanup/CleanupDocExample.scala) { #cleanup }
