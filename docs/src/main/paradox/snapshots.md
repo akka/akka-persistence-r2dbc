@@ -40,4 +40,4 @@ is specified for an `EventSourcedBehavior` that setting will be ignored.
 The reason for this is that there is no real benefit to keep multiple snapshots around on a relational database with a
 high consistency.
 
-See also @ref[Database Cleanup](cleanup.md).
+See also @ref[EventSourcedCleanup tool](cleanup.md#event-sourced-cleanup-tool).

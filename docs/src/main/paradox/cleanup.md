@@ -1,8 +1,11 @@
 # Database Cleanup
 
+## Event Sourced cleanup tool
+
 @@@ warning
 
-When running any operation for a persistence id the actor with that persistence id must not be running!
+When running any operation with the `EventSourcedCleanup`  for a persistence id the actor with that persistence id must
+not be running!
 
 @@@
 
@@ -36,3 +39,17 @@ Java
 Scala
 : @@snip [cleanup](/docs/src/test/scala/docs/home/cleanup/CleanupDocExample.scala) { #cleanup }
 
+## Durable State cleanup tool
+
+@@@ warning
+
+When running any operation with the `DurableStateCleanup`  for a persistence id the actor with that persistence id must
+not be running!
+
+@@@
+
+@apidoc[DurableStateCleanup] operations include:
+
+* Delete state for one or many persistence ids
+
+The cleanup tool can be combined with the @ref[query plugin](./query.md) which has a query to get all persistence ids.

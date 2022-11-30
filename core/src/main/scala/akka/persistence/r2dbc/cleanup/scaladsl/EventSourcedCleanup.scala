@@ -39,8 +39,6 @@ import org.slf4j.LoggerFactory
 @ApiMayChange
 final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, configPath: String) {
 
-  // FIXME add DurableStateCleanup
-
   def this(systemProvider: ClassicActorSystemProvider) =
     this(systemProvider, "akka.persistence.r2dbc.cleanup")
 
@@ -107,7 +105,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete all snapshots related to the given list of `persistenceIds`. Events are not deleted.
    */
   def deleteSnapshots(persistenceIds: immutable.Seq[String]): Future[Done] = {
-    foreach(persistenceIds, "deleteAllSnapshots", pid => deleteSnapshot(pid))
+    foreach(persistenceIds, "deleteSnapshots", pid => deleteSnapshot(pid))
   }
 
   /**

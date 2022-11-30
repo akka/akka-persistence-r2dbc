@@ -5,8 +5,9 @@
 package akka.persistence.r2dbc.cleanup.javadsl
 
 import java.util.concurrent.CompletionStage
+import java.util.{ List => JList }
 
-import scala.collection.immutable
+import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters._
 
 import akka.Done
@@ -57,10 +58,8 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * Delete all events related to the given list of `persistenceIds`. Snapshots are not deleted.
    */
-  def deleteAllEvents(
-      persistenceIds: immutable.Seq[String],
-      neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAllEvents(persistenceIds, neverUsePersistenceIdAgain).toJava
+  def deleteAllEvents(persistenceIds: JList[String], neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
+    delegate.deleteAllEvents(persistenceIds.asScala.toVector, neverUsePersistenceIdAgain).toJava
 
   /**
    * Delete snapshots related to one single `persistenceId`. Events are not deleted.
@@ -71,8 +70,8 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * Delete all snapshots related to the given list of `persistenceIds`. Events are not deleted.
    */
-  def deleteSnapshots(persistenceIds: immutable.Seq[String]): CompletionStage[Done] =
-    delegate.deleteSnapshots(persistenceIds).toJava
+  def deleteSnapshots(persistenceIds: JList[String]): CompletionStage[Done] =
+    delegate.deleteSnapshots(persistenceIds.asScala.toVector).toJava
 
   /**
    * Deletes all events for the given persistence id from before the snapshot. The snapshot is not deleted. The event
@@ -84,8 +83,8 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * See single persistenceId overload for what is done for each persistence id
    */
-  def cleanupBeforeSnapshot(persistenceIds: immutable.Seq[String]): CompletionStage[Done] =
-    delegate.cleanupBeforeSnapshot(persistenceIds).toJava
+  def cleanupBeforeSnapshot(persistenceIds: JList[String]): CompletionStage[Done] =
+    delegate.cleanupBeforeSnapshot(persistenceIds.asScala.toVector).toJava
 
   /**
    * Delete everything related to one single `persistenceId`. All events and snapshots are deleted.
@@ -96,7 +95,7 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * Delete everything related to the given list of `persistenceIds`. All events and snapshots are deleted.
    */
-  def deleteAll(persistenceIds: immutable.Seq[String], neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAll(persistenceIds, neverUsePersistenceIdAgain).toJava
+  def deleteAll(persistenceIds: JList[String], neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
+    delegate.deleteAll(persistenceIds.asScala.toVector, neverUsePersistenceIdAgain).toJava
 
 }

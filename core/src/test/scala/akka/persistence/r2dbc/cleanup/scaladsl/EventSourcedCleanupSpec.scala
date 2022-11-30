@@ -37,7 +37,7 @@ class EventSourcedCleanupSpec
 
   override def typedSystem: ActorSystem[_] = system
 
-  "Cleanup" must {
+  "EventSourcedCleanup" must {
     "delete events for one persistenceId" in {
       val ackProbe = createTestProbe[Done]()
       val stateProbe = createTestProbe[String]()
