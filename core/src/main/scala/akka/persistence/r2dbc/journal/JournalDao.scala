@@ -242,46 +242,60 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     result
   }
 
-  def deleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-
-    val deleteMarkerSeqNrFut =
-      if (toSequenceNr == Long.MaxValue)
-        readHighestSequenceNr(persistenceId, 0L)
-      else
-        Future.successful(toSequenceNr)
-
-    deleteMarkerSeqNrFut.flatMap { deleteMarkerSeqNr =>
-      def bindDeleteMarker(stmt: Statement): Statement = {
-        stmt
-          .bind(0, slice)
-          .bind(1, entityType)
-          .bind(2, persistenceId)
-          .bind(3, deleteMarkerSeqNr)
-          .bind(4, "")
-          .bind(5, "")
-          .bind(6, 0)
-          .bind(7, "")
-          .bind(8, Array.emptyByteArray)
-          .bind(9, true)
-      }
-
-      val result = r2dbcExecutor.update(s"delete [$persistenceId]") { connection =>
-        Vector(
+  def deleteEventsTo(persistenceId: String, toSequenceNr: Long, neverUsePersistenceIdAgain: Boolean): Future[Unit] = {
+    val result: Future[Long] =
+      if (neverUsePersistenceIdAgain) {
+        r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
           connection
             .createStatement(deleteEventsSql)
             .bind(0, persistenceId)
-            .bind(1, toSequenceNr),
-          bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
+            .bind(1, toSequenceNr)
+        }
+      } else {
+
+        val entityType = PersistenceId.extractEntityType(persistenceId)
+        val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+
+        val deleteMarkerSeqNrFut =
+          if (toSequenceNr == Long.MaxValue)
+            readHighestSequenceNr(persistenceId, 0L)
+          else
+            Future.successful(toSequenceNr)
+
+        deleteMarkerSeqNrFut.flatMap { deleteMarkerSeqNr =>
+          def bindDeleteMarker(stmt: Statement): Statement = {
+            stmt
+              .bind(0, slice)
+              .bind(1, entityType)
+              .bind(2, persistenceId)
+              .bind(3, deleteMarkerSeqNr)
+              .bind(4, "")
+              .bind(5, "")
+              .bind(6, 0)
+              .bind(7, "")
+              .bind(8, Array.emptyByteArray)
+              .bind(9, true)
+          }
+
+          r2dbcExecutor
+            .update(s"delete [$persistenceId]") { connection =>
+              val deleteStatement = connection
+                .createStatement(deleteEventsSql)
+                .bind(0, persistenceId)
+                .bind(1, toSequenceNr)
+              if (neverUsePersistenceIdAgain)
+                Vector(deleteStatement)
+              else
+                Vector(deleteStatement, bindDeleteMarker(connection.createStatement(insertDeleteMarkerSql)))
+            }
+            .map(_.head)
+        }
       }
 
-      if (log.isDebugEnabled)
-        result.foreach(updatedRows =>
-          log.debug("Deleted [{}] events for persistenceId [{}]", updatedRows.head, persistenceId))
+    if (log.isDebugEnabled)
+      result.foreach(deletedRows => log.debug("Deleted [{}] events for persistenceId [{}]", deletedRows, persistenceId))
 
-      result.map(_ => ())(ExecutionContexts.parasitic)
-    }
+    result.map(_ => ())(ExecutionContexts.parasitic)
   }
 
 }

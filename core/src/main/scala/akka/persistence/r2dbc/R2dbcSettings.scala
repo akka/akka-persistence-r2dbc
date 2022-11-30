@@ -64,9 +64,10 @@ final class R2dbcSettings(config: Config) {
   val logDbCallsExceeding: FiniteDuration =
     config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {
       case "off" => -1.millis
-      case _     => config.getDuration("log-db-calls-exceeding").asScala
+      case _ => config.getDuration("log-db-calls-exceeding").asScala
     }
 
+  val cleanupSettings = new CleanupSettings(config.getConfig("cleanup"))
 }
 
 /**
@@ -141,4 +142,12 @@ final class ConnectionFactorySettings(config: Config) {
 final class PublishEventsDynamicSettings(config: Config) {
   val throughputThreshold: Int = config.getInt("throughput-threshold")
   val throughputCollectInterval: FiniteDuration = config.getDuration("throughput-collect-interval").asScala
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+final class CleanupSettings(config: Config) {
+  val logProgressEvery: Int = config.getInt("log-progress-every")
 }

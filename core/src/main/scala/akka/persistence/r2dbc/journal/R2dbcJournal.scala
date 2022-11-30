@@ -212,7 +212,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
     log.debug("asyncDeleteMessagesTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
-    journalDao.deleteMessagesTo(persistenceId, toSequenceNr)
+    journalDao.deleteEventsTo(persistenceId, toSequenceNr, neverUsePersistenceIdAgain = false)
   }
 
   override def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(
