@@ -6,8 +6,8 @@ When running any operation for a persistence id the actor with that persistence 
 
 @@@
 
-If possible, it is best to keep all events in an event sourced system. That way
-new [projections](https://doc.akka.io/docs/akka-projection/current/index.html) can be re-built.
+If possible, it is best to keep all events in an event sourced system. That way new @ref[Projections](projection.md)
+can be re-built.
 
 In some cases keeping all events is not possible or must be removed for regulatory reasons, such as compliance with
 GDPR. `EventSourcedBehavior`s can automatically snapshot state and delete events as described in the

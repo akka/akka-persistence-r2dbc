@@ -64,9 +64,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.
    *
    * @param persistenceId
-   * the persistence id to delete for
+   *   the persistence id to delete for
    * @param toSequenceNr
-   * sequence nr (inclusive) to delete up to
+   *   sequence nr (inclusive) to delete up to
    */
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long): Future[Done] = {
     log.debug("deleteEventsTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
@@ -142,9 +142,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   }
 
   private def foreach(
-    persistenceIds: immutable.Seq[String],
-    operationName: String,
-    pidOperation: String => Future[Done]): Future[Done] = {
+      persistenceIds: immutable.Seq[String],
+      operationName: String,
+      pidOperation: String => Future[Done]): Future[Done] = {
     val size = persistenceIds.size
     log.info("Cleanup started {} of [{}] persistenceId.", operationName, size)
 
