@@ -12,6 +12,7 @@ import scala.util.Success
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.ConnectionFactoryProvider
@@ -64,9 +65,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.
    *
    * @param persistenceId
-   *   the persistence id to delete for
+   * the persistence id to delete for
    * @param toSequenceNr
-   *   sequence nr (inclusive) to delete up to
+   * sequence nr (inclusive) to delete up to
    */
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long): Future[Done] = {
     log.debug("deleteEventsTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
@@ -142,9 +143,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   }
 
   private def foreach(
-      persistenceIds: immutable.Seq[String],
-      operationName: String,
-      pidOperation: String => Future[Done]): Future[Done] = {
+    persistenceIds: immutable.Seq[String],
+    operationName: String,
+    pidOperation: String => Future[Done]): Future[Done] = {
     val size = persistenceIds.size
     log.info("Cleanup started {} of [{}] persistenceId.", operationName, size)
 
@@ -154,7 +155,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
         case pid :: tail =>
           pidOperation(pid).flatMap { _ =>
             if (n % settings.cleanupSettings.logProgressEvery == 0)
-              log.info("Cleanup {} [{}] of [{}].", operationName, n, size)
+              log.infoN("Cleanup {} [{}] of [{}].", operationName, n, size)
             loop(tail, n + 1)
           }
       }
@@ -164,9 +165,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
 
     result.onComplete {
       case Success(_) =>
-        log.info("Cleanup completed {} of [{}] persistenceId.", operationName, size)
+        log.info2("Cleanup completed {} of [{}] persistenceId.", operationName, size)
       case Failure(e) =>
-        log.error("Cleanup {} failed.", operationName, e)
+        log.error(s"Cleanup {$operationName} failed.", e)
     }
 
     result
