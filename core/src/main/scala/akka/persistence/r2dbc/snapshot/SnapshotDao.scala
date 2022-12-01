@@ -206,9 +206,6 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-
     r2dbcExecutor.updateOne(s"delete snapshot [$persistenceId], criteria [$criteria]") { connection =>
       val statement = connection
         .createStatement(deleteSql(criteria))

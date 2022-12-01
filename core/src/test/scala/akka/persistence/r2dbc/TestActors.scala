@@ -28,6 +28,7 @@ object TestActors {
     final case class PersistAll(payloads: List[Any]) extends Command
     final case class Ping(replyTo: ActorRef[Done]) extends Command
     final case class GetState(replyTo: ActorRef[String]) extends Command
+    final case class GetSeqNr(replyTo: ActorRef[Long]) extends Command
     final case class Stop(replyTo: ActorRef[Done]) extends Command
 
     def apply(pid: String): Behavior[Command] =
@@ -93,6 +94,9 @@ object TestActors {
             case GetState(replyTo) =>
               replyTo ! state
               Effect.none
+            case GetSeqNr(replyTo) =>
+              replyTo ! EventSourcedBehavior.lastSequenceNumber(context)
+              Effect.none
             case Stop(replyTo) =>
               replyTo ! Done
               Effect.stop()
@@ -106,10 +110,12 @@ object TestActors {
     import akka.persistence.typed.state.scaladsl.Effect
 
     sealed trait Command
-    final case class Persist(payload: Any) extends Command
-    final case class PersistWithAck(payload: Any, replyTo: ActorRef[Done]) extends Command
+    final case class Persist(payload: String) extends Command
+    final case class PersistWithAck(payload: String, replyTo: ActorRef[Done]) extends Command
     final case class DeleteWithAck(replyTo: ActorRef[Done]) extends Command
     final case class Ping(replyTo: ActorRef[Done]) extends Command
+    final case class GetState(replyTo: ActorRef[String]) extends Command
+    final case class GetRevision(replyTo: ActorRef[Long]) extends Command
     final case class Stop(replyTo: ActorRef[Done]) extends Command
 
     def apply(pid: String): Behavior[Command] =
@@ -117,10 +123,10 @@ object TestActors {
 
     def apply(pid: PersistenceId): Behavior[Command] = {
       Behaviors.setup { context =>
-        DurableStateBehavior[Command, Any](
+        DurableStateBehavior[Command, String](
           persistenceId = pid,
           "",
-          { (_, command) =>
+          { (state, command) =>
             command match {
               case command: Persist =>
                 context.log.debugN(
@@ -139,9 +145,15 @@ object TestActors {
               case command: DeleteWithAck =>
                 context.log
                   .debug("Delete pid [{}], seqNr [{}]", pid.id, DurableStateBehavior.lastSequenceNumber(context) + 1)
-                Effect.delete[Any]().thenRun(_ => command.replyTo ! Done)
+                Effect.delete[String]().thenRun(_ => command.replyTo ! Done)
               case Ping(replyTo) =>
                 replyTo ! Done
+                Effect.none
+              case GetState(replyTo) =>
+                replyTo ! state
+                Effect.none
+              case GetRevision(replyTo) =>
+                replyTo ! DurableStateBehavior.lastSequenceNumber(context)
                 Effect.none
               case Stop(replyTo) =>
                 replyTo ! Done
