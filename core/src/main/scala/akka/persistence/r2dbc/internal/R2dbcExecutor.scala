@@ -93,6 +93,7 @@ import reactor.core.publisher.Mono
 class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDbCallsExceeding: FiniteDuration)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_]) {
+
   import R2dbcExecutor._
 
   private val logDbCallsExceedingMicros = logDbCallsExceeding.toMicros
@@ -102,7 +103,7 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
     if (logDbCallsExceedingEnabled) System.nanoTime() else 0L
 
   private def durationInMicros(startTime: Long): Long =
-    (nanoTime() - startTime) / 1000
+    if (logDbCallsExceedingEnabled) (nanoTime() - startTime) / 1000 else Long.MinValue
 
   private def getConnection(logPrefix: String): Future[Connection] = {
     val startTime = nanoTime()
