@@ -49,7 +49,7 @@ class DurableStateCleanupSpec
       testKit.stop(p)
 
       val cleanup = new DurableStateCleanup(system)
-      cleanup.deleteState(pid, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteState(pid, resetRevisionNumber = true).futureValue
 
       val p2 = spawn(DurableStatePersister(pid))
       p2 ! DurableStatePersister.GetState(stateProbe.ref)
@@ -73,7 +73,7 @@ class DurableStateCleanupSpec
       testKit.stop(p)
 
       val cleanup = new DurableStateCleanup(system)
-      cleanup.deleteState(pid, neverUsePersistenceIdAgain = false).futureValue
+      cleanup.deleteState(pid, resetRevisionNumber = false).futureValue
 
       val p2 = spawn(DurableStatePersister(pid))
       p2 ! DurableStatePersister.GetState(stateProbe.ref)
@@ -99,7 +99,7 @@ class DurableStateCleanupSpec
       persisters.foreach(testKit.stop(_))
 
       val cleanup = new DurableStateCleanup(system)
-      cleanup.deleteStates(pids, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteStates(pids, resetRevisionNumber = true).futureValue
 
       val persisters2 = pids.map(pid => spawn(DurableStatePersister(pid)))
       persisters2.foreach { p =>

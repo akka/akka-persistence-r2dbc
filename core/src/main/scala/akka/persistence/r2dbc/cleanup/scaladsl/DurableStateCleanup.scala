@@ -25,8 +25,11 @@ import org.slf4j.LoggerFactory
  * actors. It's important that the actors with corresponding persistenceId are not running at the same time as using the
  * tool.
  *
- * If `neverUsePersistenceIdAgain` is `true` then the highest used revision number is deleted and the `persistenceId`
- * should not be used again, since it would be confusing to reuse the same revision numbers for new state changes.
+ * If `resetRevisionNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
+ * Otherwise it will continue from the latest highest used revision number.
+ *
+ * WARNING: reusing the same `persistenceId` after resetting the revision number should be avoided,
+ * since it might be confusing to reuse the same revision numbers for new state changes.
  *
  * When a list of `persistenceIds` are given they are deleted sequentially in the order of the list. It's possible to
  * parallelize the deletes by running several cleanup operations at the same time operating on different sets of
@@ -60,8 +63,8 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
   /**
    * Delete the state related to one single `persistenceId`.
    */
-  def deleteState(persistenceId: String, neverUsePersistenceIdAgain: Boolean): Future[Done] = {
-    if (neverUsePersistenceIdAgain)
+  def deleteState(persistenceId: String, resetRevisionNumber: Boolean): Future[Done] = {
+    if (resetRevisionNumber)
       stateDao.deleteState(persistenceId, revision = 0L) // hard delete without revision check
     else {
       stateDao.readState(persistenceId).flatMap {
@@ -74,8 +77,8 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
   /**
    * Delete all states related to the given list of `persistenceIds`.
    */
-  def deleteStates(persistenceIds: immutable.Seq[String], neverUsePersistenceIdAgain: Boolean): Future[Done] = {
-    foreach(persistenceIds, "deleteStates", pid => deleteState(pid, neverUsePersistenceIdAgain))
+  def deleteStates(persistenceIds: immutable.Seq[String], resetRevisionNumber: Boolean): Future[Done] = {
+    foreach(persistenceIds, "deleteStates", pid => deleteState(pid, resetRevisionNumber))
   }
 
   private def foreach(

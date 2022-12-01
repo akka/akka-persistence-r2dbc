@@ -53,7 +53,7 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = true).futureValue
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
@@ -77,7 +77,7 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = false).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = false).futureValue
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
@@ -128,7 +128,7 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = false).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = false).futureValue
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
@@ -199,7 +199,7 @@ class EventSourcedCleanupSpec
       persisters.foreach(testKit.stop(_))
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAll(pids, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteAll(pids, resetSequenceNumber = true).futureValue
 
       val persisters2 = pids.map(pid => spawn(Persister(pid)))
       persisters2.foreach { p =>

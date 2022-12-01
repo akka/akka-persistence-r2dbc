@@ -242,9 +242,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     result
   }
 
-  def deleteEventsTo(persistenceId: String, toSequenceNr: Long, neverUsePersistenceIdAgain: Boolean): Future[Unit] = {
+  def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
     val result: Future[Long] =
-      if (neverUsePersistenceIdAgain) {
+      if (resetSequenceNumber) {
         r2dbcExecutor.updateOne(s"delete [$persistenceId]") { connection =>
           connection
             .createStatement(deleteEventsSql)
