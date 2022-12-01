@@ -4,7 +4,7 @@
 
 @@@ warning
 
-When running any operation with the `EventSourcedCleanup`  for a persistence id the actor with that persistence id must
+When running any operation with `EventSourcedCleanup` for a persistence id, the actor with that persistence id must
 not be running!
 
 @@@
@@ -17,10 +17,10 @@ GDPR. `EventSourcedBehavior`s can automatically snapshot state and delete events
 @extref:[Akka docs](akka:typed/persistence-snapshot.html#snapshot-deletion). Snapshotting is useful even if events
 aren't deleted as it speeds up recovery.
 
-Deleting all events immediately when an entity has reached it's terminal deleted state would have the consequence that
+Deleting all events immediately when an entity has reached its terminal deleted state would have the consequence that
 Projections might not have consumed all previous events yet and will not be notified of the deleted event. Instead, it's
 recommended to emit a final deleted event and store the fact that the entity is deleted separately via a Projection.
-Then a background task can cleanup the events and snapshots for the deleted entities by using the
+Then a background task can clean up the events and snapshots for the deleted entities by using the
 @apidoc[EventSourcedCleanup] tool. The entity itself knows about the terminal state from the deleted event and should
 not emit further events after that and typically stop itself if it receives more commands.
 
@@ -43,7 +43,7 @@ Scala
 
 @@@ warning
 
-When running any operation with the `DurableStateCleanup`  for a persistence id the actor with that persistence id must
+When running any operation with `DurableStateCleanup` for a persistence id, the actor with that persistence id must
 not be running!
 
 @@@
