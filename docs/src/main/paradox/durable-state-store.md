@@ -35,9 +35,9 @@ The store supports deletes through hard deletes, which means the durable state s
 the database. There is no materialized view with a copy of the state so make sure to not delete durable states too early
 if they are used from projections or queries.
 
-For each persistent id one tombstone record is kept in the store when the state of the persistence id has been
-deleted. The reason for the tombstone record is to keep track of the latest revision number so that subsequent state
-changes don't reuse same revision numbers that have been deleted.
+For each persistent id one tombstone record is kept in the store when the state of the persistence id has been deleted.
+The reason for the tombstone record is to keep track of the latest revision number so that subsequent state changes
+don't reuse the same revision numbers that have been deleted.
 
 See the @ref[DurableStateCleanup tool](cleanup.md#durable-state-cleanup-tool) for more information about how to delete
 state tombstone records.
