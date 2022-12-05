@@ -25,8 +25,8 @@ import akka.persistence.r2dbc.cleanup.scaladsl
  * If `resetSequenceNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
  * Otherwise it will continue from the latest highest used sequence number.
  *
- * WARNING: reusing the same `persistenceId` after resetting the sequence number should be avoided,
- * since it might be confusing to reuse the same sequence number for new events.
+ * WARNING: reusing the same `persistenceId` after resetting the sequence number should be avoided, since it might be
+ * confusing to reuse the same sequence number for new events.
  *
  * When a list of `persistenceIds` are given they are deleted sequentially in the order of the list. It's possible to
  * parallelize the deletes by running several cleanup operations at the same time operating on different sets of

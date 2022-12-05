@@ -23,8 +23,8 @@ import akka.persistence.r2dbc.cleanup.scaladsl
  * If `resetRevisionNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
  * Otherwise it will continue from the latest highest used revision number.
  *
- * WARNING: reusing the same `persistenceId` after resetting the revision number should be avoided,
- * since it might be confusing to reuse the same revision numbers for new state changes.
+ * WARNING: reusing the same `persistenceId` after resetting the revision number should be avoided, since it might be
+ * confusing to reuse the same revision numbers for new state changes.
  *
  * When a list of `persistenceIds` are given they are deleted sequentially in the order of the list. It's possible to
  * parallelize the deletes by running several cleanup operations at the same time operating on different sets of
