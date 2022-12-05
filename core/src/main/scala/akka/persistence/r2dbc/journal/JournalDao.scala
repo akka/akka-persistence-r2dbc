@@ -286,7 +286,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             .bind(1, from)
             .bind(2, to)
         }
-        .map(deletedRows =>
+        .map(_ =>
           if (log.isDebugEnabled) {
             log.debug(
               "Deleted events for persistenceId [{}], from seq num [{}] to [{}]",
