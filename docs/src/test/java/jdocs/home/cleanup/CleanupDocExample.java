@@ -22,7 +22,7 @@ public class CleanupDocExample {
         int persistenceIdParallelism = 10;
 
 
-        // forall persistence ids, keep two snapshots and delete all events before the oldest kept snapshot
+        // forall persistence ids, delete all events before the snapshot
         queries
             .currentPersistenceIds()
             .mapAsync(persistenceIdParallelism, pid ->
