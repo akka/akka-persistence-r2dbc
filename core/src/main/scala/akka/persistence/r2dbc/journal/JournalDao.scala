@@ -286,9 +286,14 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
             .bind(1, from)
             .bind(2, to)
         }
-        .map(_ =>
+        .map(deletedRows =>
           if (log.isDebugEnabled) {
-            log.debug("Deleted events for persistenceId [{}], from seq num [{}] to [{}]", persistenceId, from, to)
+            log.debug(
+              "Deleted [{}] events for persistenceId [{}], from seq num [{}] to [{}]",
+              deletedRows.toString, //toString for fix scala 2.12 compilation error
+              persistenceId,
+              from.toString,
+              to.toString)
           })(ExecutionContexts.parasitic)
     }
 
