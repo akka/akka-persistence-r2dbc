@@ -23,6 +23,8 @@ import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import akka.actor.typed.scaladsl.LoggerOps
+import io.r2dbc.spi.Connection
 
 /**
  * INTERNAL API
@@ -275,73 +277,74 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
       Future.successful(toSequenceNr)
   }
 
+  def lowestSequenceNr(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
+    if (toSeqNr <= batchSize) {
+      Future.successful(1L)
+    } else {
+      readLowestSequenceNr(persistenceId)
+    }
+  }
+
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
 
-    def deleteBatch(from: Long, to: Long): Future[Unit] = {
-      r2dbcExecutor
-        .updateOne(s"delete [$persistenceId]") { connection =>
-          connection
-            .createStatement(deleteEventsSql)
-            .bind(0, persistenceId)
-            .bind(1, from)
-            .bind(2, to)
-        }
-        .map(deletedRows =>
-          if (log.isDebugEnabled) {
-            log.debug(
-              "Deleted [{}] events for persistenceId [{}], from seq num [{}] to [{}]",
-              deletedRows.toString, //toString for fix scala 2.12 compilation error
-              persistenceId,
-              from.toString,
-              to.toString)
-          })(ExecutionContexts.parasitic)
+    def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
+      val entityType = PersistenceId.extractEntityType(persistenceId)
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+      connection
+        .createStatement(insertDeleteMarkerSql)
+        .bind(0, slice)
+        .bind(1, entityType)
+        .bind(2, persistenceId)
+        .bind(3, deleteMarkerSeqNr)
+        .bind(4, "")
+        .bind(5, "")
+        .bind(6, 0)
+        .bind(7, "")
+        .bind(8, Array.emptyByteArray)
+        .bind(9, true)
+    }
+
+    def deleteBatch(from: Long, to: Long, lastBatch: Boolean): Future[Unit] = {
+      (if (lastBatch && !resetSequenceNumber) {
+         r2dbcExecutor
+           .update(s"delete [$persistenceId] and insert marker") { connection =>
+             Vector(
+               connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, from).bind(2, to),
+               insertDeleteMarkerStmt(to, connection))
+           }
+           .map(_.head)
+       } else {
+         r2dbcExecutor
+           .updateOne(s"delete [$persistenceId]") { connection =>
+             connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, from).bind(2, to)
+           }
+       }).map(deletedRows =>
+        if (log.isDebugEnabled) {
+          log.debugN(
+            "Deleted [{}] events for persistenceId [{}], from seq num [{}] to [{}]",
+            deletedRows,
+            persistenceId,
+            from,
+            to)
+        })(ExecutionContexts.parasitic)
     }
 
     val batchSize = journalSettings.cleanupSettings.eventsJournalDeleteBatchSize
 
     def deleteInBatches(from: Long, maxTo: Long): Future[Unit] = {
       if (from + batchSize > maxTo) {
-        deleteBatch(from, maxTo)
+        deleteBatch(from, maxTo, true)
       } else {
         val to = from + batchSize - 1
-        deleteBatch(from, to).flatMap(_ => deleteInBatches(to + 1, maxTo))
+        deleteBatch(from, to, false).flatMap(_ => deleteInBatches(to + 1, maxTo))
       }
     }
 
-    def insertDeleteMarker(deleteMarkerSeqNr: Long): Future[Long] = {
-      val entityType = PersistenceId.extractEntityType(persistenceId)
-      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-      r2dbcExecutor
-        .updateOne(s"insert delete marker for [$persistenceId], seq num [$deleteMarkerSeqNr]") { connection =>
-          connection
-            .createStatement(insertDeleteMarkerSql)
-            .bind(0, slice)
-            .bind(1, entityType)
-            .bind(2, persistenceId)
-            .bind(3, deleteMarkerSeqNr)
-            .bind(4, "")
-            .bind(5, "")
-            .bind(6, 0)
-            .bind(7, "")
-            .bind(8, Array.emptyByteArray)
-            .bind(9, true)
-        }
-    }
-
-    if (resetSequenceNumber) {
-      for {
-        fromSeqNr <- readLowestSequenceNr(persistenceId)
-        toSeqNr <- highestSeqNr(persistenceId, toSequenceNr)
-        _ <- deleteInBatches(fromSeqNr, toSeqNr)
-      } yield ()
-    } else {
-      for {
-        fromSeqNr <- readLowestSequenceNr(persistenceId)
-        toSeqNr <- highestSeqNr(persistenceId, toSequenceNr)
-        _ <- deleteInBatches(fromSeqNr, toSeqNr)
-        _ <- insertDeleteMarker(toSeqNr)
-      } yield ()
-    }
+    for {
+      toSeqNr <- highestSeqNr(persistenceId, toSequenceNr)
+      fromSeqNr <- lowestSequenceNr(persistenceId, toSeqNr, batchSize)
+      _ <- deleteInBatches(fromSeqNr, toSeqNr)
+    } yield ()
   }
 
 }
