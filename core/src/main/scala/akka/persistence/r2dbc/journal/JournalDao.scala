@@ -270,14 +270,14 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     result
   }
 
-  private def highestSeqNr(persistenceId: String, toSequenceNr: Long): Future[Long] = {
+  private def highestSeqNrForDelete(persistenceId: String, toSequenceNr: Long): Future[Long] = {
     if (toSequenceNr == Long.MaxValue)
       readHighestSequenceNr(persistenceId, 0L)
     else
       Future.successful(toSequenceNr)
   }
 
-  def lowestSequenceNr(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
+  private def lowestSequenceNrForDelete(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
     if (toSeqNr <= batchSize) {
       Future.successful(1L)
     } else {
@@ -341,8 +341,8 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
     }
 
     for {
-      toSeqNr <- highestSeqNr(persistenceId, toSequenceNr)
-      fromSeqNr <- lowestSequenceNr(persistenceId, toSeqNr, batchSize)
+      toSeqNr <- highestSeqNrForDelete(persistenceId, toSequenceNr)
+      fromSeqNr <- lowestSequenceNrForDelete(persistenceId, toSeqNr, batchSize)
       _ <- deleteInBatches(fromSeqNr, toSeqNr)
     } yield ()
   }
