@@ -27,10 +27,11 @@ import org.slf4j.LoggerFactory
  * persistent actors. It's important that the actors with corresponding `persistenceId` are not running at the same time
  * as using the tool.
  *
- * WARNING: deleting events is generally discouraged in event sourced systems.
+ * If `resetSequenceNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
+ * Otherwise it will continue from the latest highest used sequence number.
  *
- * If `neverUsePersistenceIdAgain` is `true` then the highest used sequence number is deleted and the `persistenceId`
- * should not be used again, since it would be confusing to reuse the same sequence numbers for new events.
+ * WARNING: reusing the same `persistenceId` after resetting the sequence number should be avoided, since it might be
+ * confusing to reuse the same sequence number for new events.
  *
  * When a list of `persistenceIds` are given they are deleted sequentially in the order of the list. It's possible to
  * parallelize the deletes by running several cleanup operations at the same time operating on different sets of
@@ -73,23 +74,23 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    */
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long): Future[Done] = {
     log.debug("deleteEventsTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
-    journalDao.deleteEventsTo(persistenceId, toSequenceNr, neverUsePersistenceIdAgain = false).map(_ => Done)
+    journalDao.deleteEventsTo(persistenceId, toSequenceNr, resetSequenceNumber = false).map(_ => Done)
   }
 
   /**
    * Delete all events related to one single `persistenceId`. Snapshots are not deleted.
    */
-  def deleteAllEvents(persistenceId: String, neverUsePersistenceIdAgain: Boolean): Future[Done] = {
+  def deleteAllEvents(persistenceId: String, resetSequenceNumber: Boolean): Future[Done] = {
     journalDao
-      .deleteEventsTo(persistenceId, toSequenceNr = Long.MaxValue, neverUsePersistenceIdAgain)
+      .deleteEventsTo(persistenceId, toSequenceNr = Long.MaxValue, resetSequenceNumber)
       .map(_ => Done)
   }
 
   /**
    * Delete all events related to the given list of `persistenceIds`. Snapshots are not deleted.
    */
-  def deleteAllEvents(persistenceIds: immutable.Seq[String], neverUsePersistenceIdAgain: Boolean): Future[Done] = {
-    foreach(persistenceIds, "deleteAllEvents", pid => deleteAllEvents(pid, neverUsePersistenceIdAgain))
+  def deleteAllEvents(persistenceIds: immutable.Seq[String], resetSequenceNumber: Boolean): Future[Done] = {
+    foreach(persistenceIds, "deleteAllEvents", pid => deleteAllEvents(pid, resetSequenceNumber))
   }
 
   /**
@@ -130,9 +131,9 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   /**
    * Delete everything related to one single `persistenceId`. All events and snapshots are deleted.
    */
-  def deleteAll(persistenceId: String, neverUsePersistenceIdAgain: Boolean): Future[Done] = {
+  def deleteAll(persistenceId: String, resetSequenceNumber: Boolean): Future[Done] = {
     for {
-      _ <- deleteAllEvents(persistenceId, neverUsePersistenceIdAgain)
+      _ <- deleteAllEvents(persistenceId, resetSequenceNumber)
       _ <- deleteSnapshot(persistenceId)
     } yield Done
   }
@@ -140,8 +141,8 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   /**
    * Delete everything related to the given list of `persistenceIds`. All events and snapshots are deleted.
    */
-  def deleteAll(persistenceIds: immutable.Seq[String], neverUsePersistenceIdAgain: Boolean): Future[Done] = {
-    foreach(persistenceIds, "deleteAll", pid => deleteAll(pid, neverUsePersistenceIdAgain))
+  def deleteAll(persistenceIds: immutable.Seq[String], resetSequenceNumber: Boolean): Future[Done] = {
+    foreach(persistenceIds, "deleteAll", pid => deleteAll(pid, resetSequenceNumber))
   }
 
   private def foreach(

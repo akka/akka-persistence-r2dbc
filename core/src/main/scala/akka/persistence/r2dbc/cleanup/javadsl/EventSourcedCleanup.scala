@@ -22,8 +22,11 @@ import akka.persistence.r2dbc.cleanup.scaladsl
  *
  * WARNING: deleting events is generally discouraged in event sourced systems.
  *
- * If `neverUsePersistenceIdAgain` is `true` then the highest used sequence number is deleted and the `persistenceId`
- * should not be used again, since it would be confusing to reuse the same sequence numbers for new events.
+ * If `resetSequenceNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
+ * Otherwise it will continue from the latest highest used sequence number.
+ *
+ * WARNING: reusing the same `persistenceId` after resetting the sequence number should be avoided, since it might be
+ * confusing to reuse the same sequence number for new events.
  *
  * When a list of `persistenceIds` are given they are deleted sequentially in the order of the list. It's possible to
  * parallelize the deletes by running several cleanup operations at the same time operating on different sets of
@@ -52,14 +55,14 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * Delete all events related to one single `persistenceId`. Snapshots are not deleted.
    */
-  def deleteAllEvents(persistenceId: String, neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAllEvents(persistenceId, neverUsePersistenceIdAgain).toJava
+  def deleteAllEvents(persistenceId: String, resetSequenceNumber: Boolean): CompletionStage[Done] =
+    delegate.deleteAllEvents(persistenceId, resetSequenceNumber).toJava
 
   /**
    * Delete all events related to the given list of `persistenceIds`. Snapshots are not deleted.
    */
-  def deleteAllEvents(persistenceIds: JList[String], neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAllEvents(persistenceIds.asScala.toVector, neverUsePersistenceIdAgain).toJava
+  def deleteAllEvents(persistenceIds: JList[String], resetSequenceNumber: Boolean): CompletionStage[Done] =
+    delegate.deleteAllEvents(persistenceIds.asScala.toVector, resetSequenceNumber).toJava
 
   /**
    * Delete snapshots related to one single `persistenceId`. Events are not deleted.
@@ -89,13 +92,13 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
   /**
    * Delete everything related to one single `persistenceId`. All events and snapshots are deleted.
    */
-  def deleteAll(persistenceId: String, neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAll(persistenceId, neverUsePersistenceIdAgain).toJava
+  def deleteAll(persistenceId: String, resetSequenceNumber: Boolean): CompletionStage[Done] =
+    delegate.deleteAll(persistenceId, resetSequenceNumber).toJava
 
   /**
    * Delete everything related to the given list of `persistenceIds`. All events and snapshots are deleted.
    */
-  def deleteAll(persistenceIds: JList[String], neverUsePersistenceIdAgain: Boolean): CompletionStage[Done] =
-    delegate.deleteAll(persistenceIds.asScala.toVector, neverUsePersistenceIdAgain).toJava
+  def deleteAll(persistenceIds: JList[String], resetSequenceNumber: Boolean): CompletionStage[Done] =
+    delegate.deleteAll(persistenceIds.asScala.toVector, resetSequenceNumber).toJava
 
 }

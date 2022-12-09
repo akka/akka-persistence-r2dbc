@@ -16,6 +16,8 @@ import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.typed.PersistenceId
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+import akka.actor.testkit.typed.scaladsl.LoggingTestKit
+import org.slf4j.event.Level
 
 object EventSourcedCleanupSpec {
   val config = ConfigFactory
@@ -23,6 +25,7 @@ object EventSourcedCleanupSpec {
     akka.loglevel = DEBUG
     akka.persistence.r2dbc.cleanup {
       log-progress-every = 2
+      events-journal-delete-batch-size = 10
     }
   """)
     .withFallback(TestConfig.config)
@@ -53,7 +56,50 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = true).futureValue
+
+      val p2 = spawn(Persister(pid))
+      p2 ! Persister.GetState(stateProbe.ref)
+      stateProbe.expectMessage("")
+      p2 ! Persister.GetSeqNr(seqNrProbe.ref)
+      seqNrProbe.expectMessage(0L)
+    }
+
+    "delete events for one persistenceId in batches" in {
+      val ackProbe = createTestProbe[Done]()
+      val stateProbe = createTestProbe[String]()
+      val seqNrProbe = createTestProbe[Long]()
+      val pid = nextPid()
+      val p = spawn(Persister(pid))
+
+      val maxSeqNumber = 47
+      (1 to maxSeqNumber).foreach { n =>
+        p ! Persister.PersistWithAck(n, ackProbe.ref)
+        ackProbe.expectMessage(Done)
+      }
+
+      testKit.stop(p)
+
+      val cleanup = new EventSourcedCleanup(system)
+
+      var iteration = 0
+      val batchSize = 10
+
+      LoggingTestKit
+        .info("Deleted")
+        .withLogLevel(Level.DEBUG)
+        .withOccurrences(5)
+        .withCustom { event =>
+          val from = (iteration * batchSize) + 1
+          iteration = iteration + 1
+          val to = Math.min(maxSeqNumber, from + batchSize - 1)
+          val deleted = to - from + 1
+          val expectedMsg = s"Deleted [$deleted] events for persistenceId [$pid], from seq num [$from] to [$to]"
+          event.message == expectedMsg
+        }
+        .expect {
+          cleanup.deleteAllEvents(pid, resetSequenceNumber = true).futureValue
+        }
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
@@ -77,13 +123,56 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = false).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = false).futureValue
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
       stateProbe.expectMessage("")
       p2 ! Persister.GetSeqNr(seqNrProbe.ref)
       seqNrProbe.expectMessage(10L)
+    }
+
+    "delete events for one persistenceId in batches, but keep seqNr" in {
+      val ackProbe = createTestProbe[Done]()
+      val stateProbe = createTestProbe[String]()
+      val seqNrProbe = createTestProbe[Long]()
+      val pid = nextPid()
+      val p = spawn(Persister(pid))
+
+      val maxSeqNumber = 47
+      (1 to maxSeqNumber).foreach { n =>
+        p ! Persister.PersistWithAck(n, ackProbe.ref)
+        ackProbe.expectMessage(Done)
+      }
+
+      testKit.stop(p)
+
+      val cleanup = new EventSourcedCleanup(system)
+
+      var iteration = 0
+      val batchSize = 10
+
+      LoggingTestKit
+        .info("Deleted")
+        .withLogLevel(Level.DEBUG)
+        .withOccurrences(5)
+        .withCustom { event =>
+          val from = (iteration * batchSize) + 1
+          iteration = iteration + 1
+          val to = Math.min(maxSeqNumber, from + batchSize - 1)
+          val deleted = to - from + 1
+          val expectedMsg = s"Deleted [$deleted] events for persistenceId [$pid], from seq num [$from] to [$to]"
+          event.message == expectedMsg
+        }
+        .expect {
+          cleanup.deleteAllEvents(pid, resetSequenceNumber = false).futureValue
+        }
+
+      val p2 = spawn(Persister(pid))
+      p2 ! Persister.GetState(stateProbe.ref)
+      stateProbe.expectMessage("")
+      p2 ! Persister.GetSeqNr(seqNrProbe.ref)
+      seqNrProbe.expectMessage(maxSeqNumber.toLong)
     }
 
     "delete some for one persistenceId" in {
@@ -128,7 +217,7 @@ class EventSourcedCleanupSpec
       testKit.stop(p)
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAllEvents(pid, neverUsePersistenceIdAgain = false).futureValue
+      cleanup.deleteAllEvents(pid, resetSequenceNumber = false).futureValue
 
       val p2 = spawn(Persister(pid))
       p2 ! Persister.GetState(stateProbe.ref)
@@ -199,7 +288,7 @@ class EventSourcedCleanupSpec
       persisters.foreach(testKit.stop(_))
 
       val cleanup = new EventSourcedCleanup(system)
-      cleanup.deleteAll(pids, neverUsePersistenceIdAgain = true).futureValue
+      cleanup.deleteAll(pids, resetSequenceNumber = true).futureValue
 
       val persisters2 = pids.map(pid => spawn(Persister(pid)))
       persisters2.foreach { p =>

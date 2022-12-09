@@ -150,4 +150,5 @@ final class PublishEventsDynamicSettings(config: Config) {
 @InternalStableApi
 final class CleanupSettings(config: Config) {
   val logProgressEvery: Int = config.getInt("log-progress-every")
+  val eventsJournalDeleteBatchSize: Int = config.getInt("events-journal-delete-batch-size")
 }
