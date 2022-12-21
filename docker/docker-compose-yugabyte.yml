@@ -8,7 +8,7 @@ volumes:
 
 services:
   yb-master:
-    image: yugabytedb/yugabyte:2.14.1.0-b36
+    image: yugabytedb/yugabyte:2.16.0.0-b90
     container_name: yb-master-n1
     volumes:
       - yb-master-data-1:/mnt/master
@@ -16,14 +16,14 @@ services:
                "--fs_data_dirs=/mnt/master",
                "--master_addresses=yb-master-n1:7100",
                "--rpc_bind_addresses=yb-master-n1:7100",
-               "--replication_factor=1"]
+               "--replication_factor=1" ]
     ports:
       - "7000:7000"
     environment:
       SERVICE_7000_NAME: yb-master
 
   yb-tserver:
-    image: yugabytedb/yugabyte:2.14.1.0-b36
+    image: yugabytedb/yugabyte:2.16.0.0-b90
     container_name: yb-tserver-n1
     shm_size: '512mb'
     volumes:
@@ -34,7 +34,7 @@ services:
                "--rpc_bind_addresses=yb-tserver-n1:9100",
                "--tserver_master_addrs=yb-master-n1:7100",
                "--ysql_sequence_cache_minval=1",
-               "--yb_num_shards_per_tserver=1"]
+               "--yb_num_shards_per_tserver=1" ]
     ports:
       - "9042:9042"
       - "5433:5433"
