@@ -35,7 +35,7 @@ object R2dbcProjectionSettings {
       evictInterval = config.getDuration("offset-store.evict-interval"),
       deleteInterval = config.getDuration("offset-store.delete-interval"),
       logDbCallsExceeding,
-      warnAboutFilteredEventsInFlow = config.getBoolean("akka.projection.r2dbc.warn-about-filtered-events-in-flow"))
+      warnAboutFilteredEventsInFlow = config.getBoolean("warn-about-filtered-events-in-flow"))
   }
 
   def apply(system: ActorSystem[_]): R2dbcProjectionSettings =
