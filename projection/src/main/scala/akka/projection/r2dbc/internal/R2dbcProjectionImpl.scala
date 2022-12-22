@@ -313,11 +313,10 @@ private[projection] object R2dbcProjectionImpl {
   private[projection] def adaptedHandlerForFlow[Offset, Envelope](
       sourceProvider: SourceProvider[Offset, Envelope],
       handler: FlowWithContext[Envelope, ProjectionContext, Done, ProjectionContext, _],
-      offsetStore: R2dbcOffsetStore)(implicit
+      offsetStore: R2dbcOffsetStore,
+      settings: R2dbcProjectionSettings)(implicit
       ec: ExecutionContext,
       system: ActorSystem[_]): FlowWithContext[Envelope, ProjectionContext, Done, ProjectionContext, _] = {
-    val warnAboutFilteredEvents =
-      system.settings.config.getBoolean("akka.projection.r2dbc.warn-about-filtered-events-in-flow")
 
     FlowWithContext[Envelope, ProjectionContext]
       .mapAsync(1) { env =>
@@ -325,7 +324,7 @@ private[projection] object R2dbcProjectionImpl {
           .isAccepted(env)
           .flatMap { ok =>
             if (ok) {
-              if (skipEnvelope(env) && warnAboutFilteredEvents) {
+              if (skipEnvelope(env) && settings.warnAboutFilteredEventsInFlow) {
                 log.info("atLeastOnceFlow doesn't support of skipping envelopes. Envelope [{}] still emitted.", env)
               }
               loadEnvelope(env, sourceProvider).map { loadedEnvelope =>

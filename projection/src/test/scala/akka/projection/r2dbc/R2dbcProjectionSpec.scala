@@ -415,7 +415,7 @@ class R2dbcProjectionSpec
         eventuallyExpectError(sinkProbe).getMessage should startWith(concatHandlerFail4Msg)
       }
       projectedValueShouldBe("e1|e2|e3")
-      offsetShouldBe(3L) // here the failure could
+      offsetShouldBe(3L)
 
       // re-run projection without failing function
       projectionTestKit.run(exactlyOnceProjection()) {
