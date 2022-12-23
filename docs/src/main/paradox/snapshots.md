@@ -19,7 +19,7 @@ akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
 It can also be enabled with the `snapshotPluginId` for a specific `EventSourcedBehavior` and multiple plugin
 configurations are supported.
 
-See also @ref:[Connection configuration](connection-config.md).
+See also @ref:[Connection configuration](config.md#connection-configuration).
 
 ### Reference configuration
 

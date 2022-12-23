@@ -6,15 +6,15 @@
 
 * `eventsByPersistenceId`, `currentEventsByPersistenceId`
 * `eventsBySlices`, `currentEventsBySlices`
-* `currentPersistenceIds` 
+* `currentPersistenceIds`
 
 Accessing the `R2dbcReadJournal`:
 
 Java
-:  @@snip [create](/docs/src/test/java/jdocs/home/query/QueryDocCompileOnly.java) { #readJournalFor } 
+:  @@snip [create](/docs/src/test/java/jdocs/home/query/QueryDocCompileOnly.java) { #readJournalFor }
 
 Scala
-:  @@snip [create](/docs/src/test/scala/docs/home/query/QueryDocCompileOnly.scala) { #readJournalFor } 
+:  @@snip [create](/docs/src/test/scala/docs/home/query/QueryDocCompileOnly.scala) { #readJournalFor }
 
 ### eventsByPersistenceId
 
@@ -162,5 +162,5 @@ Query configuration is under `akka.persistence.r2dbc.query`. Here's the default 
 
 @@snip [reference.conf](/core/src/main/resources/reference.conf) { #query-settings }
 
-The query plugin shares the connection pool as the rest of the plugin, see @ref:[Connection configuration](connection-config.md).
+The query plugin shares the connection pool as the rest of the plugin, see @ref:[Connection configuration](config.md#connection-configuration).
 

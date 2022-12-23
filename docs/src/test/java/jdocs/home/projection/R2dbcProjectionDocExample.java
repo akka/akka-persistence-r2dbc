@@ -29,6 +29,7 @@ import akka.projection.r2dbc.javadsl.R2dbcSession;
 import io.r2dbc.spi.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -62,7 +63,8 @@ class R2dbcProjectionDocExample {
     public static EntityTypeKey<Command> ENTITY_TYPE_KEY =
         EntityTypeKey.create(Command.class, "ShoppingCart");
 
-    interface Command extends CborSerializable {}
+    interface Command extends CborSerializable {
+    }
 
     interface Event {
       String getCartId();
@@ -249,5 +251,19 @@ class R2dbcProjectionDocExample {
                 projectionId, settings, sourceProvider, GroupedShoppingCartHandler::new, system)
             .withGroup(saveOffsetAfterEnvelopes, saveOffsetAfterDuration);
     // #grouped
+  }
+
+  {
+    //#projectionSettings
+    ProjectionId projectionId =
+        ProjectionId.of("ShoppingCarts", "carts-" + minSlice + "-" + maxSlice);
+
+    Optional<R2dbcProjectionSettings> settings = Optional.of(
+        R2dbcProjectionSettings.create(system.settings().config().getConfig("second-projection-r2dbc")));
+
+    Projection<EventEnvelope<ShoppingCart.Event>> projection =
+        R2dbcProjection.atLeastOnce(
+            projectionId, settings, sourceProvider, ShoppingCartHandler::new, system);
+    //#projectionSettings
   }
 }
