@@ -8,9 +8,9 @@ The source of the envelopes is from a `SourceProvider`, which can be:
 * state changes for Durable State entities via the @extref:[SourceProvider for changesBySlices](akka-projection:durable-state.html#sourceprovider-for-changesbyslices) with the @ref:[changesBySlices query](query.md#changesbyslices)
 * any other `SourceProvider` with supported @ref:[offset types](#offset-types)
 
-A @apidoc[R2dbcHandler] receives a @apidoc[R2dbcSession] instance and an envelope. The 
+A @apidoc[R2dbcHandler] receives a @apidoc[R2dbcSession] instance and an envelope. The
 `R2dbcSession` provides the means to access an open R2DBC connection that can be used to process the envelope.
-The target database operations can be run in the same transaction as the storage of the offset, which means 
+The target database operations can be run in the same transaction as the storage of the offset, which means
 that @ref:[exactly-once](#exactly-once) processing semantics is supported. It also offers
 @ref:[at-least-once](#at-least-once) semantics.
 
@@ -19,9 +19,9 @@ that @ref:[exactly-once](#exactly-once) processing semantics is supported. It al
 To use the R2DBC module of Akka Projections add the following dependency in your project:
 
 @@dependency [Maven,sbt,Gradle] {
-  group=com.lightbend.akka
-  artifact=akka-projection-r2dbc_$scala.binary.version$
-  version=$project.version$
+group=com.lightbend.akka
+artifact=akka-projection-r2dbc_$scala.binary.version$
+version=$project.version$
 }
 
 Akka Projections R2DBC depends on Akka $akka.version$ or later, and note that it is important that all `akka-*`
@@ -45,7 +45,7 @@ need to be created in the configured database, see schema definition in @ref:[Cr
 ## Configuration
 
 By default, `akka-projection-r2dbc` uses the same connection pool and `dialect` as `akka-persistence-r2dbc`, see
-@ref:[Connection configuration](connection-config.md).
+@ref:[Connection configuration](config.md#connection-configuration).
 
 ### Reference configuration
 
@@ -155,7 +155,7 @@ processing semantics if the projection is restarted from previously stored offse
 ## Handler
 
 It's in the @apidoc[R2dbcHandler] that you implement the processing of each envelope. It's essentially a consumer function
-from `(R2dbcSession, Envelope)` to @scala[`Future[Done]`]@java[`CompletionStage<Done>`]. 
+from `(R2dbcSession, Envelope)` to @scala[`Future[Done]`]@java[`CompletionStage<Done>`].
 
 A handler that is consuming `ShoppingCart.Event` from `eventsBySlices` can look like this:
 
@@ -190,13 +190,13 @@ than the one that called `process`.
 
 It is important that the `Handler` instance is not shared between several `Projection` instances,
 because then it would be invoked concurrently, which is not how it is intended to be used. Each `Projection`
-instance should use a new `Handler` instance.  
+instance should use a new `Handler` instance.
 
 @@@
 
 ### Async handler
 
-The @apidoc[Handler] can be used with `R2dbcProjection.atLeastOnceAsync` and 
+The @apidoc[Handler] can be used with `R2dbcProjection.atLeastOnceAsync` and
 `R2dbcProjection.groupedWithinAsync` if the handler is not storing the projection result in the database.
 The handler could send to a Kafka topic or integrate with something else.
 
@@ -205,8 +205,8 @@ Same type of handlers can be used with `R2dbcProjection` instead of `CassandraPr
 
 ### Actor handler
 
-A good alternative for advanced state management is to implement the handler as an 
-@extref:[actor](akka:typed/typed/actors.html) which is described in 
+A good alternative for advanced state management is to implement the handler as an
+@extref:[actor](akka:typed/typed/actors.html) which is described in
 @extref:[Processing with Actor](akka-projection:actor.html).
 
 ### Flow handler

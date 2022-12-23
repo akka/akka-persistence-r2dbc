@@ -21,7 +21,7 @@ akka.persistence.state.plugin = "akka.persistence.r2dbc.state"
 It can also be enabled with the `durableStateStorePluginId` for a specific `DurableStateBehavior` and multiple plugin
 configurations are supported.
 
-See also @ref:[Connection configuration](connection-config.md).
+See also @ref:[Connection configuration](config.md#connection-configuration).
 
 ### Reference configuration
 

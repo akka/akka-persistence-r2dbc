@@ -15,6 +15,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import akka.persistence.query.Offset
+import akka.projection.r2dbc.R2dbcProjectionSettings
 import docs.home.CborSerializable
 import org.slf4j.LoggerFactory
 
@@ -212,6 +213,50 @@ object R2dbcProjectionDocExample {
         .groupedWithin(projectionId, settings = None, sourceProvider, handler = () => new GroupedShoppingCartHandler)
         .withGroup(groupAfterEnvelopes = 20, groupAfterDuration = 500.millis)
     //#grouped
+  }
+
+  object IllustrateSettings {
+    val config =
+      """
+    // #second-projection-config
+    second-projection-r2dbc = ${akka.projection.r2dbc}
+    second-projection-r2dbc {
+      offset-store {
+        # specific projection offset store properties here
+      }
+      use-connection-factory = "second-r2dbc.connection-factory"
+    }
+    // #second-projection-config
+    
+    // #second-projection-config-with-connection-factory
+    second-projection-r2dbc = ${akka.projection.r2dbc}
+    second-projection-r2dbc {
+      connection-factory = ${akka.persistence.r2dbc.connection-factory}
+      connection-factory {
+        # specific connection properties for offset store and projection handler here 
+      }
+      
+      offset-store {
+        # specific projection offset store properties here
+      }
+      use-connection-factory = "second-projection-r2dbc.connection-factory"
+    }
+    // #second-projection-config-with-connection-factory
+    """
+
+    //#projectionSettings
+
+    import akka.projection.r2dbc.scaladsl.R2dbcProjection
+    import akka.projection.ProjectionId
+
+    val projectionId = ProjectionId("ShoppingCarts", s"carts-$minSlice-$maxSlice")
+
+    val settings = Some(R2dbcProjectionSettings(system.settings.config.getConfig("second-projection-r2dbc")))
+
+    val projection =
+      R2dbcProjection
+        .atLeastOnce(projectionId, settings = None, sourceProvider, handler = () => new ShoppingCartHandler)
+    //#projectionSettings
   }
 
 }
