@@ -1,14 +1,11 @@
 /*
- * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2022 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.state.javadsl
+package akka.persistence.r2dbc.state.scaladsl
 
-import java.util.Collections
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionStage
-import java.util.{ List => JList }
-import java.util.function.{ Function => JFunction }
+import scala.collection.immutable
+import scala.concurrent.Future
 
 import akka.Done
 
@@ -22,7 +19,7 @@ object DaoExtension {
 
   final class Delete(val persistenceId: String, val entityType: String, val slice: Int, revision: Long)
 
-  final class AdditionalColumn[A](name: String, bind: JFunction[Upsert[A], AnyRef])
+  final class AdditionalColumn[A](name: String, bind: Upsert[A] => AnyRef)
 
   /**
    * To bind a column to `null` this can be returned from the `bind` function in [[AdditionalColumn]].
@@ -53,20 +50,20 @@ abstract class DaoExtension {
    * typically add a secondary index on the columns. You can use a different table for a specific `entityType` by
    * defining the table name with [[DaoExtension.tableName]].
    */
-  def additionalColumns(entityType: String): JList[DaoExtension.AdditionalColumn] =
-    Collections.emptyList()
+  def additionalColumns(entityType: String): immutable.IndexedSeq[DaoExtension.AdditionalColumn[_]] =
+    Vector.empty
 
   /**
    * Override this method to perform additional processing in the same transaction as the Durable State upsert.
    */
-  def processOnUpsert(upsert: DaoExtension.Upsert[AnyRef], session: R2dbcSession): CompletionStage[Done] =
-    CompletableFuture.completedFuture(Done)
+  def processOnUpsert(upsert: DaoExtension.Upsert[AnyRef], session: R2dbcSession): Future[Done] =
+    Future.successful(Done)
 
   /**
    * Override this method to perform additional processing in the same transaction as the Durable State delete.
    */
-  def processOnDelete(delete: DaoExtension.Delete, session: R2dbcSession): CompletionStage[Done] =
-    CompletableFuture.completedFuture(Done)
+  def processOnDelete(delete: DaoExtension.Delete, session: R2dbcSession): Future[Done] =
+    Future.successful(Done)
 
 }
 
