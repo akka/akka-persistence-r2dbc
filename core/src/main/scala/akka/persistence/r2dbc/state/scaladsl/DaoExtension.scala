@@ -8,23 +8,29 @@ import scala.collection.immutable
 import scala.concurrent.Future
 
 import akka.Done
+import io.r2dbc.spi.Statement
 
 object DaoExtension {
-  final class Upsert[A](
+  final case class Upsert[A](
       val persistenceId: String,
       val entityType: String,
       val slice: Int,
       val revision: Long,
       val value: A)
 
-  final class Delete(val persistenceId: String, val entityType: String, val slice: Int, revision: Long)
+  final case class Delete(val persistenceId: String, val entityType: String, val slice: Int, revision: Long)
 
-  final class AdditionalColumn[A](name: String, bind: Upsert[A] => AnyRef)
+  final case class AdditionalColumn[A](name: String, bind: Upsert[A] => AnyRef)
 
   /**
    * To bind a column to `null` this can be returned from the `bind` function in [[AdditionalColumn]].
    */
-  final class BindNull(columnType: Class[_])
+  final case class BindNull(columnType: Class[_])
+
+  /**
+   * To not update a column this can be returned from the `bind` function in [[AdditionalColumn]].
+   */
+  final case object Skip
 }
 
 /**
@@ -68,4 +74,7 @@ abstract class DaoExtension {
 }
 
 // FIXME move R2dbcSession from akka-projection-r2dbc
-final class R2dbcSession
+trait R2dbcSession {
+  def createStatement(sql: String): Statement
+  def updateOne(statement: Statement): Future[Long]
+}
