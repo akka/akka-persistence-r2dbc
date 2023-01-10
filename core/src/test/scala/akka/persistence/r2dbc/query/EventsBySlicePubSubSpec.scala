@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.query
 
+import scala.collection.immutable
 import java.time.Instant
 
 import scala.concurrent.Await
@@ -15,6 +16,7 @@ import akka.actor.testkit.typed.scaladsl.LoggingTestKit
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.internal.pubsub.TopicImpl
+import akka.persistence.Persistence
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
@@ -44,6 +46,7 @@ object EventsBySlicePubSubSpec {
     .parseString("""
     akka.persistence.r2dbc {
       journal.publish-events = on
+      #journal.publish-events-number-of-topics = 4
       journal.publish-events-dynamic {
         throughput-threshold = 50
         throughput-collect-interval = 1 second
@@ -232,6 +235,41 @@ class EventsBySlicePubSubSpec
         Await.result(done2, 20.seconds)
       }
 
+    }
+
+    "group slices into topics" in new Setup {
+
+      val numberOfTopics =
+        typedSystem.settings.config.getInt("akka.persistence.r2dbc.journal.publish-events-number-of-topics")
+      //
+      val querySliceRanges = Persistence(typedSystem).sliceRanges(numberOfTopics * 2)
+      val queries: immutable.IndexedSeq[TestSubscriber.Probe[EventEnvelope[String]]] = {
+        querySliceRanges.map { range =>
+          query.eventsBySlices[String](entityType, range.min, range.max, NoOffset).runWith(sinkProbe).request(100)
+        }
+      }
+
+      val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
+      eventually {
+        (0 until 1024).foreach { i =>
+          withClue(s"slice $i: ") {
+            PubSub(typedSystem).eventTopic[String](entityType, i) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+            topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 2
+          }
+        }
+      }
+
+      for (i <- 1 to 10) {
+        persister ! PersistWithAck(s"e-$i", probe.ref)
+        probe.expectMessage(Done)
+      }
+
+      for (i <- 1 to 10) {
+        val queryIndex = querySliceRanges.indexOf(querySliceRanges.find(_.contains(slice)).get)
+        queries(queryIndex).expectNext().event shouldBe s"e-$i"
+      }
+
+      queries.foreach(_.cancel())
     }
 
   }

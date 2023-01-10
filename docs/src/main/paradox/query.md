@@ -112,6 +112,8 @@ Disable publishing of events with configuration:
 akka.persistence.r2dbc.journal.publish-events = off
 ```
 
+If you use many queries or Projection instances you should consider adjusting the `akka.persistence.r2dbc.journal.publish-events-number-of-topics` configuration, see @ref:[Configuration](#configuration).
+
 ## Durable state queries
 
 @apidoc[R2dbcDurableStateStore] implements the following @extref:[Persistence Queries](akka:durable-state/persistence-query.html):
