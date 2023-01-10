@@ -246,8 +246,8 @@ class R2dbcExecutor(val connectionFactory: ConnectionFactory, log: Logger, logDb
   }
 
   /**
-   * Runs the passed function in using a Connection that's participating on a transaction Transaction is commit at the
-   * end or rolled back in case of failures.
+   * Runs the passed function in using a Connection with a new transaction. The connection is closed and the transaction
+   * is committed at the end or rolled back in case of failures.
    */
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     getConnection(logPrefix).flatMap { connection =>

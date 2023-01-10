@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.state
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 import akka.Done
@@ -26,7 +27,14 @@ class CurrentPersistenceIdsQuerySpec
     extends ScalaTestWithActorTestKit(
       ConfigFactory
         .parseString("""
-        akka.persistence.r2dbc.query.persistence-ids.buffer-size = 20
+        akka.persistence.r2dbc {
+          query.persistence-ids.buffer-size = 20
+          state {
+            custom-table {
+              "CustomEntity" = durable_state_test
+            }
+          }
+        }
         """)
         .withFallback(TestConfig.config))
     with AnyWordSpecLike
@@ -50,8 +58,23 @@ class CurrentPersistenceIdsQuerySpec
         PersistenceId(entityTypes(entityTypeId - 1), "p" + zeros.drop(n.toString.length) + n)))
   }
 
+  private val customTable = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity")
+  private val customEntityType = "CustomEntity"
+  private val customPid1 = nextPid(customEntityType)
+  private val customPid2 = nextPid(customEntityType)
+
   override protected def beforeAll(): Unit = {
     super.beforeAll()
+
+    Await.result(
+      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
+        _.createStatement(
+          s"create table if not exists $customTable as select * from durable_state where persistence_id = ''")),
+      20.seconds)
+
+    Await.result(
+      r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $customTable")),
+      10.seconds)
 
     val probe = createTestProbe[Done]
     pids.foreach { pid =>
@@ -61,6 +84,18 @@ class CurrentPersistenceIdsQuerySpec
     }
 
     probe.receiveMessages(numberOfPids * 2, 30.seconds) // ack + stop done
+  }
+
+  private def createPidsInCustomTable(): Unit = {
+    val probe = createTestProbe[Done]
+    val persister1 = spawn(TestActors.DurableStatePersister(customPid1))
+    persister1 ! DurableStatePersister.Persist("s-1")
+    persister1 ! DurableStatePersister.Stop(probe.ref)
+    val persister2 = spawn(TestActors.DurableStatePersister(customPid2))
+    persister2 ! DurableStatePersister.Persist("s-1")
+    persister2 ! DurableStatePersister.Stop(probe.ref)
+    probe.expectMessage(Done)
+    probe.expectMessage(Done)
   }
 
   "Durable State persistenceIds" should {
@@ -90,6 +125,44 @@ class CurrentPersistenceIdsQuerySpec
           .futureValue
 
       result shouldBe pids.filter(_.entityTypeHint == entityType).slice(10, 17).map(_.id)
+    }
+
+    "include pids from custom table in all ids" in {
+      createPidsInCustomTable()
+      val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
+      // note that custom tables always come afterwards, i.e. not strictly sorted on the pids (but that should be ok)
+      result shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2)
+    }
+
+    "include pids from custom table in ids afterId" in {
+      createPidsInCustomTable()
+      val result1 = store.currentPersistenceIds(afterId = Some(pids(9).id), limit = 1000).runWith(Sink.seq).futureValue
+      // custom pids not included because "CustomEntity" < "TestEntity"
+      result1 shouldBe pids.drop(10).map(_.id)
+
+      val result2 = store.currentPersistenceIds(afterId = Some(customPid1), limit = 1000).runWith(Sink.seq).futureValue
+      result2 shouldBe customPid2 +: pids.map(_.id)
+    }
+
+    "include pids from custom table in ids for entity type" in {
+      createPidsInCustomTable()
+      val result =
+        store
+          .currentPersistenceIds(entityType = customEntityType, afterId = None, limit = 30)
+          .runWith(Sink.seq)
+          .futureValue
+      result shouldBe Vector(customPid1, customPid2)
+    }
+
+    "include pids from custom table in ids for entity type after id" in {
+      createPidsInCustomTable()
+      val result =
+        store
+          .currentPersistenceIds(entityType = customEntityType, afterId = Some(customPid1), limit = 7)
+          .runWith(Sink.seq)
+          .futureValue
+
+      result shouldBe Vector(customPid2)
     }
 
   }
