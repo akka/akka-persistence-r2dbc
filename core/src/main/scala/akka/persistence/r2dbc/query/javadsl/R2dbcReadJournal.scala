@@ -84,6 +84,9 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
   override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] =
     delegate.currentPersistenceIds(afterId.asScala, limit).asJava
 
+  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    delegate.currentPersistenceIds(entityType, afterId, limit).asJava
+
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =
     delegate.timestampOf(persistenceId, sequenceNr).map(_.asJava)(ExecutionContexts.parasitic).toJava
 

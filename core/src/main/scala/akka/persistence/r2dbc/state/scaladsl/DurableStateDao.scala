@@ -130,8 +130,14 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private val allPersistenceIdsSql =
     sql"SELECT persistence_id from $stateTable ORDER BY persistence_id LIMIT ?"
 
+  private val persistenceIdsForEntityTypeSql =
+    sql"SELECT persistence_id from $stateTable WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+
   private val allPersistenceIdsAfterSql =
     sql"SELECT persistence_id from $stateTable WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+
+  private val persistenceIdsForEntityTypeAfterSql =
+    sql"SELECT persistence_id from $stateTable WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
   private def stateBySlicesRangeSql(
       maxDbTimestampParam: Boolean,
@@ -454,6 +460,30 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
+
+    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
+  def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
+      connection =>
+        afterId match {
+          case Some(after) =>
+            connection
+              .createStatement(persistenceIdsForEntityTypeAfterSql)
+              .bind(0, entityType + "%")
+              .bind(1, after)
+              .bind(2, limit)
+          case None =>
+            connection
+              .createStatement(persistenceIdsForEntityTypeSql)
+              .bind(0, entityType + "%")
+              .bind(1, limit)
+        },
+      row => row.get("persistence_id", classOf[String]))
+
+    if (log.isDebugEnabled)
+      result.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }

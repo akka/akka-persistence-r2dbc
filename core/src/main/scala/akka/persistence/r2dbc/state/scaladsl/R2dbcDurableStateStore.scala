@@ -165,6 +165,9 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     stateDao.persistenceIds(afterId, limit)
 
+  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    stateDao.persistenceIds(entityType, afterId, limit)
+
   def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =

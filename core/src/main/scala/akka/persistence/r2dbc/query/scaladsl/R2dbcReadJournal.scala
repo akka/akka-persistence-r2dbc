@@ -398,6 +398,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(afterId, limit)
 
+  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    queryDao.persistenceIds(entityType, afterId, limit)
+
   override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
