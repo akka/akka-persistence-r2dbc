@@ -76,7 +76,8 @@ class CurrentPersistenceIdsQuerySpec
 
     "retrieve ids for entity type" in {
       val entityType = entityTypes(1)
-      val result = store.currentPersistenceIds(entityType = entityType, afterId = None, limit = 30).runWith(Sink.seq).futureValue
+      val result =
+        store.currentPersistenceIds(entityType = entityType, afterId = None, limit = 30).runWith(Sink.seq).futureValue
       result shouldBe pids.filter(_.entityTypeHint == entityType).map(_.id)
     }
 
