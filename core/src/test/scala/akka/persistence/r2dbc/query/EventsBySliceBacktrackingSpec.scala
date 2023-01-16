@@ -13,6 +13,7 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.persistence.query.NoOffset
+import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
@@ -165,6 +166,63 @@ class EventsBySliceBacktrackingSpec
       val env9 = result.expectNext()
       env9.persistenceId shouldBe pid1
       env9.sequenceNr shouldBe 4L
+    }
+
+    "emit from backtracking after first normal query" in {
+      val entityType = nextEntityType()
+      val pid1 = nextPid(entityType)
+      val pid2 = nextPid(entityType)
+      val slice1 = query.sliceForPersistenceId(pid1)
+      val slice2 = query.sliceForPersistenceId(pid2)
+      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+
+      // don't let behind-current-time be a reason for not finding events
+      val startTime = InstantFactory.now().minusSeconds(10 * 60)
+
+      writeEvent(slice1, pid1, 1L, startTime, "e1-1")
+      writeEvent(slice1, pid1, 2L, startTime.plusMillis(2), "e1-2")
+      writeEvent(slice1, pid1, 3L, startTime.plusMillis(4), "e1-3")
+
+      def startQuery(offset: Offset): TestSubscriber.Probe[EventEnvelope[String]] =
+        query
+          .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, offset)
+          .runWith(sinkProbe)
+          .request(100)
+
+      def expect(env: EventEnvelope[String], pid: String, seqNr: Long, eventOption: Option[String]): Offset = {
+        env.persistenceId shouldBe pid
+        env.sequenceNr shouldBe seqNr
+        env.eventOption shouldBe eventOption
+        env.offset
+      }
+
+      val result1 = startQuery(NoOffset)
+      expect(result1.expectNext(), pid1, 1L, Some("e1-1"))
+      expect(result1.expectNext(), pid1, 2L, Some("e1-2"))
+      expect(result1.expectNext(), pid1, 3L, Some("e1-3"))
+
+      // first backtracking query kicks in immediately after the first normal query has finished
+      // and it also emits duplicates (by design)
+      expect(result1.expectNext(), pid1, 1L, None)
+      expect(result1.expectNext(), pid1, 2L, None)
+      val offset1 = expect(result1.expectNext(), pid1, 3L, None)
+      result1.cancel()
+
+      // write delayed events from pid2
+      writeEvent(slice2, pid2, 1L, startTime.plusMillis(1), "e2-1")
+      writeEvent(slice2, pid2, 2L, startTime.plusMillis(3), "e2-2")
+      writeEvent(slice2, pid2, 3L, startTime.plusMillis(5), "e2-3")
+
+      val result2 = startQuery(offset1)
+      // backtracking
+      expect(result2.expectNext(), pid1, 1L, None)
+      expect(result2.expectNext(), pid2, 1L, None)
+      expect(result2.expectNext(), pid1, 2L, None)
+      expect(result2.expectNext(), pid2, 2L, None)
+      expect(result2.expectNext(), pid1, 3L, None)
+      // from normal query
+      expect(result2.expectNext(), pid2, 3L, Some("e2-3"))
+
     }
   }
 

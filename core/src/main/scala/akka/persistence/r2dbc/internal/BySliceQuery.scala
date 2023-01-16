@@ -333,8 +333,7 @@ import org.slf4j.Logger
     }
 
     def switchFromBacktracking(state: QueryState): Boolean = {
-      // backtrackingCount is for fairness, to not run too many backtracking queries in a row
-      state.backtracking && (state.backtrackingCount >= 3 || state.rowCount < settings.querySettings.bufferSize - 1)
+      state.backtracking && state.rowCount < settings.querySettings.bufferSize - 1
     }
 
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
@@ -345,6 +344,9 @@ import org.slf4j.Logger
             .between(state.latestBacktracking.timestamp, state.latest.timestamp)
             .compareTo(halfBacktrackingWindow) > 0)) {
           // FIXME config for newIdleCount >= 5 and maybe something like `newIdleCount % 5 == 0`
+
+          // Note that when starting the query with offset = NoOffset it will switch to backtracking immediately after
+          // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
 
           // switching to backtracking
           val fromOffset =
