@@ -465,19 +465,20 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   }
 
   def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
     val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
       connection =>
         afterId match {
           case Some(after) =>
             connection
               .createStatement(persistenceIdsForEntityTypeAfterSql)
-              .bind(0, entityType + "%")
+              .bind(0, entityType + likeStmtPostfix)
               .bind(1, after)
               .bind(2, limit)
           case None =>
             connection
               .createStatement(persistenceIdsForEntityTypeSql)
-              .bind(0, entityType + "%")
+              .bind(0, entityType + likeStmtPostfix)
               .bind(1, limit)
         },
       row => row.get("persistence_id", classOf[String]))

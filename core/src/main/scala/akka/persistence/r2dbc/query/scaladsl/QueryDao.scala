@@ -26,6 +26,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger
@@ -320,19 +321,20 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   }
 
   def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
     val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
       connection =>
         afterId match {
           case Some(after) =>
             connection
               .createStatement(persistenceIdsForEntityTypeAfterSql)
-              .bind(0, entityType + "%")
+              .bind(0, entityType + likeStmtPostfix)
               .bind(1, after)
               .bind(2, limit)
           case None =>
             connection
               .createStatement(persistenceIdsForEntityTypeSql)
-              .bind(0, entityType + "%")
+              .bind(0, entityType + likeStmtPostfix)
               .bind(1, limit)
         },
       row => row.get("persistence_id", classOf[String]))
