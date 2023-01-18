@@ -9,6 +9,7 @@ import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
@@ -29,6 +30,7 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
@@ -78,6 +80,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
       val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
       val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+      val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
       new EventEnvelope(
         offset,
         row.persistenceId,
@@ -86,7 +89,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         row.dbTimestamp.toEpochMilli,
         metadata,
         row.entityType,
-        row.slice)
+        row.slice,
+        filtered = false,
+        source)
     }
 
     val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
@@ -192,7 +197,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           // cache of seen pid/seqNr
           var seen = mutable.LinkedHashSet.empty[(String, Long)]
           env => {
-            if (env.eventOption.isEmpty) {
+            if (EnvelopeOrigin.fromBacktracking(env)) {
               // don't deduplicate from backtracking
               env :: Nil
             } else {
@@ -371,6 +376,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+    val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
     new EventEnvelope(
       offset,
       row.persistenceId,
@@ -379,7 +385,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.dbTimestamp.toEpochMilli,
       metadata,
       row.entityType,
-      row.slice)
+      row.slice,
+      filtered = false,
+      source)
   }
 
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
