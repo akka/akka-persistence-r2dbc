@@ -39,10 +39,14 @@ class CurrentPersistenceIdsQuerySpec
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
   private val zeros = "0000"
-  private val entityType = nextEntityType()
+  private val numberOfEntityTypes = 5
+  private val entityTypes = (1 to numberOfEntityTypes).map(_ => nextEntityType())
   private val numberOfPids = 100
-  private val pids =
-    (1 to numberOfPids).map(n => PersistenceId(entityType, "p" + zeros.drop(n.toString.length) + n))
+  private val pids = {
+    (1 to numberOfEntityTypes).flatMap(entityTypeId =>
+      (1 to numberOfPids / numberOfEntityTypes).map(n =>
+        PersistenceId(entityTypes(entityTypeId - 1), "p" + zeros.drop(n.toString.length) + n)))
+  }
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()
@@ -64,9 +68,27 @@ class CurrentPersistenceIdsQuerySpec
       result shouldBe pids.map(_.id)
     }
 
-    "retrieve ids afterId" in {
+    "retrieve ids after id" in {
       val result = query.currentPersistenceIds(afterId = Some(pids(9).id), limit = 7).runWith(Sink.seq).futureValue
       result shouldBe pids.slice(10, 17).map(_.id)
+    }
+
+    "retrieve ids for entity type" in {
+      val entityType = entityTypes(1)
+      val result =
+        query.currentPersistenceIds(entityType = entityType, afterId = None, limit = 30).runWith(Sink.seq).futureValue
+      result shouldBe pids.filter(_.entityTypeHint == entityType).map(_.id)
+    }
+
+    "retrieve ids for entity type after id" in {
+      val entityType = entityTypes(0)
+      val result =
+        query
+          .currentPersistenceIds(entityType = entityType, afterId = Some(pids(9).id), limit = 7)
+          .runWith(Sink.seq)
+          .futureValue
+
+      result shouldBe pids.filter(_.entityTypeHint == entityType).slice(10, 17).map(_.id)
     }
 
   }

@@ -398,6 +398,26 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(afterId, limit)
 
+  /**
+   * Get the current persistence ids.
+   *
+   * Note: to reuse existing index, the actual query filters entity types based on persistence_id column and sql LIKE
+   * operator. Hence the persistenceId must start with an entity type followed by default separator ("|") from
+   * [[akka.persistence.typed.PersistenceId]].
+   *
+   * @param entityType
+   *   The entity type name.
+   * @param afterId
+   *   The ID to start returning results from, or [[None]] to return all ids. This should be an id returned from a
+   *   previous invocation of this command. Callers should not assume that ids are returned in sorted order.
+   * @param limit
+   *   The maximum results to return. Use Long.MaxValue to return all results. Must be greater than zero.
+   * @return
+   *   A source containing all the persistence ids, limited as specified.
+   */
+  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    queryDao.persistenceIds(entityType, afterId, limit)
+
   override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
