@@ -16,6 +16,9 @@ import akka.persistence.query.typed.EventEnvelope
   val SourceBacktracking = "BT"
   val SourcePubSub = "PS"
 
+  def fromQuery(env: EventEnvelope[_]): Boolean =
+    env.source == SourceQuery
+
   def fromBacktracking(env: EventEnvelope[_]): Boolean =
     env.source == SourceBacktracking
 

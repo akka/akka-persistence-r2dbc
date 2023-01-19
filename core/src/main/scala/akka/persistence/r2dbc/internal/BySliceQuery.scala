@@ -31,12 +31,13 @@ import org.slf4j.Logger
 
   object QueryState {
     val empty: QueryState =
-      QueryState(TimestampOffset.Zero, 0, 0, 0, backtrackingCount = 0, TimestampOffset.Zero, Buckets.empty)
+      QueryState(TimestampOffset.Zero, 0, 0, 0, 0, backtrackingCount = 0, TimestampOffset.Zero, Buckets.empty)
   }
 
   final case class QueryState(
       latest: TimestampOffset,
       rowCount: Int,
+      rowCountSinceBacktracking: Long,
       queryCount: Long,
       idleCount: Long,
       backtrackingCount: Int,
@@ -252,9 +253,13 @@ import org.slf4j.Logger
       }
     }
 
+    val currentTimestamp =
+      if (settings.useAppTimestamp) Future.successful(InstantFactory.now())
+      else dao.currentDbTimestamp()
+
     Source
       .futureSource[Envelope, NotUsed] {
-        dao.currentDbTimestamp().map { currentDbTime =>
+        currentTimestamp.map { currentTime =>
           if (log.isDebugEnabled())
             log.debugN(
               "{} query slices [{} - {}], from time [{}] until now [{}].",
@@ -262,13 +267,13 @@ import org.slf4j.Logger
               minSlice,
               maxSlice,
               initialOffset.timestamp,
-              currentDbTime)
+              currentTime)
 
           ContinuousQuery[QueryState, Envelope](
             initialState = QueryState.empty.copy(latest = initialOffset),
             updateState = nextOffset,
             delayNextQuery = _ => None,
-            nextQuery = state => nextQuery(state, currentDbTime),
+            nextQuery = state => nextQuery(state, currentTime),
             beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _))
         }
       }
@@ -340,7 +345,9 @@ import org.slf4j.Logger
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
       val newState =
         if (settings.querySettings.backtrackingEnabled && !state.backtracking && state.latest != TimestampOffset.Zero &&
-          (newIdleCount >= 5 || JDuration
+          (newIdleCount >= 5 ||
+          state.rowCountSinceBacktracking + state.rowCount >= settings.querySettings.bufferSize * 3 ||
+          JDuration
             .between(state.latestBacktracking.timestamp, state.latest.timestamp)
             .compareTo(halfBacktrackingWindow) > 0)) {
           // FIXME config for newIdleCount >= 5 and maybe something like `newIdleCount % 5 == 0`
@@ -357,18 +364,25 @@ import org.slf4j.Logger
 
           state.copy(
             rowCount = 0,
+            rowCountSinceBacktracking = 0,
             queryCount = state.queryCount + 1,
             idleCount = newIdleCount,
             backtrackingCount = 1,
             latestBacktracking = fromOffset)
         } else if (switchFromBacktracking(state)) {
           // switch from backtracking
-          state.copy(rowCount = 0, queryCount = state.queryCount + 1, idleCount = newIdleCount, backtrackingCount = 0)
+          state.copy(
+            rowCount = 0,
+            rowCountSinceBacktracking = 0,
+            queryCount = state.queryCount + 1,
+            idleCount = newIdleCount,
+            backtrackingCount = 0)
         } else {
           // continue
           val newBacktrackingCount = if (state.backtracking) state.backtrackingCount + 1 else 0
           state.copy(
             rowCount = 0,
+            rowCountSinceBacktracking = state.rowCountSinceBacktracking + state.rowCount,
             queryCount = state.queryCount + 1,
             idleCount = newIdleCount,
             backtrackingCount = newBacktrackingCount)
@@ -381,12 +395,21 @@ import org.slf4j.Logger
       val fromTimestamp = newState.nextQueryFromTimestamp
       val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize)
 
-      if (log.isDebugEnabled())
+      if (log.isDebugEnabled()) {
+        val backtrackingInfo =
+          if (newState.backtracking && !state.backtracking)
+            s" switching to backtracking mode, [${state.rowCountSinceBacktracking + state.rowCount}] events behind,"
+          else if (!newState.backtracking && state.backtracking)
+            " switching from backtracking mode,"
+          else if (newState.backtracking && state.backtracking)
+            " in backtracking mode,"
+          else
+            ""
         log.debugN(
           "{} next query [{}]{} from slices [{} - {}], between time [{} - {}]. {}",
           logPrefix,
           newState.queryCount,
-          if (newState.backtracking) " in backtracking mode" else "",
+          backtrackingInfo,
           minSlice,
           maxSlice,
           fromTimestamp,
@@ -394,6 +417,7 @@ import org.slf4j.Logger
           if (newIdleCount >= 3) s"Idle in [$newIdleCount] queries."
           else if (state.backtracking) s"Found [${state.rowCount}] rows in previous backtracking query."
           else s"Found [${state.rowCount}] rows in previous query.")
+      }
 
       newState ->
       Some(
