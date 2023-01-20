@@ -20,6 +20,7 @@ import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
@@ -103,17 +104,20 @@ class EventsBySliceBacktrackingSpec
       env1.persistenceId shouldBe pid1
       env1.sequenceNr shouldBe 1L
       env1.eventOption shouldBe Some("e1-1")
+      env1.source shouldBe EnvelopeOrigin.SourceQuery
 
       val env2 = result.expectNext()
       env2.persistenceId shouldBe pid1
       env2.sequenceNr shouldBe 2L
       env2.eventOption shouldBe Some("e1-2")
+      env2.source shouldBe EnvelopeOrigin.SourceQuery
 
       // first backtracking query kicks in immediately after the first normal query has finished
       // and it also emits duplicates (by design)
       val env3 = result.expectNext()
       env3.persistenceId shouldBe pid1
       env3.sequenceNr shouldBe 1L
+      env3.source shouldBe EnvelopeOrigin.SourceBacktracking
       // event payload isn't included in backtracking results
       env3.eventOption shouldBe None
       // but it can be lazy loaded

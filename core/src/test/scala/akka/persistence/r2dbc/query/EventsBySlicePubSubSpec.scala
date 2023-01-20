@@ -28,6 +28,7 @@ import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
@@ -92,6 +93,19 @@ class EventsBySlicePubSubSpec
       query.sliceForPersistenceId(pid.id))
   }
 
+  def backtrackingEnvelope(env: EventEnvelope[String]): EventEnvelope[String] =
+    new EventEnvelope[String](
+      env.offset,
+      env.persistenceId,
+      env.sequenceNr,
+      eventOption = None,
+      env.timestamp,
+      env.eventMetadata,
+      env.entityType,
+      env.slice,
+      env.filtered,
+      source = EnvelopeOrigin.SourceBacktracking)
+
   private val entityType = nextEntityType()
   private val pidA = PersistenceId(entityType, "A")
   private val pidB = PersistenceId(entityType, "B")
@@ -121,7 +135,9 @@ class EventsBySlicePubSubSpec
 
       // 10 was requested
       for (i <- 1 to 10) {
-        result.expectNext().event shouldBe s"e-$i"
+        val env = result.expectNext()
+        env.event shouldBe s"e-$i"
+        env.source shouldBe EnvelopeOrigin.SourcePubSub
       }
       result.expectNoMessage()
 
@@ -154,15 +170,7 @@ class EventsBySlicePubSubSpec
     }
 
     "not deduplicate from backtracking" in {
-      val envA2back = new EventEnvelope[String](
-        envA2.offset,
-        envA2.persistenceId,
-        envA2.sequenceNr,
-        eventOption = None,
-        envA2.timestamp,
-        envA2.eventMetadata,
-        envA2.entityType,
-        envA2.slice)
+      val envA2back = backtrackingEnvelope(envA2)
       val out = Source(List(envA1, envA2, envB1, envA2back, envB2))
         .via(query.deduplicate(capacity = 10))
         .runWith(Sink.seq)

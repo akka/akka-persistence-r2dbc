@@ -137,7 +137,9 @@ import org.slf4j.LoggerFactory
         timestamp.toEpochMilli,
         pr.metadata,
         entityType,
-        slice)
+        slice,
+        filtered = false,
+        source = EnvelopeOrigin.SourcePubSub)
       eventTopic(entityType, slice) ! Topic.Publish(envelope)
     }
   }
