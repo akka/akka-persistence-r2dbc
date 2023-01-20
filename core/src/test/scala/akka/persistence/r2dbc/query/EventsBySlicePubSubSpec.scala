@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.query
 
+import java.time.{ Duration => JDuration }
+
 import scala.collection.immutable
 import java.time.Instant
 
@@ -33,10 +35,12 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
+import akka.stream.scaladsl.Keep
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
+import akka.stream.testkit.scaladsl.TestSource
 import akka.stream.typed.scaladsl.ActorFlow
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
@@ -81,16 +85,21 @@ class EventsBySlicePubSubSpec
     val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
   }
 
-  private def createEnvelope(pid: PersistenceId, seqNr: Long, evt: String): EventEnvelope[String] = {
-    val now = InstantFactory.now()
+  private def createEnvelope(
+      pid: PersistenceId,
+      seqNr: Long,
+      evt: String,
+      time: Instant = Instant.now()): EventEnvelope[String] = {
     EventEnvelope(
-      TimestampOffset(Instant.now, Map(pid.id -> seqNr)),
+      TimestampOffset(time, time, Map(pid.id -> seqNr)),
       pid.id,
       seqNr,
       evt,
-      now.toEpochMilli,
+      time.toEpochMilli,
       pid.entityTypeHint,
-      query.sliceForPersistenceId(pid.id))
+      query.sliceForPersistenceId(pid.id),
+      filtered = false,
+      source = EnvelopeOrigin.SourcePubSub)
   }
 
   def backtrackingEnvelope(env: EventEnvelope[String]): EventEnvelope[String] =
@@ -109,11 +118,12 @@ class EventsBySlicePubSubSpec
   private val entityType = nextEntityType()
   private val pidA = PersistenceId(entityType, "A")
   private val pidB = PersistenceId(entityType, "B")
-  private val envA1 = createEnvelope(pidA, 1L, "a1")
-  private val envA2 = createEnvelope(pidA, 2L, "a2")
-  private val envA3 = createEnvelope(pidA, 3L, "a3")
-  private val envB1 = createEnvelope(pidB, 1L, "b1")
-  private val envB2 = createEnvelope(pidB, 2L, "b2")
+  val now = Instant.now()
+  private val envA1 = createEnvelope(pidA, 1L, "a1", now)
+  private val envA2 = createEnvelope(pidA, 2L, "a2", now.plusMillis(1))
+  private val envA3 = createEnvelope(pidA, 3L, "a3", now.plusMillis(2))
+  private val envB1 = createEnvelope(pidB, 1L, "b1", now.plusMillis(3))
+  private val envB2 = createEnvelope(pidB, 2L, "b2", now.plusMillis(4))
 
   s"EventsBySlices pub-sub" should {
 
@@ -184,6 +194,45 @@ class EventsBySlicePubSubSpec
         .runWith(Sink.seq)
         .futureValue
       out shouldBe List(envA1, envA2, envA3, envB1, envA1, envB2) // envA1 was evicted and therefore duplicate
+    }
+
+    "skipPubSubTooFarAhead" in {
+      val (in, out) =
+        TestSource[EventEnvelope[String]]()
+          .via(
+            query.skipPubSubTooFarAhead(
+              enabled = true,
+              maxAheadOfBacktracking = JDuration.ofMillis(r2dbcSettings.querySettings.backtrackingWindow.toMillis)))
+          .toMat(TestSink[EventEnvelope[String]])(Keep.both)
+          .run()
+      out.request(100)
+      in.sendNext(envA1)
+      in.sendNext(envA2)
+
+      // all pubsub events dropped before the first backtracking event
+      out.expectNoMessage()
+
+      val pidC = PersistenceId(entityType, "C")
+      in.sendNext(backtrackingEnvelope(envA1))
+      out.expectNext(backtrackingEnvelope(envA1))
+      // now the pubsub event is passed through
+      in.sendNext(envB1)
+      out.expectNext(envB1)
+
+      val time2 = envA1.offset
+        .asInstanceOf[TimestampOffset]
+        .timestamp
+        .plusMillis(r2dbcSettings.querySettings.backtrackingWindow.toMillis)
+      val envC1 = createEnvelope(pidC, 1L, "c1", time2.plusMillis(1))
+      val envC2 = createEnvelope(pidC, 2L, "c2", time2.plusMillis(2))
+      in.sendNext(envC1)
+      // dropped because > backtrackingWindow
+      out.expectNoMessage()
+
+      in.sendNext(backtrackingEnvelope(envB1))
+      out.expectNext(backtrackingEnvelope(envB1))
+      in.sendNext(envC2)
+      out.expectNext(envC2)
     }
 
     "dynamically enable/disable publishing based on throughput" in new Setup {
