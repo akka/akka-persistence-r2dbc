@@ -82,6 +82,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
       val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
       val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+
       new EventEnvelope(
         offset,
         row.persistenceId,
