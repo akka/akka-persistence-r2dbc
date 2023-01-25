@@ -35,6 +35,7 @@ object Dependencies {
     val akkaTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
+    val akkaDiscovery = "com.typesafe.akka" %% "akka-discovery" % AkkaVersion % Test
 
     val akkaProjectionEventSourced =
       "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion % Test
@@ -79,6 +80,7 @@ object Dependencies {
     TestDeps.akkaTestkit,
     TestDeps.akkaProjectionTestKit,
     TestDeps.akkaJackson,
+    TestDeps.akkaDiscovery,
     TestDeps.logback,
     TestDeps.scalaTest)
 
