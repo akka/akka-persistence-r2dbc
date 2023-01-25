@@ -9,7 +9,7 @@ object Dependencies {
   val Scala213 = "2.13.10"
   val AkkaVersion = System.getProperty("override.akka.version", "2.8.0-M4")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.3.0"
+  val AkkaProjectionVersion = "1.4.0-M2"
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
 
@@ -20,6 +20,7 @@ object Dependencies {
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
 
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
+    val akkaProjectionGrpc = "com.lightbend.akka" %% "akka-projection-grpc" % AkkaProjectionVersion % Optional
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.0.RELEASE" // ApacheV2
@@ -71,6 +72,7 @@ object Dependencies {
     r2dbcPool,
     r2dbcPostgres,
     akkaProjectionCore,
+    akkaProjectionGrpc,
     TestDeps.akkaProjectionEventSourced,
     TestDeps.akkaProjectionDurableState,
     TestDeps.akkaStreamTestkit,
