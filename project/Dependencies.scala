@@ -9,7 +9,7 @@ object Dependencies {
   val Scala213 = "2.13.10"
   val AkkaVersion = System.getProperty("override.akka.version", "2.8.0-M4")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.3.0"
+  val AkkaProjectionVersion = "1.4.0-M2"
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
 
@@ -20,6 +20,7 @@ object Dependencies {
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
 
     val akkaProjectionCore = "com.lightbend.akka" %% "akka-projection-core" % AkkaProjectionVersion
+    val akkaProjectionGrpc = "com.lightbend.akka" %% "akka-projection-grpc" % AkkaProjectionVersion % Provided
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.0.RELEASE" // ApacheV2
@@ -34,6 +35,8 @@ object Dependencies {
     val akkaTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
+    // Note: Not sure why this is needed, but the projection tests fail with mixed akka module versions without it
+    val akkaDiscovery = "com.typesafe.akka" %% "akka-discovery" % AkkaVersion % Test
 
     val akkaProjectionEventSourced =
       "com.lightbend.akka" %% "akka-projection-eventsourced" % AkkaProjectionVersion % Test
@@ -71,12 +74,14 @@ object Dependencies {
     r2dbcPool,
     r2dbcPostgres,
     akkaProjectionCore,
+    akkaProjectionGrpc,
     TestDeps.akkaProjectionEventSourced,
     TestDeps.akkaProjectionDurableState,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
     TestDeps.akkaProjectionTestKit,
     TestDeps.akkaJackson,
+    TestDeps.akkaDiscovery,
     TestDeps.logback,
     TestDeps.scalaTest)
 
