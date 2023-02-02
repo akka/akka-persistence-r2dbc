@@ -6,6 +6,7 @@ package akka.persistence.r2dbc
 
 import java.util.Locale
 
+import scala.collection.immutable
 import scala.concurrent.duration._
 
 import akka.annotation.InternalApi
@@ -40,6 +41,46 @@ final class R2dbcSettings(config: Config) {
 
   val durableStateTable: String = config.getString("state.table")
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  private val durableStateTableByEntityType: Map[String, String] =
+    configToMap(config.getConfig("state.custom-table"))
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
+    durableStateTableByEntityType.map { case (entityType, table) =>
+      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+    }
+
+  def getDurableStateTable(entityType: String): String =
+    durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
+
+  def getDurableStateTableWithSchema(entityType: String): String =
+    durableStateTableByEntityTypeWithSchema.getOrElse(entityType, durableStateTableWithSchema)
+
+  private def configToMap(cfg: Config): Map[String, String] = {
+    import akka.util.ccompat.JavaConverters._
+    cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = {
+    import akka.util.ccompat.JavaConverters._
+    val cfg = config.getConfig("state.additional-columns")
+    cfg.root.unwrapped.asScala.toMap.map {
+      case (k, v: java.util.List[_]) => k -> v.iterator.asScala.map(_.toString).toVector
+      case (k, v)                    => k -> Vector(v.toString)
+    }
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateChangeHandlerClasses: Map[String, String] =
+    configToMap(config.getConfig("state.change-handler"))
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 

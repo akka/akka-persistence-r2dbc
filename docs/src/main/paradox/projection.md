@@ -8,7 +8,7 @@ The source of the envelopes is from a `SourceProvider`, which can be:
 * state changes for Durable State entities via the @extref:[SourceProvider for changesBySlices](akka-projection:durable-state.html#sourceprovider-for-changesbyslices) with the @ref:[changesBySlices query](query.md#changesbyslices)
 * any other `SourceProvider` with supported @ref:[offset types](#offset-types)
 
-A @apidoc[R2dbcHandler] receives a @apidoc[R2dbcSession] instance and an envelope. The
+A @apidoc[R2dbcHandler] receives a @apidoc[akka.projection.*.R2dbcSession] instance and an envelope. The
 `R2dbcSession` provides the means to access an open R2DBC connection that can be used to process the envelope.
 The target database operations can be run in the same transaction as the storage of the offset, which means
 that @ref:[exactly-once](#exactly-once) processing semantics is supported. It also offers

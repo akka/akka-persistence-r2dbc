@@ -36,7 +36,11 @@ import org.slf4j.LoggerFactory
 object R2dbcDurableStateStore {
   val Identifier = "akka.persistence.r2dbc.state"
 
-  private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
+  private final case class PersistenceIdsQueryState(
+      queryCount: Int,
+      rowCount: Int,
+      latestPid: String,
+      tables: List[String])
 }
 
 class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfgPath: String)
@@ -121,7 +125,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       manifest,
       if (tag.isEmpty) Set.empty else Set(tag))
 
-    stateDao.upsertState(serializedRow)
+    stateDao.upsertState(serializedRow, value)
 
   }
 
@@ -162,6 +166,11 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
     bySlice.liveBySlices("changesBySlices", entityType, minSlice, maxSlice, offset)
 
+  /**
+   * Note: If you have configured `custom-table` this query will look in both the default table and the custom tables.
+   * If you are only interested in ids for a specific entity type it's more efficient to use `currentPersistenceIds`
+   * with `entityType` parameter.
+   */
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
     stateDao.persistenceIds(afterId, limit)
 
@@ -191,19 +200,28 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       state.copy(rowCount = state.rowCount + 1, latestPid = pid)
 
     def nextQuery(state: PersistenceIdsQueryState): (PersistenceIdsQueryState, Option[Source[String, NotUsed]]) = {
-      if (state.queryCount == 0L || state.rowCount >= persistenceIdsBufferSize) {
-        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+      def next(newState: PersistenceIdsQueryState) = {
+        val newState2 = newState.copy(rowCount = 0, queryCount = newState.queryCount + 1)
 
-        if (state.queryCount != 0 && log.isDebugEnabled())
+        if (newState.queryCount != 0 && log.isDebugEnabled())
           log.debugN(
             "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
-            state.queryCount,
-            state.latestPid,
-            state.rowCount)
+            newState.queryCount,
+            newState.latestPid,
+            newState.rowCount)
 
-        newState -> Some(
+        val afterPid = if (newState.latestPid == "") None else Some(newState.latestPid)
+
+        newState2 -> Some(
           stateDao
-            .persistenceIds(if (state.latestPid == "") None else Some(state.latestPid), persistenceIdsBufferSize))
+            .persistenceIds(afterPid, persistenceIdsBufferSize, newState.tables.head))
+      }
+
+      if (state.queryCount == 0L || state.rowCount >= persistenceIdsBufferSize) {
+        next(state)
+      } else if (state.tables.tail.nonEmpty) {
+        // continue with next custom table
+        next(state.copy(tables = state.tables.tail, latestPid = ""))
       } else {
         if (log.isDebugEnabled)
           log.debug(
@@ -215,8 +233,11 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       }
     }
 
+    val customTables = settings.durableStateTableByEntityTypeWithSchema.toList.sortBy(_._1).map(_._2)
+    val tables = settings.durableStateTableWithSchema :: customTables
+
     ContinuousQuery[PersistenceIdsQueryState, String](
-      initialState = PersistenceIdsQueryState(0, 0, ""),
+      initialState = PersistenceIdsQueryState(0, 0, "", tables),
       updateState = updateState,
       delayNextQuery = _ => None,
       nextQuery = state => nextQuery(state))
