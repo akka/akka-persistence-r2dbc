@@ -32,7 +32,9 @@ object Dependencies {
     // FIXME remove this when r2dbc-postgresql includes a later Netty version
     val nettyHandlerProxy = "io.netty" % "netty-handler-proxy" % NettyVersion
     val nettyResolverDns = "io.netty" % "netty-resolver-dns" % NettyVersion
-    val nettyResolverDnsMacos = "io.netty" % "netty-resolver-dns-native-macos" % NettyVersion classifier "osx-x86_64" classifier "osx-aarch_64"
+    val nettyResolverDnsMacos = ("io.netty" % "netty-resolver-dns-native-macos" % NettyVersion)
+      .classifier("osx-x86_64")
+      .classifier("osx-aarch_64")
     val nettyNativeEpoll = "io.netty" % "netty-transport-native-epoll" % NettyVersion
   }
 
