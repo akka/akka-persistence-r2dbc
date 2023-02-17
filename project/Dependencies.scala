@@ -13,8 +13,6 @@ object Dependencies {
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
 
-  val NettyVersion = "4.1.89.Final"
-
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
     val akkaStream = "com.typesafe.akka" %% "akka-stream" % AkkaVersion
@@ -26,16 +24,7 @@ object Dependencies {
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.0.RELEASE" // ApacheV2
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.0.RELEASE" // ApacheV2
-
-    // bump Netty dependency due to CVE-2022-41915
-    // FIXME remove this when r2dbc-postgresql includes a later Netty version
-    val nettyHandlerProxy = "io.netty" % "netty-handler-proxy" % NettyVersion
-    val nettyResolverDns = "io.netty" % "netty-resolver-dns" % NettyVersion
-    val nettyResolverDnsMacos = ("io.netty" % "netty-resolver-dns-native-macos" % NettyVersion)
-      .classifier("osx-x86_64")
-      .classifier("osx-aarch_64")
-    val nettyNativeEpoll = "io.netty" % "netty-transport-native-epoll" % NettyVersion
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.1.RELEASE" // ApacheV2
   }
 
   object TestDeps {
@@ -71,10 +60,6 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
-    nettyHandlerProxy,
-    nettyResolverDns,
-    nettyResolverDnsMacos,
-    nettyNativeEpoll,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
