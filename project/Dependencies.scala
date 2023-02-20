@@ -85,7 +85,7 @@ object Dependencies {
     TestDeps.logback,
     TestDeps.scalaTest)
 
-  val migration =
+  val migrationTests =
     Seq(
       "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
       TestDeps.postgresql,

@@ -78,7 +78,7 @@ lazy val root = (project in file("."))
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
   .enablePlugins(ScalaUnidocPlugin)
   .disablePlugins(SitePlugin, MimaPlugin)
-  .aggregate(core, projection, migration, docs)
+  .aggregate(core, projection, migration, migrationTests, docs)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 
@@ -97,7 +97,6 @@ lazy val migration = (project in file("migration"))
   .settings(common)
   .settings(
     name := "akka-persistence-r2dbc-migration",
-    libraryDependencies ++= Dependencies.migration,
     Test / mainClass := Some("akka.persistence.r2dbc.migration.MigrationTool"),
     Test / run / fork := true,
     Test / run / javaOptions ++= {
@@ -109,9 +108,18 @@ lazy val migration = (project in file("migration"))
       }
       "-Dlogback.configurationFile=logback-main.xml" :: "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     })
+  .dependsOn(core % "compile->compile")
+  .enablePlugins(AutomateHeaderPlugin)
+  .disablePlugins(MimaPlugin)
+
+lazy val migrationTests = (project in file("migration-tests"))
+  .settings(common)
+  .settings(name := "akka-persistence-r2dbc-migration-tests", libraryDependencies ++= Dependencies.migrationTests)
+  .dependsOn(migration)
   .dependsOn(core % "compile->compile;test->test")
   .enablePlugins(AutomateHeaderPlugin)
   .disablePlugins(MimaPlugin)
+  .settings(dontPublish)
 
 lazy val docs = project
   .in(file("docs"))
