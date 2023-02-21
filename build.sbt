@@ -108,8 +108,8 @@ lazy val migration = (project in file("migration"))
       }
       "-Dlogback.configurationFile=logback-main.xml" :: "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     })
-  .dependsOn(core % "compile->compile")
-  .enablePlugins(AutomateHeaderPlugin)
+  .dependsOn(core)
+  .enablePlugins(AutomateHeaderPlugin)  
   .disablePlugins(MimaPlugin)
 
 lazy val migrationTests = (project in file("migration-tests"))
