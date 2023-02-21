@@ -57,7 +57,7 @@ private[r2dbc] object JournalDao {
       case metaPayload =>
         Some(
           SerializedEventMetadata(
-            serId = row.get("meta_ser_id", classOf[Integer]),
+            serId = row.get[Integer]("meta_ser_id", classOf[Integer]),
             serManifest = row.get("meta_ser_manifest", classOf[String]),
             metaPayload))
     }

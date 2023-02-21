@@ -76,7 +76,7 @@ class CurrentPersistenceIdsQuerySpec
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $customTable")),
       10.seconds)
 
-    val probe = createTestProbe[Done]
+    val probe = createTestProbe[Done]()
     pids.foreach { pid =>
       val persister = spawn(TestActors.DurableStatePersister(pid))
       persister ! DurableStatePersister.PersistWithAck("s-1", probe.ref)
@@ -87,7 +87,7 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   private def createPidsInCustomTable(): Unit = {
-    val probe = createTestProbe[Done]
+    val probe = createTestProbe[Done]()
     val persister1 = spawn(TestActors.DurableStatePersister(customPid1))
     persister1 ! DurableStatePersister.Persist("s-1")
     persister1 ! DurableStatePersister.Stop(probe.ref)

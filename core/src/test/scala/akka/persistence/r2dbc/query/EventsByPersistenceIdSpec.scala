@@ -185,7 +185,7 @@ class EventsByPersistenceIdSpec
 
   "Live query" should {
     "pick up new events" in {
-      val pid = nextPid
+      val pid = nextPid()
       val persister = testKit.spawn(Persister(pid))
       val probe = testKit.createTestProbe[Done]()
       val sub = query

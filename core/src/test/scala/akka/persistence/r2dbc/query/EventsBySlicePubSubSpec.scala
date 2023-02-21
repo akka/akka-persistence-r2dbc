@@ -81,7 +81,7 @@ class EventsBySlicePubSubSpec
     val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
-    val probe = createTestProbe[Done]
+    val probe = createTestProbe[Done]()
     val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
   }
 
@@ -130,11 +130,11 @@ class EventsBySlicePubSubSpec
     "publish new events" in new Setup {
 
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
-        query.eventsBySlices[String](entityType, slice, slice, NoOffset).runWith(sinkProbe).request(10)
+        query.eventsBySlices[String](this.entityType, slice, slice, NoOffset).runWith(sinkProbe).request(10)
 
       val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
       eventually {
-        PubSub(typedSystem).eventTopic[String](entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+        PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
         topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
       }
 
@@ -203,7 +203,7 @@ class EventsBySlicePubSubSpec
             query.skipPubSubTooFarAhead(
               enabled = true,
               maxAheadOfBacktracking = JDuration.ofMillis(r2dbcSettings.querySettings.backtrackingWindow.toMillis)))
-          .toMat(TestSink[EventEnvelope[String]])(Keep.both)
+          .toMat(TestSink[EventEnvelope[String]]())(Keep.both)
           .run()
       out.request(100)
       in.sendNext(envA1)
@@ -241,13 +241,13 @@ class EventsBySlicePubSubSpec
       val consumerProbe = createTestProbe[EventEnvelope[String]]()
 
       query
-        .eventsBySlices[String](entityType, slice, slice, NoOffset)
+        .eventsBySlices[String](this.entityType, slice, slice, NoOffset)
         .runWith(
           Sink.actorRef(consumerProbe.ref.toClassic, onCompleteMessage = "done", onFailureMessage = _.getMessage))
 
       val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
       eventually {
-        PubSub(typedSystem).eventTopic[String](entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+        PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
         topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
       }
 
@@ -302,7 +302,7 @@ class EventsBySlicePubSubSpec
       val querySliceRanges = Persistence(typedSystem).sliceRanges(numberOfTopics * 2)
       val queries: immutable.IndexedSeq[TestSubscriber.Probe[EventEnvelope[String]]] = {
         querySliceRanges.map { range =>
-          query.eventsBySlices[String](entityType, range.min, range.max, NoOffset).runWith(sinkProbe).request(100)
+          query.eventsBySlices[String](this.entityType, range.min, range.max, NoOffset).runWith(sinkProbe).request(100)
         }
       }
 
@@ -310,7 +310,7 @@ class EventsBySlicePubSubSpec
       eventually {
         (0 until 1024).foreach { i =>
           withClue(s"slice $i: ") {
-            PubSub(typedSystem).eventTopic[String](entityType, i) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+            PubSub(typedSystem).eventTopic[String](this.entityType, i) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
             topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 2
           }
         }

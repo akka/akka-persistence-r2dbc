@@ -41,12 +41,12 @@ private[r2dbc] object SnapshotDao {
   private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
     SerializedSnapshotRow(
       row.get("persistence_id", classOf[String]),
-      row.get("seq_nr", classOf[java.lang.Long]),
-      row.get("write_timestamp", classOf[java.lang.Long]),
+      row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+      row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
       row.get("snapshot", classOf[Array[Byte]]),
-      row.get("ser_id", classOf[Integer]),
+      row.get[Integer]("ser_id", classOf[Integer]),
       row.get("ser_manifest", classOf[String]), {
-        val metaSerializerId = row.get("meta_ser_id", classOf[Integer])
+        val metaSerializerId = row.get[Integer]("meta_ser_id", classOf[Integer])
         if (metaSerializerId eq null) None
         else
           Some(

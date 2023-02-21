@@ -178,10 +178,10 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       row =>
         if (backtracking)
           SerializedJournalRow(
-            slice = row.get("slice", classOf[Integer]),
+            slice = row.get[Integer]("slice", classOf[Integer]),
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
-            seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = None, // lazy loaded for backtracking
@@ -192,14 +192,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             metadata = None)
         else
           SerializedJournalRow(
-            slice = row.get("slice", classOf[Integer]),
+            slice = row.get[Integer]("slice", classOf[Integer]),
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
-            seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = Some(row.get("event_payload", classOf[Array[Byte]])),
-            serId = row.get("event_ser_id", classOf[Integer]),
+            serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
             tags = Set.empty, // tags not fetched in queries (yet)
@@ -238,8 +238,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(2, toTimestamp)
           .bind(3, limit),
       row => {
-        val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
-        val count = row.get("count", classOf[java.lang.Long]).toLong
+        val bucketStartEpochSeconds = row.get[java.lang.Long]("bucket", classOf[java.lang.Long]).toLong * 10
+        val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong
         Bucket(bucketStartEpochSeconds, count)
       })
 
@@ -273,14 +273,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(1, seqNr),
       row =>
         SerializedJournalRow(
-          slice = row.get("slice", classOf[Integer]),
+          slice = row.get[Integer]("slice", classOf[Integer]),
           entityType = row.get("entity_type", classOf[String]),
           persistenceId,
           seqNr,
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = Some(row.get("event_payload", classOf[Array[Byte]])),
-          serId = row.get("event_ser_id", classOf[Integer]),
+          serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
           tags = Set.empty, // tags not fetched in queries (yet)
@@ -301,14 +301,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           .bind(3, settings.querySettings.bufferSize),
       row =>
         SerializedJournalRow(
-          slice = row.get("slice", classOf[Integer]),
+          slice = row.get[Integer]("slice", classOf[Integer]),
           entityType = row.get("entity_type", classOf[String]),
           persistenceId = row.get("persistence_id", classOf[String]),
-          seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+          seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
           payload = Some(row.get("event_payload", classOf[Array[Byte]])),
-          serId = row.get("event_ser_id", classOf[Integer]),
+          serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
           tags = Set.empty, // tags not fetched in queries (yet)

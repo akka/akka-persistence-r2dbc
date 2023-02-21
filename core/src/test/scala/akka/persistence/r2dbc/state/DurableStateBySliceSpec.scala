@@ -69,11 +69,11 @@ class DurableStateBySliceSpec
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)
 
   private class Setup {
-    val entityType = nextEntityType
+    val entityType = nextEntityType()
     val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.DurableStatePersister(persistenceId))
-    val probe = createTestProbe[Done]
+    val probe = createTestProbe[Done]()
     val updatedDurableStateProbe = createTestProbe[UpdatedDurableState[String]]()
     val killSwitch = KillSwitches.shared("test")
   }

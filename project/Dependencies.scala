@@ -5,11 +5,14 @@
 import sbt._
 
 object Dependencies {
-  val Scala212 = "2.12.17"
   val Scala213 = "2.13.10"
+  val Scala212 = "2.12.17"
+  val Scala3 = "3.1.3"
+  val Scala2Versions = Seq(Scala213, Scala212)
+  val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
   val AkkaVersion = System.getProperty("override.akka.version", "2.8.0-M4")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaProjectionVersion = "1.4.0-M2"
+  val AkkaProjectionVersion = "1.4.0-M2-31-0490fe4e-SNAPSHOT"
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
 
@@ -47,7 +50,7 @@ object Dependencies {
     val postgresql = "org.postgresql" % "postgresql" % "42.5.2" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
-    val scalaTest = "org.scalatest" %% "scalatest" % "3.1.4" % Test // ApacheV2
+    val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
   }
