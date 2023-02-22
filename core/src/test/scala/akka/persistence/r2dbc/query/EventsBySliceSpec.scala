@@ -84,7 +84,7 @@ class EventsBySliceSpec
     val persistenceId = nextPid(entityType)
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
-    val probe = createTestProbe[Done]
+    val probe = createTestProbe[Done]()
     val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
   }
 

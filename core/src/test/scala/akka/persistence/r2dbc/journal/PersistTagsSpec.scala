@@ -63,7 +63,7 @@ class PersistTagsSpec
               }
               Row(
                 pid = row.get("persistence_id", classOf[String]),
-                seqNr = row.get("seq_nr", classOf[java.lang.Long]),
+                seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
                 tags)
             })
           .futureValue

@@ -6,12 +6,20 @@ package akka.persistence.r2dbc.query
 
 import akka.actor.ExtendedActorSystem
 import akka.persistence.query.ReadJournalProvider
+import akka.persistence.query.scaladsl.ReadJournal
 import com.typesafe.config.Config
 
 final class R2dbcReadJournalProvider(system: ExtendedActorSystem, config: Config, cfgPath: String)
     extends ReadJournalProvider {
-  override val scaladslReadJournal: scaladsl.R2dbcReadJournal =
+
+  private lazy val scaladslReadJournalInstance =
     new scaladsl.R2dbcReadJournal(system, config, cfgPath)
 
-  override val javadslReadJournal: javadsl.R2dbcReadJournal = new javadsl.R2dbcReadJournal(scaladslReadJournal)
+  override def scaladslReadJournal(): ReadJournal = scaladslReadJournalInstance
+
+  private lazy val javadslReadJournalInstance =
+    new javadsl.R2dbcReadJournal(scaladslReadJournalInstance)
+
+  override def javadslReadJournal(): javadsl.R2dbcReadJournal = javadslReadJournalInstance
+
 }
