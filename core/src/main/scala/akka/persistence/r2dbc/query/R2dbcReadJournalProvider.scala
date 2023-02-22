@@ -18,7 +18,7 @@ final class R2dbcReadJournalProvider(system: ExtendedActorSystem, config: Config
   override def scaladslReadJournal(): ReadJournal = scaladslReadJournalInstance
 
   private lazy val javadslReadJournalInstance =
-    new javadsl.R2dbcReadJournal(scaladslReadJournal().asInstanceOf[scaladsl.R2dbcReadJournal])
+    new javadsl.R2dbcReadJournal(scaladslReadJournalInstance)
 
   override def javadslReadJournal(): javadsl.R2dbcReadJournal = javadslReadJournalInstance
 
