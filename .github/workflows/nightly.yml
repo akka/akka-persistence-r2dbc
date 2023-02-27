@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test-postgres:
-    name: Run test with Postgres
+    name: Run tests with Postgres
     runs-on: ubuntu-22.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     strategy:
@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           # cover relevant combinations when combined with the matrix Yugabyte tests
-          - { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '' }
-          # { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
-          - { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
-          # { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '' }
-          # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
-          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
-          - { scalaVersion: "3.1",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+          - { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '', testCmd: "test" }
+          # { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
+          - { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
+          # { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '', testCmd: "test"}
+          # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
+          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
+          - { scalaVersion: "3.1",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
     steps:
       - name: Checkout
         uses: actions/checkout@v3.1.0
@@ -46,11 +46,11 @@ jobs:
           sleep 10
           docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
-      - name: sbt test
+      - name: sbt ${{ matrix.testCmd }}
         run: |-
           cp .jvmopts-ci .jvmopts
           sbt ++${{ matrix.scalaVersion }} \
-            test ${{ matrix.extraOpts }}
+            ${{ matrix.testCmd }} ${{ matrix.extraOpts }}
 
       - name: Email on failure
         if: ${{ failure() }}
@@ -76,12 +76,13 @@ jobs:
       matrix:
         include:
           # cover relevant combinations when combined with the matrix Postgres tests
-          # { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '' }
-          - { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
-          # { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
-          - { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '' }
-          - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler' }
-          # { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '' }
+          # { scalaVersion: "2.12", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0",  extraOpts: '', testCmd: "test" }
+          - { scalaVersion: "2.12", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test" }
+          # { scalaVersion: "2.12", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test" }
+          - { scalaVersion: "2.13", jdkVersion: "1.8.0",  jvmName: "temurin:1.8.0", extraOpts: '', testCmd: "test" }
+          - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test" }
+          # { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test" }
+          - { scalaVersion: "3.1",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
     steps:
       - name: Checkout
         uses: actions/checkout@v3.1.0
@@ -103,12 +104,12 @@ jobs:
           sleep 10
           docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
 
-      - name: sbt test
+      - name: sbt ${{ matrix.testCmd }}
         run: |-
           cp .jvmopts-ci .jvmopts
           sbt ++${{ matrix.scalaVersion }} \
             -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte \
-            test ${{ matrix.extraOpts }}
+            ${{ matrix.extraOpts }} ${{ matrix.extraOpts }}
 
       - name: Email on failure
         if: ${{ failure() }}
