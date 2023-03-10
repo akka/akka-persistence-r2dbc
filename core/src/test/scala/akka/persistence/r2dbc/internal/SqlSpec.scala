@@ -12,9 +12,9 @@ class SqlSpec extends AnyWordSpec with TestSuite with Matchers {
   import Sql.Interpolation
 
   "SQL string interpolation" should {
-    "replace ? bind parameters with numbered $" in {
-      sql"select * from bar where a = ?" shouldBe "select * from bar where a = $1"
-      sql"select * from bar where a = ? and b = ? and c = ?" shouldBe "select * from bar where a = $1 and b = $2 and c = $3"
+    "replace ? bind parameters with numbered $ (avoiding escaped ones)" in {
+      sql"select * from bar where a = ? and qa = 'Question?? Answer!'" shouldBe "select * from bar where a = $1 and qa = 'Question? Answer!'"
+      sql"select * from bar where a = ? and b = ? and jsonb ?? 'status' and c = ?" shouldBe "select * from bar where a = $1 and b = $2 and jsonb ? 'status' and c = $3"
       sql"select * from bar" shouldBe "select * from bar"
     }
 
