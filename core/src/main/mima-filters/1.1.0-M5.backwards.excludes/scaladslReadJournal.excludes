@@ -1,0 +1,2 @@
+# Change for Scala 3, that was reverted
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.query.R2dbcReadJournalProvider.scaladslReadJournal")
