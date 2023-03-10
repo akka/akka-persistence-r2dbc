@@ -239,7 +239,7 @@ class EventSourcedEndToEndSpec
 
       val entities = (0 until numberOfEntities).map { n =>
         val persistenceId = PersistenceId(entityType, s"p$n")
-        spawn(Persister(persistenceId), s"p$n")
+        spawn(Persister(persistenceId), s"$entityType-p$n")
       }
 
       // write some before starting the projections
@@ -301,7 +301,7 @@ class EventSourcedEndToEndSpec
 
       val entities = (0 until numberOfEntities).map { n =>
         val persistenceId = PersistenceId(entityType, s"p$n")
-        spawn(Persister(persistenceId), s"p$n")
+        spawn(Persister(persistenceId), s"$entityType-p$n")
       }
 
       val projectionName = UUID.randomUUID().toString
