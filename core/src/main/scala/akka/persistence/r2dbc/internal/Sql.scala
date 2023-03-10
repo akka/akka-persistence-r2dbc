@@ -16,8 +16,9 @@ import akka.annotation.InternalStableApi
 object Sql {
 
   /**
-   * Scala string interpolation with `sql` prefix. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims
-   * whitespace, including line breaks. Standard string interpolation arguments `$` can be used.
+   * Scala string interpolation with `sql` prefix. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Use `??`
+   * to include a literal `?`. Trims whitespace, including line breaks. Standard string interpolation arguments `$` can
+   * be used.
    */
   implicit class Interpolation(val sc: StringContext) extends AnyVal {
     def sql(args: Any*): String =
@@ -25,8 +26,8 @@ object Sql {
   }
 
   /**
-   * Java API: Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims whitespace, including line breaks. The
-   * arguments are used like in [[java.lang.String.format]].
+   * Java API: Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Use `??` to include a literal `?`. Trims
+   * whitespace, including line breaks. The arguments are used like in [[java.lang.String.format]].
    */
   @varargs
   def format(sql: String, args: AnyRef*): String =
@@ -39,9 +40,13 @@ object Sql {
       val sb = new java.lang.StringBuilder(sql.length + 10)
       var n = 0
       var i = 0
+      def isNext(d: Char): Boolean = (i < sql.length - 1) && (sql.charAt(i + 1) == d)
       while (i < sql.length) {
         val c = sql.charAt(i)
-        if (c == '?') {
+        if (c == '?' && isNext('?')) {
+          sb.append('?')
+          i += 1 // advance past extra '?'
+        } else if (c == '?') {
           n += 1
           sb.append('$').append(n)
         } else {
