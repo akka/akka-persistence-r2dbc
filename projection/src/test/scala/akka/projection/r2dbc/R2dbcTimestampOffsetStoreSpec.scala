@@ -789,6 +789,41 @@ class R2dbcTimestampOffsetStoreSpec
       offsetStore.getState().byPid.keySet shouldBe Set(p3, p4, p5, p6, p7, p8)
     }
 
+    "delete many old records" in {
+      // windowSeconds and totalMillis can be increase for longer/more testing
+      val windowSeconds = 3
+      val totalMillis = 5 * 1000
+
+      val projectionId = genRandomProjectionId()
+      val deleteSettings = settings
+        .withTimeWindow(JDuration.ofSeconds(windowSeconds))
+        .withKeepNumberOfEntries(2000)
+        .withDeleteInterval(JDuration.ofHours(1)) // don't run the scheduled deletes
+      val offsetStore = createOffsetStore(projectionId, deleteSettings)
+
+      val startTime = TestClock.nowMicros().instant()
+      log.debug("Start time [{}]", startTime)
+
+      val storedSlices =
+        (1 to totalMillis / 10).flatMap { m =>
+          val offsets = (1 to 10).map { n =>
+            val pid = s"p$m-$n"
+            TimestampOffset(startTime.plus(JDuration.ofMillis(m * 10 + n)), Map(pid -> 1L))
+          }
+          offsetStore.saveOffsets(offsets).futureValue
+          if (m % (totalMillis / 100) == 0) {
+            val t0 = System.nanoTime()
+            val deleted = offsetStore.deleteOldTimestampOffsets().futureValue
+            println(s"# ${m * 10} deleted $deleted, took ${(System.nanoTime() - t0) / 1000 / 1000} ms")
+          }
+          offsets.map(o => persistenceExt.sliceForPersistenceId(o.seen.head._1)).toSet
+        }.toSet
+
+      offsetStore.readOffset().futureValue // this will load from database
+      val readSlices = offsetStore.getState().byPid.keySet.map(pid => persistenceExt.sliceForPersistenceId(pid))
+      readSlices shouldBe storedSlices
+    }
+
     "periodically delete old records" in {
       val projectionId = genRandomProjectionId()
       val deleteSettings =

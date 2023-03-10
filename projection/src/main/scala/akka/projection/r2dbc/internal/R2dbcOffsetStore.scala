@@ -24,7 +24,6 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.query.DeletedDurableState
 import akka.persistence.query.DurableStateChange
-import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.typed.EventEnvelope
@@ -62,7 +61,7 @@ private[projection] object R2dbcOffsetStore {
       fromPubSub: Boolean)
 
   object State {
-    val empty: State = State(Map.empty, Vector.empty, Instant.EPOCH)
+    val empty: State = State(Map.empty, Vector.empty, Instant.EPOCH, 0)
 
     def apply(records: immutable.IndexedSeq[Record]): State = {
       if (records.isEmpty) empty
@@ -70,7 +69,11 @@ private[projection] object R2dbcOffsetStore {
     }
   }
 
-  final case class State(byPid: Map[Pid, Record], latest: immutable.IndexedSeq[Record], oldestTimestamp: Instant) {
+  final case class State(
+      byPid: Map[Pid, Record],
+      latest: immutable.IndexedSeq[Record],
+      oldestTimestamp: Instant,
+      sizeAfterEvict: Int) {
 
     def size: Int = byPid.size
 
@@ -150,11 +153,12 @@ private[projection] object R2dbcOffsetStore {
 
     def evict(until: Instant, keepNumberOfEntries: Int): State = {
       if (oldestTimestamp.isBefore(until) && size > keepNumberOfEntries) {
-        State(
+        val newState = State(
           sortedByTimestamp
             .take(size - keepNumberOfEntries)
             .filterNot(_.timestamp.isBefore(until)) ++ sortedByTimestamp.takeRight(
             keepNumberOfEntries) ++ latestBySlice)
+        newState.copy(sizeAfterEvict = newState.size)
       } else
         this
     }
@@ -183,8 +187,9 @@ private[projection] class R2dbcOffsetStore(
   // FIXME include projectionId in all log messages
   private val logger = LoggerFactory.getLogger(this.getClass)
 
+  private val persistenceExt = Persistence(system)
+
   private val evictWindow = settings.timeWindow.plus(settings.evictInterval)
-  private val evictKeepNumberOfEntriesThreshold = (settings.keepNumberOfEntries * 1.1).toInt
 
   private val offsetSerialization = new OffsetSerialization(system)
   import offsetSerialization.fromStorageRepresentation
@@ -195,8 +200,6 @@ private[projection] class R2dbcOffsetStore(
   private val managementTable = settings.managementTableWithSchema
 
   private[projection] implicit val executionContext: ExecutionContext = system.executionContext
-
-  private val persistenceExt = Persistence(system)
 
   private val selectTimestampOffsetSql: String = sql"""
     SELECT slice, persistence_id, seq_nr, timestamp_offset
@@ -210,7 +213,7 @@ private[projection] class R2dbcOffsetStore(
   // delete less than a timestamp
   private val deleteOldTimestampOffsetSql: String = sql"""
     DELETE FROM $timestampOffsetTable WHERE slice BETWEEN ? AND ? AND projection_name = ? AND timestamp_offset < ?
-    AND NOT (slice || '-' || persistence_id || '-' || seq_nr) = ANY (?)"""
+    AND NOT (persistence_id || '-' || seq_nr) = ANY (?)"""
 
   // delete greater than or equal a timestamp
   private val deleteNewTimestampOffsetSql: String =
@@ -477,9 +480,13 @@ private[projection] class R2dbcOffsetStore(
     } else {
       val newState = oldState.add(filteredRecords)
 
-      // accumulate some more than the timeWindow before evicting
+      // accumulate some more than the timeWindow before evicting, and at least 10% increase of size
+      // for testing keepNumberOfEntries = 0 is used
+      val evictThresholdReached =
+        if (settings.keepNumberOfEntries == 0) true else newState.size > (newState.sizeAfterEvict * 1.1).toInt
       val evictedNewState =
-        if (newState.size > evictKeepNumberOfEntriesThreshold && newState.window.compareTo(evictWindow) > 0) {
+        if (newState.size > settings.keepNumberOfEntries && evictThresholdReached && newState.window
+            .compareTo(evictWindow) > 0) {
           val evictUntil = newState.latestTimestamp.minus(settings.timeWindow)
           val s = newState.evict(evictUntil, settings.keepNumberOfEntries)
           logger.debugN(
@@ -818,7 +825,7 @@ private[projection] class R2dbcOffsetStore(
         val minSlice = timestampOffsetBySlicesSourceProvider.minSlice
         val maxSlice = timestampOffsetBySlicesSourceProvider.maxSlice
         val notInLatestBySlice = currentState.latestBySlice.map { record =>
-          s"${record.slice}-${record.pid}-${record.seqNr}"
+          s"${record.pid}-${record.seqNr}"
         }.toArray
 
         val result = r2dbcExecutor.updateOne("delete old timestamp offset") { conn =>
