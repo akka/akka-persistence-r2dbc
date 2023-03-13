@@ -64,11 +64,11 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
 
-      offsetStore.saveOffset(1L).futureValue
+      offsetStore.saveOffset(1L, None).futureValue
       val offset1 = offsetStore.readOffset[Long]()
       offset1.futureValue shouldBe Some(1L)
 
-      offsetStore.saveOffset(2L).futureValue
+      offsetStore.saveOffset(2L, None).futureValue
       val offset2 = offsetStore.readOffset[Long]()
       offset2.futureValue shouldBe Some(2L) // yep, saveOffset overwrites previous
     }
@@ -76,7 +76,7 @@ class R2dbcOffsetStoreSpec
     s"save and retrieve offsets of type Long" in {
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
-      offsetStore.saveOffset(1L).futureValue
+      offsetStore.saveOffset(1L, None).futureValue
       val offset = offsetStore.readOffset[Long]()
       offset.futureValue shouldBe Some(1L)
     }
@@ -84,7 +84,7 @@ class R2dbcOffsetStoreSpec
     s"save and retrieve offsets of type java.lang.Long" in {
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
-      offsetStore.saveOffset(java.lang.Long.valueOf(1L)).futureValue
+      offsetStore.saveOffset(java.lang.Long.valueOf(1L), None).futureValue
       val offset = offsetStore.readOffset[java.lang.Long]()
       offset.futureValue shouldBe Some(1L)
     }
@@ -92,7 +92,7 @@ class R2dbcOffsetStoreSpec
     s"save and retrieve offsets of type Int" in {
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
-      offsetStore.saveOffset(1).futureValue
+      offsetStore.saveOffset(1, None).futureValue
       val offset = offsetStore.readOffset[Int]()
       offset.futureValue shouldBe Some(1)
     }
@@ -100,7 +100,7 @@ class R2dbcOffsetStoreSpec
     s"save and retrieve offsets of type java.lang.Integer" in {
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
-      offsetStore.saveOffset(java.lang.Integer.valueOf(1)).futureValue
+      offsetStore.saveOffset(java.lang.Integer.valueOf(1), None).futureValue
       val offset = offsetStore.readOffset[java.lang.Integer]()
       offset.futureValue shouldBe Some(1)
     }
@@ -109,7 +109,7 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
       val randOffset = UUID.randomUUID().toString
-      offsetStore.saveOffset(randOffset).futureValue
+      offsetStore.saveOffset(randOffset, None).futureValue
       val offset = offsetStore.readOffset[String]()
       offset.futureValue shouldBe Some(randOffset)
     }
@@ -118,7 +118,7 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
       val seqOffset = Sequence(1L)
-      offsetStore.saveOffset(seqOffset).futureValue
+      offsetStore.saveOffset(seqOffset, None).futureValue
       val offset = offsetStore.readOffset[Sequence]()
       offset.futureValue shouldBe Some(seqOffset)
     }
@@ -129,7 +129,7 @@ class R2dbcOffsetStoreSpec
 
       val timeUuidOffset =
         TimeBasedUUID(UUID.fromString("49225740-2019-11ea-a752-ffae2393b6e4")) //2019-12-16T15:32:36.148Z[UTC]
-      offsetStore.saveOffset(timeUuidOffset).futureValue
+      offsetStore.saveOffset(timeUuidOffset, None).futureValue
       val offset = offsetStore.readOffset[TimeBasedUUID]()
       offset.futureValue shouldBe Some(timeUuidOffset)
     }
@@ -139,7 +139,7 @@ class R2dbcOffsetStoreSpec
       val offsetStore = createOffsetStore(projectionId)
 
       val customOffset = "abc"
-      offsetStore.saveOffset(customOffset).futureValue
+      offsetStore.saveOffset(customOffset, None).futureValue
       val offset = offsetStore.readOffset[TimeBasedUUID]()
       offset.futureValue shouldBe Some(customOffset)
     }
@@ -148,7 +148,7 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
       val origOffset = MergeableOffset(Map("abc" -> 1L, "def" -> 1L, "ghi" -> 1L))
-      offsetStore.saveOffset(origOffset).futureValue
+      offsetStore.saveOffset(origOffset, None).futureValue
       val offset = offsetStore.readOffset[MergeableOffset[Long]]()
       offset.futureValue shouldBe Some(origOffset)
     }
@@ -158,14 +158,14 @@ class R2dbcOffsetStoreSpec
       val offsetStore = createOffsetStore(projectionId)
 
       val origOffset = MergeableOffset(Map("abc" -> 1L, "def" -> 1L))
-      offsetStore.saveOffset(origOffset).futureValue
+      offsetStore.saveOffset(origOffset, None).futureValue
 
       val offset1 = offsetStore.readOffset[MergeableOffset[Long]]()
       offset1.futureValue shouldBe Some(origOffset)
 
       // mix updates and inserts
       val updatedOffset = MergeableOffset(Map("abc" -> 2L, "def" -> 2L, "ghi" -> 1L))
-      offsetStore.saveOffset(updatedOffset).futureValue
+      offsetStore.saveOffset(updatedOffset, None).futureValue
 
       val offset2 = offsetStore.readOffset[MergeableOffset[Long]]()
       offset2.futureValue shouldBe Some(updatedOffset)
@@ -176,13 +176,13 @@ class R2dbcOffsetStoreSpec
       val offsetStore = createOffsetStore(projectionId)
 
       val instant0 = clock.instant()
-      offsetStore.saveOffset(15).futureValue
+      offsetStore.saveOffset(15, None).futureValue
 
       val instant1 = selectLastUpdated(projectionId)
       instant1 shouldBe instant0
 
       val instant2 = clock.tick(java.time.Duration.ofMillis(5))
-      offsetStore.saveOffset(16).futureValue
+      offsetStore.saveOffset(16, None).futureValue
 
       val instant3 = selectLastUpdated(projectionId)
       instant3 shouldBe instant2
@@ -192,7 +192,7 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
 
-      offsetStore.saveOffset(3L).futureValue
+      offsetStore.saveOffset(3L, None).futureValue
       offsetStore.readOffset[Long]().futureValue shouldBe Some(3L)
 
       offsetStore.managementSetOffset(2L).futureValue
@@ -203,7 +203,7 @@ class R2dbcOffsetStoreSpec
       val projectionId = genRandomProjectionId()
       val offsetStore = createOffsetStore(projectionId)
 
-      offsetStore.saveOffset(3L).futureValue
+      offsetStore.saveOffset(3L, None).futureValue
       offsetStore.readOffset[Long]().futureValue shouldBe Some(3L)
 
       offsetStore.managementClearOffset().futureValue

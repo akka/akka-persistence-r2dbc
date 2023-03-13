@@ -408,10 +408,10 @@ private[projection] class R2dbcOffsetStore(
   /**
    * Like saveOffsetInTx, but in own transaction. Used by atLeastOnce.
    */
-  def saveOffset[Offset](offset: Offset): Future[Done] = {
+  def saveOffset[Offset](offset: Offset, pidSeqNr: Option[PidSeqNr]): Future[Done] = {
     r2dbcExecutor
       .withConnection("save offset") { conn =>
-        saveOffsetInTx(conn, offset)
+        saveOffsetInTx(conn, offset, pidSeqNr)
       }
       .map(_ => Done)(ExecutionContexts.parasitic)
   }
@@ -419,15 +419,16 @@ private[projection] class R2dbcOffsetStore(
   /**
    * This method is used together with the users' handler code and run in same transaction.
    */
-  def saveOffsetInTx[Offset](conn: Connection, offset: Offset): Future[Done] = {
+  def saveOffsetInTx[Offset](conn: Connection, offset: Offset, pidSeqNr: Option[PidSeqNr]): Future[Done] = {
     offset match {
       case t: TimestampOffset =>
+        if (pidSeqNr.isEmpty)
+          throw new IllegalArgumentException("Required EventEnvelope or DurableStateChange for TimestampOffset.")
         // TODO possible perf improvement to optimize for the normal case of 1 record
-        val records = t.seen.map { case (pid, seqNr) =>
-          val slice = persistenceExt.sliceForPersistenceId(pid)
-          Record(slice, pid, seqNr, t.timestamp)
-        }.toVector
-        saveTimestampOffsetInTx(conn, records)
+        val pid = pidSeqNr.get.pid
+        val slice = persistenceExt.sliceForPersistenceId(pid)
+        val record = Record(slice, pid, pidSeqNr.get.seqNr, t.timestamp)
+        saveTimestampOffsetInTx(conn, Vector(record))
       case _ =>
         savePrimitiveOffsetInTx(conn, offset)
     }
