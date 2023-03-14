@@ -232,132 +232,122 @@ class EventSourcedEndToEndSpec
 
   "A R2DBC projection with eventsBySlices source" must {
 
-    // FIXME loop is just temporary test coverage
-    (1 to 20).foreach { n =>
-      s"$n handle all events exactlyOnce" in {
-        val numberOfEntities = 20
-        val numberOfEvents = numberOfEntities * 10
-        val entityType = nextEntityType()
+    "handle all events exactlyOnce" in {
+      val numberOfEntities = 20
+      val numberOfEvents = numberOfEntities * 10
+      val entityType = nextEntityType()
 
-        val entities = (0 until numberOfEntities).map { n =>
-          val persistenceId = PersistenceId(entityType, s"p$n")
-          spawn(Persister(persistenceId), s"$entityType-p$n")
-        }
+      val entities = (0 until numberOfEntities).map { n =>
+        val persistenceId = PersistenceId(entityType, s"p$n")
+        spawn(Persister(persistenceId), s"$entityType-p$n")
+      }
 
-        // write some before starting the projections
-        var n = 1
-        while (n <= 50) {
-          val p = n % numberOfEntities
-          // mix some persist 1 and persist 3 events
-          if (n % 7 == 0) {
-            entities(p) ! Persister.PersistAll((0 until 3).map(i => mkEvent(n + i)).toList)
-            n += 3
-          } else {
-            entities(p) ! Persister.Persist(mkEvent(n))
-            n += 1
-          }
-        }
-
-        val projectionName = UUID.randomUUID().toString
-        val processedProbe = createTestProbe[Processed]()
-        val projections = startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
-
-        // give them some time to start before writing more events
-        Thread.sleep(500)
-
-        while (n <= numberOfEvents) {
-          val p = n % numberOfEntities
+      // write some before starting the projections
+      var n = 1
+      while (n <= 50) {
+        val p = n % numberOfEntities
+        // mix some persist 1 and persist 3 events
+        if (n % 7 == 0) {
+          entities(p) ! Persister.PersistAll((0 until 3).map(i => mkEvent(n + i)).toList)
+          n += 3
+        } else {
           entities(p) ! Persister.Persist(mkEvent(n))
-
-          // stop projections
-          if (n == numberOfEvents / 2) {
-            val probe = createTestProbe()
-            projections.foreach { ref =>
-              ref ! ProjectionBehavior.Stop
-              probe.expectTerminated(ref)
-            }
-          }
-
-          // resume projections again
-          if (n == (numberOfEvents / 2) + 20)
-            startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
-
-          if (n % 10 == 0)
-            Thread.sleep(50)
-          else if (n % 25 == 0)
-            Thread.sleep(1500)
-
           n += 1
         }
-
-        val expectedEvents = (1 to numberOfEvents).map(mkEvent).toVector
-        assertEventsProcessed(expectedEvents, processedProbe, verifyProjectionId = true)
-
-        val probe = createTestProbe()
-        projections.foreach { ref =>
-          ref ! ProjectionBehavior.Stop
-          probe.expectTerminated(ref)
-        }
       }
+
+      val projectionName = UUID.randomUUID().toString
+      val processedProbe = createTestProbe[Processed]()
+      val projections = startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
+
+      // give them some time to start before writing more events
+      Thread.sleep(500)
+
+      while (n <= numberOfEvents) {
+        val p = n % numberOfEntities
+        entities(p) ! Persister.Persist(mkEvent(n))
+
+        // stop projections
+        if (n == numberOfEvents / 2) {
+          val probe = createTestProbe()
+          projections.foreach { ref =>
+            ref ! ProjectionBehavior.Stop
+            probe.expectTerminated(ref)
+          }
+        }
+
+        // resume projections again
+        if (n == (numberOfEvents / 2) + 20)
+          startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
+
+        if (n % 10 == 0)
+          Thread.sleep(50)
+        else if (n % 25 == 0)
+          Thread.sleep(1500)
+
+        n += 1
+      }
+
+      val expectedEvents = (1 to numberOfEvents).map(mkEvent).toVector
+      assertEventsProcessed(expectedEvents, processedProbe, verifyProjectionId = true)
+
+      projections.foreach(_ ! ProjectionBehavior.Stop)
     }
 
-    // FIXME loop is just temporary test coverage
-    (1 to 20).foreach { n =>
-      s"$n support change of slice distribution" in {
-        val numberOfEntities = 20
-        val numberOfEvents = numberOfEntities * 10
-        val entityType = nextEntityType()
+    "support change of slice distribution" in {
+      val numberOfEntities = 20
+      val numberOfEvents = numberOfEntities * 10
+      val entityType = nextEntityType()
 
-        val entities = (0 until numberOfEntities).map { n =>
-          val persistenceId = PersistenceId(entityType, s"p$n")
-          spawn(Persister(persistenceId), s"$entityType-p$n")
-        }
-
-        val projectionName = UUID.randomUUID().toString
-        val processedProbe = createTestProbe[Processed]()
-        var projections = startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
-
-        (1 to numberOfEvents).foreach { n =>
-          val p = n % numberOfEntities
-          entities(p) ! Persister.Persist(mkEvent(n))
-
-          if (n % 10 == 0)
-            Thread.sleep(50)
-          else if (n % 25 == 0)
-            Thread.sleep(1500)
-
-          // stop projections
-          if (n == numberOfEvents / 4) {
-            val probe = createTestProbe()
-            projections.foreach { ref =>
-              ref ! ProjectionBehavior.Stop
-              probe.expectTerminated(ref)
-            }
-          }
-
-          // resume projections again but with more nrOfProjections
-          if (n == (numberOfEvents / 4) + 20)
-            projections = startProjections(entityType, projectionName, nrOfProjections = 8, processedProbe.ref)
-
-          // stop projections
-          if (n == numberOfEvents * 3 / 4) {
-            val probe = createTestProbe()
-            projections.foreach { ref =>
-              ref ! ProjectionBehavior.Stop
-              probe.expectTerminated(ref)
-            }
-          }
-
-          // resume projections again but with less nrOfProjections
-          if (n == (numberOfEvents * 3 / 4) + 20)
-            projections = startProjections(entityType, projectionName, nrOfProjections = 2, processedProbe.ref)
-        }
-
-        val expectedEvents = (1 to numberOfEvents).map(mkEvent).toVector
-        assertEventsProcessed(expectedEvents, processedProbe, verifyProjectionId = false)
-
-        projections.foreach(_ ! ProjectionBehavior.Stop)
+      val entities = (0 until numberOfEntities).map { n =>
+        val persistenceId = PersistenceId(entityType, s"p$n")
+        spawn(Persister(persistenceId), s"$entityType-p$n")
       }
+
+      val projectionName = UUID.randomUUID().toString
+      val processedProbe = createTestProbe[Processed]()
+      var projections = startProjections(entityType, projectionName, nrOfProjections = 4, processedProbe.ref)
+
+      (1 to numberOfEvents).foreach { n =>
+        val p = n % numberOfEntities
+        entities(p) ! Persister.Persist(mkEvent(n))
+
+        if (n % 10 == 0)
+          Thread.sleep(50)
+        else if (n % 25 == 0)
+          Thread.sleep(1500)
+
+        // stop projections
+        if (n == numberOfEvents / 4) {
+          val probe = createTestProbe()
+          projections.foreach { ref =>
+            ref ! ProjectionBehavior.Stop
+            probe.expectTerminated(ref)
+          }
+        }
+
+        // resume projections again but with more nrOfProjections
+        if (n == (numberOfEvents / 4) + 20)
+          projections = startProjections(entityType, projectionName, nrOfProjections = 8, processedProbe.ref)
+
+        // stop projections
+        if (n == numberOfEvents * 3 / 4) {
+          val probe = createTestProbe()
+          projections.foreach { ref =>
+            ref ! ProjectionBehavior.Stop
+            probe.expectTerminated(ref)
+          }
+        }
+
+        // resume projections again but with less nrOfProjections
+        if (n == (numberOfEvents * 3 / 4) + 20)
+          projections = startProjections(entityType, projectionName, nrOfProjections = 2, processedProbe.ref)
+      }
+
+      val expectedEvents = (1 to numberOfEvents).map(mkEvent).toVector
+      assertEventsProcessed(expectedEvents, processedProbe, verifyProjectionId = false)
+
+      projections.foreach(_ ! ProjectionBehavior.Stop)
     }
 
     "accept unknown sequence number if previous is old" in {
