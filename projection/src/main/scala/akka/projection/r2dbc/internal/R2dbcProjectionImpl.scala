@@ -219,7 +219,7 @@ private[projection] object R2dbcProjectionImpl {
           } else {
             Future.sequence(acceptedEnvelopes.map(env => loadEnvelope(env, sourceProvider))).flatMap {
               loadedEnvelopes =>
-                val offsets = loadedEnvelopes.iterator.map(sourceProvider.extractOffset).toVector
+                val offsets = loadedEnvelopes.iterator.map(extractOffsetPidSeqNr(sourceProvider, _)).toVector
                 val filteredEnvelopes = loadedEnvelopes.filterNot(isFilteredEvent)
                 if (filteredEnvelopes.isEmpty) {
                   offsetStore.saveOffsets(offsets)
@@ -573,7 +573,7 @@ private[projection] class R2dbcProjectionImpl[Offset, Envelope](
       if (acceptedContexts.isEmpty) {
         FutureDone
       } else {
-        val offsets = acceptedContexts.map(_.offset)
+        val offsets = acceptedContexts.map(ctx => extractOffsetPidSeqNr(ctx.offset, ctx.envelope))
         offsetStore
           .saveOffsets(offsets)
           .map { done =>
