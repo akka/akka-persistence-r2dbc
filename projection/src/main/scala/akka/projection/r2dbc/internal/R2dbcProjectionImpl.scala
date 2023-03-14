@@ -52,7 +52,7 @@ import akka.projection.internal.ProjectionSettings
 import akka.projection.internal.SettingsImpl
 import akka.projection.javadsl
 import akka.projection.r2dbc.R2dbcProjectionSettings
-import akka.projection.r2dbc.internal.R2dbcProjectionImpl.extractPidSeqNr
+import akka.projection.r2dbc.internal.R2dbcProjectionImpl.extractOffsetPidSeqNr
 import akka.projection.r2dbc.scaladsl.R2dbcHandler
 import akka.projection.r2dbc.scaladsl.R2dbcSession
 import akka.projection.scaladsl
@@ -149,17 +149,22 @@ private[projection] object R2dbcProjectionImpl {
     }
   }
 
-  private def extractPidSeqNr[Envelope](envelope: Envelope): Option[PidSeqNr] = {
+  private def extractOffsetPidSeqNr[Offset, Envelope](
+      sourceProvider: SourceProvider[Offset, Envelope],
+      envelope: Envelope): OffsetPidSeqNr =
+    extractOffsetPidSeqNr(sourceProvider.extractOffset(envelope), envelope)
+
+  private def extractOffsetPidSeqNr[Offset, Envelope](offset: Offset, envelope: Envelope): OffsetPidSeqNr = {
     // we could define a new trait for the SourceProvider to implement this in case other (custom) envelope types are needed
     envelope match {
-      case env: EventEnvelope[_]         => Some(PidSeqNr(env.persistenceId, env.sequenceNr))
-      case chg: UpdatedDurableState[_]   => Some(PidSeqNr(chg.persistenceId, chg.revision))
-      case del: DeletedDurableState[_]   => Some(PidSeqNr(del.persistenceId, del.revision))
+      case env: EventEnvelope[_]         => OffsetPidSeqNr(offset, env.persistenceId, env.sequenceNr)
+      case chg: UpdatedDurableState[_]   => OffsetPidSeqNr(offset, chg.persistenceId, chg.revision)
+      case del: DeletedDurableState[_]   => OffsetPidSeqNr(offset, del.persistenceId, del.revision)
       case change: DurableStateChange[_] =>
         // in case additional types are added
         throw new IllegalArgumentException(
           s"DurableStateChange [${change.getClass.getName}] not implemented yet. Please report bug at https://github.com/akka/akka-persistence-r2dbc/issues")
-      case _ => None
+      case _ => OffsetPidSeqNr(offset)
     }
   }
 
@@ -175,20 +180,18 @@ private[projection] object R2dbcProjectionImpl {
           offsetStore.isAccepted(envelope).flatMap {
             case true =>
               if (isFilteredEvent(envelope)) {
-                val offset = sourceProvider.extractOffset(envelope)
-                val pidSeqNr = extractPidSeqNr(envelope)
-                offsetStore.saveOffset(offset, pidSeqNr)
+                val offset = extractOffsetPidSeqNr(sourceProvider, envelope)
+                offsetStore.saveOffset(offset)
               } else {
                 loadEnvelope(envelope, sourceProvider).flatMap { loadedEnvelope =>
-                  val offset = sourceProvider.extractOffset(loadedEnvelope)
-                  val pidSeqNr = extractPidSeqNr(loadedEnvelope)
+                  val offset = extractOffsetPidSeqNr(sourceProvider, loadedEnvelope)
                   r2dbcExecutor.withConnection("exactly-once handler") { conn =>
                     // run users handler
                     val session = new R2dbcSession(conn)
                     delegate
                       .process(session, loadedEnvelope)
                       .flatMap { _ =>
-                        offsetStore.saveOffsetInTx(conn, offset, pidSeqNr)
+                        offsetStore.saveOffsetInTx(conn, offset)
                       }
                   }
                 }
@@ -534,12 +537,12 @@ private[projection] class R2dbcProjectionImpl[Offset, Envelope](
       val envelope = projectionContext.envelope
 
       if (offsetStore.isInflight(envelope) || isExactlyOnceWithSkip) {
-        val pidSeqNr = extractPidSeqNr(envelope)
+        val offset = extractOffsetPidSeqNr(projectionContext.offset, envelope)
         offsetStore
-          .saveOffset(projectionContext.offset, pidSeqNr)
+          .saveOffset(offset)
           .map { done =>
             try {
-              statusObserver.offsetProgress(projectionId, projectionContext.envelope)
+              statusObserver.offsetProgress(projectionId, envelope)
             } catch {
               case NonFatal(_) => // ignore
             }
