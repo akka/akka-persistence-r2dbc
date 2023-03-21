@@ -5,12 +5,10 @@
 package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
@@ -26,6 +24,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.query.scaladsl.QueryDao.setFromDb
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
@@ -34,6 +33,10 @@ import org.slf4j.LoggerFactory
 
 object QueryDao {
   val log: Logger = LoggerFactory.getLogger(classOf[QueryDao])
+  private def setFromDb[T](array: Array[T]): Set[T] = array match {
+    case null    => Set.empty[T]
+    case entries => entries.toSet
+  }
 }
 
 /**
@@ -114,7 +117,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
   private val selectEventsSql = sql"""
-    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload
+    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
     from $journalTable
     WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
     AND deleted = false
@@ -188,10 +191,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
-            tags = row.get("tags", classOf[Array[String]]) match {
-              case null      => Set.empty[String]
-              case tagsArray => tagsArray.toSet
-            },
+            tags = setFromDb(row.get("tags", classOf[Array[String]])),
             metadata = None)
         else
           SerializedJournalRow(
@@ -205,10 +205,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
-            tags = row.get("tags", classOf[Array[String]]) match {
-              case null      => Set.empty[String]
-              case tagsArray => tagsArray.toSet
-            },
+            tags = setFromDb(row.get("tags", classOf[Array[String]])),
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -289,10 +286,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
-          tags = row.get("tags", classOf[Array[String]]) match {
-            case null      => Set.empty[String]
-            case tagsArray => tagsArray.toSet
-          },
+          tags = setFromDb(row.get("tags", classOf[Array[String]])),
           metadata = readMetadata(row)))
 
   def eventsByPersistenceId(
@@ -320,7 +314,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = Set.empty, // tags not fetched in queries (yet)
+          tags = setFromDb(row.get("tags", classOf[Array[String]])),
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)

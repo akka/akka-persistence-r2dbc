@@ -222,7 +222,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       if (max == Long.MaxValue) toSequenceNr
       else math.min(toSequenceNr, fromSequenceNr + max - 1)
     query
-      .internalEventsByPersistenceId(persistenceId, fromSequenceNr, effectiveToSequenceNr)
+      .internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, effectiveToSequenceNr)
       .runWith(Sink.foreach { row =>
         val repr = deserializeRow(serialization, row)
         recoveryCallback(repr)

@@ -22,7 +22,7 @@ import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.internal.ReplicatedEventMetadata
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{ Sink, Source }
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -180,6 +180,27 @@ class EventsByPersistenceIdSpec
 
         assertFinished(sub)
       }
+    }
+  }
+
+  "Typed versions of query" should {
+    "include tags" in {
+      val probe = testKit.createTestProbe[Done]()
+      val entityType = nextEntityType()
+      val entityId = "entity-1"
+      val pid = PersistenceId(entityType, entityId)
+
+      val persister = testKit.spawn(TestActors.Persister(pid, tags = Set("tag")))
+      persister ! Persister.PersistWithAck("e-1", probe.ref)
+      probe.expectMessage(Done)
+
+      val events = query
+        .currentEventsByPersistenceIdTyped[String](pid, 0L, Long.MaxValue)
+        .runWith(Sink.seq)
+        .futureValue
+
+      events should have size 1
+      events.head.tags should ===(Set("tag"))
     }
   }
 
