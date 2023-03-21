@@ -69,9 +69,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
     val selectColumns = {
       if (backtracking)
-        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, tags "
       else
-        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, tags, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
     sql"""
@@ -109,7 +109,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
   private val selectOneEventSql = sql"""
-    SELECT slice, entity_type, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload
+    SELECT slice, entity_type, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
     FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
@@ -188,7 +188,10 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
-            tags = Set.empty, // tags not fetched in queries (yet)
+            tags = row.get("tags", classOf[Array[String]]) match {
+              case null      => Set.empty[String]
+              case tagsArray => tagsArray.toSet
+            },
             metadata = None)
         else
           SerializedJournalRow(
@@ -202,7 +205,10 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
-            tags = Set.empty, // tags not fetched in queries (yet)
+            tags = row.get("tags", classOf[Array[String]]) match {
+              case null      => Set.empty[String]
+              case tagsArray => tagsArray.toSet
+            },
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -283,7 +289,10 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
-          tags = Set.empty, // tags not fetched in queries (yet)
+          tags = row.get("tags", classOf[Array[String]]) match {
+            case null      => Set.empty[String]
+            case tagsArray => tagsArray.toSet
+          },
           metadata = readMetadata(row)))
 
   def eventsByPersistenceId(

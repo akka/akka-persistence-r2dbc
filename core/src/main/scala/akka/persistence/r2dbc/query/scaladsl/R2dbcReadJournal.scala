@@ -93,7 +93,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         row.entityType,
         row.slice,
         filtered = false,
-        source)
+        source,
+        tags = row.tags)
     }
 
     val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
@@ -437,7 +438,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.entityType,
       row.slice,
       filtered = false,
-      source)
+      source,
+      tags = row.tags)
   }
 
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
