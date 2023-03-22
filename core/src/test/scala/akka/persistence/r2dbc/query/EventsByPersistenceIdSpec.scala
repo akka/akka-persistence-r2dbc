@@ -195,12 +195,18 @@ class EventsByPersistenceIdSpec
       probe.expectMessage(Done)
 
       val events = query
-        .currentEventsByPersistenceIdTyped[String](pid, 0L, Long.MaxValue)
+        .currentEventsByPersistenceIdTyped[String](pid.id, 0L, Long.MaxValue)
         .runWith(Sink.seq)
         .futureValue
 
       events should have size 1
       events.head.tags should ===(Set("tag"))
+
+      val event = query
+        .eventsByPersistenceIdTyped[String](pid.id, 0L, Long.MaxValue)
+        .runWith(Sink.head)
+        .futureValue
+      event.tags should ===(Set("tag"))
     }
   }
 

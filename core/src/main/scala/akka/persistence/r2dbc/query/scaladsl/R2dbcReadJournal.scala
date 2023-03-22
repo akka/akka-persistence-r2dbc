@@ -21,10 +21,14 @@ import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
-import akka.persistence.query.typed.scaladsl.EventTimestampQuery
-import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
-import akka.persistence.query.typed.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.scaladsl.{
+  CurrentEventsByPersistenceIdTypedQuery,
+  CurrentEventsBySliceQuery,
+  EventTimestampQuery,
+  EventsByPersistenceIdTypedQuery,
+  EventsBySliceQuery,
+  LoadEventQuery
+}
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
@@ -57,7 +61,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
+    with CurrentEventsByPersistenceIdTypedQuery
     with EventsByPersistenceIdQuery
+    with EventsByPersistenceIdTypedQuery
     with CurrentPersistenceIdsQuery
     with PagedPersistenceIdsQuery {
   import R2dbcReadJournal.ByPersistenceIdState
@@ -281,11 +287,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .map(deserializeRow)
 
   @ApiMayChange
-  def currentEventsByPersistenceIdTyped[Event](
-      persistenceId: PersistenceId,
+  override def currentEventsByPersistenceIdTyped[Event](
+      persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
-    internalCurrentEventsByPersistenceId(persistenceId.id, fromSequenceNr, toSequenceNr)
+    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
       .map(deserializeBySliceRow[Event])
 
   /**
@@ -377,11 +383,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .map(deserializeRow)
 
   @ApiMayChange
-  def eventsByPersistenceIdTyped[Event](
-      persistenceId: PersistenceId,
+  override def eventsByPersistenceIdTyped[Event](
+      persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
-    internalEventsByPersistenceId(persistenceId.id, fromSequenceNr, toSequenceNr)
+    internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
       .map(deserializeBySliceRow[Event])
 
   private def internalEventsByPersistenceId(
