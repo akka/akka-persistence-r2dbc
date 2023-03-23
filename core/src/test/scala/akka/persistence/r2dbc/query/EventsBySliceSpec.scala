@@ -6,12 +6,11 @@ package akka.persistence.r2dbc.query
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import akka.actor.typed.ActorSystem
+import akka.actor.typed.{ ActorRef, ActorSystem }
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
@@ -228,6 +227,25 @@ class EventsBySliceSpec
         intercept[NoSuchElementException] {
           Await.result(query.loadEnvelope[String](persistenceId, 4L), patience.timeout)
         }
+      }
+
+      "includes tags" in new Setup {
+        val taggingPersister: ActorRef[Persister.Command] =
+          spawn(TestActors.Persister(PersistenceId.ofUniqueId(persistenceId), tags = Set("tag-A")))
+        for (i <- 1 to 3) {
+          taggingPersister ! PersistWithAck(s"f-$i", probe.ref)
+          probe.expectMessage(10.seconds, Done)
+        }
+
+        val result: TestSubscriber.Probe[EventEnvelope[String]] =
+          doQuery(entityType, slice, slice, NoOffset)
+            .runWith(TestSink())
+
+        result.request(3)
+        val envelopes = result.expectNextN(3)
+        envelopes.map(_.tags) should ===(Seq(Set("tag-A"), Set("tag-A"), Set("tag-A")))
+
+        query.loadEnvelope[String](persistenceId, 1L).futureValue.tags shouldBe Set("tag-A")
       }
 
     }

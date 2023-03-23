@@ -10,22 +10,25 @@ import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
-import akka.annotation.InternalApi
+import akka.annotation.{ ApiMayChange, InternalApi }
 import akka.persistence.Persistence
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
-import akka.persistence.query.typed.scaladsl.EventTimestampQuery
-import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
-import akka.persistence.query.typed.scaladsl.LoadEventQuery
+import akka.persistence.query.typed.scaladsl.{
+  CurrentEventsByPersistenceIdTypedQuery,
+  CurrentEventsBySliceQuery,
+  EventTimestampQuery,
+  EventsByPersistenceIdTypedQuery,
+  EventsBySliceQuery,
+  LoadEventQuery
+}
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
@@ -58,7 +61,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
+    with CurrentEventsByPersistenceIdTypedQuery
     with EventsByPersistenceIdQuery
+    with EventsByPersistenceIdTypedQuery
     with CurrentPersistenceIdsQuery
     with PagedPersistenceIdsQuery {
   import R2dbcReadJournal.ByPersistenceIdState
@@ -93,7 +98,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         row.entityType,
         row.slice,
         filtered = false,
-        source)
+        source,
+        tags = row.tags)
     }
 
     val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
@@ -276,28 +282,26 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def currentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] = {
-    val highestSeqNrFut =
-      if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
-      else Future.successful(toSequenceNr)
-
-    Source
-      .futureSource[SerializedJournalRow, NotUsed] {
-        highestSeqNrFut.map { highestSeqNr =>
-          internalEventsByPersistenceId(persistenceId, fromSequenceNr, highestSeqNr)
-        }
-      }
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] =
+    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
       .map(deserializeRow)
-      .mapMaterializedValue(_ => NotUsed)
-  }
+
+  @ApiMayChange
+  override def currentEventsByPersistenceIdTyped[Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
+    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+      .map(deserializeBySliceRow[Event])
 
   /**
    * INTERNAL API: Used by both journal replay and currentEventsByPersistenceId
    */
-  @InternalApi private[r2dbc] def internalEventsByPersistenceId(
+  @InternalApi private[r2dbc] def internalCurrentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
+
     def updateState(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
 
@@ -337,11 +341,21 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         fromSequenceNr,
         toSequenceNr)
 
-    ContinuousQuery[ByPersistenceIdState, SerializedJournalRow](
-      initialState = ByPersistenceIdState(0, 0, latestSeqNr = fromSequenceNr - 1),
-      updateState = updateState,
-      delayNextQuery = _ => None,
-      nextQuery = state => nextQuery(state, toSequenceNr))
+    val highestSeqNrFut =
+      if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+      else Future.successful(toSequenceNr)
+
+    Source
+      .futureSource[SerializedJournalRow, NotUsed] {
+        highestSeqNrFut.map { highestSeqNr =>
+          ContinuousQuery[ByPersistenceIdState, SerializedJournalRow](
+            initialState = ByPersistenceIdState(0, 0, latestSeqNr = fromSequenceNr - 1),
+            updateState = updateState,
+            delayNextQuery = _ => None,
+            nextQuery = state => nextQuery(state, highestSeqNr))
+        }
+      }
+      .mapMaterializedValue(_ => NotUsed)
   }
 
   // EventTimestampQuery
@@ -364,7 +378,22 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] = {
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] =
+    internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+      .map(deserializeRow)
+
+  @ApiMayChange
+  override def eventsByPersistenceIdTyped[Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
+    internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+      .map(deserializeBySliceRow[Event])
+
+  private def internalEventsByPersistenceId(
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
 
     log.debug("Starting eventsByPersistenceId query for persistenceId [{}], from [{}].", persistenceId, fromSequenceNr)
 
@@ -418,7 +447,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       updateState = nextOffset,
       delayNextQuery = delayNextQuery,
       nextQuery = nextQuery)
-      .map(deserializeRow)
   }
 
   private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
@@ -437,7 +465,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.entityType,
       row.slice,
       filtered = false,
-      source)
+      source,
+      tags = row.tags)
   }
 
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
