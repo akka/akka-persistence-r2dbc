@@ -38,12 +38,6 @@ Query configuration properties are by default defined under `akka.persistence.r2
 
 See @ref:[Query plugin configuration](query.md#configuration).
 
-## Projection configuration
-
-Projection configuration properties are by default defined under `akka.projection.r2dbc`.
-
-See @ref:[Projection configuration](projection.md#configuration).
-
 ## Multiple plugins
 
 To enable the plugins to be used by default, add the following lines to your Akka `application.conf`:
@@ -71,23 +65,3 @@ It is similar for `DurableStateBehavior`, @scala[define `withDurableStateStorePl
 
 For queries and Projection `SourceProvider` you would use `"second-r2dbc.query"` instead of the default @scala[`R2dbcReadJournal.Identifier`]
 @java[`R2dbcReadJournal.Identifier()`] (`"akka.persistence.r2dbc.query"`).
-
-For Projection offset store you need another config section:
-
-@@snip [conf](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala){#second-projection-config}
-
-Note that the `use-connection-factory` property references the same connection settings as is used for the `second-r2dbc` plugins, but it could also
-have been a separate connection pool configured as:
-
-@@snip [conf](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala){#second-projection-config-with-connection-factory}
-
-In that way you can use the default plugins for the write side and Projection `SourceProvider`, but use a separate database for the Projection
-handlers and offset storage.
-
-You start the Projections with the `ProjectionSettings` loaded from `"second-projection-r2dbc"`.
-
-Scala
-:  @@snip [Example.scala](/docs/src/test/scala/docs/home/projection/R2dbcProjectionDocExample.scala){#projectionSettings}
-
-Java
-:  @@snip [Example.java](/docs/src/test/java/jdocs/home/projection/R2dbcProjectionDocExample.java){#projectionSettings}

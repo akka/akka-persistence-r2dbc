@@ -79,7 +79,7 @@ lazy val root = (project in file("."))
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
   .enablePlugins(ScalaUnidocPlugin)
   .disablePlugins(SitePlugin, MimaPlugin)
-  .aggregate(core, projection, migration, migrationTests, docs)
+  .aggregate(core, migration, migrationTests, docs)
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 
@@ -88,13 +88,6 @@ lazy val core = (project in file("core"))
   .settings(Scala3.settings)
   .settings(name := "akka-persistence-r2dbc", libraryDependencies ++= Dependencies.core)
   .enablePlugins(AutomateHeaderPlugin)
-
-lazy val projection = (project in file("projection"))
-  .dependsOn(core)
-  .settings(common)
-  .settings(name := "akka-projection-r2dbc", libraryDependencies ++= Dependencies.projection)
-  .enablePlugins(AutomateHeaderPlugin)
-  .settings(Scala3.settings)
 
 lazy val migration = (project in file("migration"))
   .settings(common)
@@ -128,7 +121,7 @@ lazy val docs = project
   .in(file("docs"))
   .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PreprocessPlugin, PublishRsyncPlugin)
   .disablePlugins(MimaPlugin)
-  .dependsOn(core, projection, migration)
+  .dependsOn(core, migration)
   .settings(common)
   .settings(dontPublish)
   .settings(

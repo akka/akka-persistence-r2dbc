@@ -147,7 +147,7 @@ jobs:
       - name: sbt test
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt -Dakka.persistence.r2dbc.dialect=yugabyte -Dakka.projection.r2dbc.dialect=yugabyte test
+          sbt -Dakka.persistence.r2dbc.dialect=yugabyte test
 
   test-docs:
     name: Docs
