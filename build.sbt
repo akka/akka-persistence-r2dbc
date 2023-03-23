@@ -146,10 +146,6 @@ lazy val docs = project
       "scaladoc.scala.base_url" -> s"https://www.scala-lang.org/api/current/",
       "scaladoc.akka.persistence.r2dbc.base_url" -> s"/${(Preprocess / siteSubdirName).value}/",
       "javadoc.akka.persistence.r2dbc.base_url" -> "", // no Javadoc is published
-      "scaladoc.akka.projection.r2dbc.base_url" -> s"/${(Preprocess / siteSubdirName).value}/",
-      "javadoc.akka.projection.r2dbc.base_url" -> "", // no Javadoc is published
-      "scaladoc.akka.projection.base_url" -> s"https://doc.akka.io/api/akka-projection/${Dependencies.AkkaProjectionVersionInDocs}/",
-      "javadoc.akka.projection.base_url" -> "", // no Javadoc is published
       "scaladoc.akka.base_url" -> s"https://doc.akka.io/api/akka/${Dependencies.AkkaVersionInDocs}/",
       "javadoc.akka.base_url" -> s"https://doc.akka.io/japi/akka/${Dependencies.AkkaVersionInDocs}/",
       "scaladoc.com.typesafe.config.base_url" -> s"https://lightbend.github.io/config/latest/api/"),
