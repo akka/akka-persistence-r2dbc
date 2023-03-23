@@ -65,3 +65,5 @@ It is similar for `DurableStateBehavior`, @scala[define `withDurableStateStorePl
 
 For queries and Projection `SourceProvider` you would use `"second-r2dbc.query"` instead of the default @scala[`R2dbcReadJournal.Identifier`]
 @java[`R2dbcReadJournal.Identifier()`] (`"akka.persistence.r2dbc.query"`).
+
+For additional details on multiple plugin configuration for projections see @extref:[the Akka R2DBC projection docs](akka-projection:r2dbc.html#multiple-plugins)
