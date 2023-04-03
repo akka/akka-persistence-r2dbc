@@ -120,26 +120,26 @@ import org.slf4j.LoggerFactory
       val slice = persistenceExt.sliceForPersistenceId(pid)
 
       val offset = TimestampOffset(timestamp, timestamp, Map(pid -> pr.sequenceNr))
-      val payload =
-        pr.payload match {
-          case Tagged(payload, _) =>
-            // eventsByTag not implemented (see issue #82), but events can still be tagged, so we unwrap this tagged event.
-            payload
 
-          case other => other
-        }
+      val (event, tags) = pr.payload match {
+        case Tagged(payload, tags) =>
+          (payload, tags)
+        case other =>
+          (other, Set.empty[String])
+      }
 
       val envelope = new EventEnvelope(
         offset,
         pid,
         pr.sequenceNr,
-        Option(payload),
+        Option(event),
         timestamp.toEpochMilli,
         pr.metadata,
         entityType,
         slice,
         filtered = false,
-        source = EnvelopeOrigin.SourcePubSub)
+        source = EnvelopeOrigin.SourcePubSub,
+        tags)
       eventTopic(entityType, slice) ! Topic.Publish(envelope)
     }
   }

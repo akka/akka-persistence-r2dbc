@@ -102,8 +102,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   // them to complete before we can read the highest sequence number or we will miss it
   private val writesInProgress = new java.util.HashMap[String, Future[_]]()
 
-  private var eventsByTagNotImplementedLogged = false
-
   override def receivePluginInternal: Receive = { case WriteFinished(pid, f) =>
     writesInProgress.remove(pid, f)
   }
@@ -115,8 +113,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
         atomicWrite.payload.map { pr =>
           val (event, tags) = pr.payload match {
             case Tagged(payload, tags) =>
-              // eventsBytag not implemented, issue #82, but they are stored
-              logEventsByTagsNotImplemented()
               (payload.asInstanceOf[AnyRef], tags)
             case other =>
               (other.asInstanceOf[AnyRef], Set.empty[String])
@@ -198,17 +194,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       case None =>
         dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
     }
-
-  private def logEventsByTagsNotImplemented(): Unit = {
-    if (!eventsByTagNotImplementedLogged) {
-      eventsByTagNotImplementedLogged = true
-      log.info(
-        "eventsByTag query not implemented by akka-persistence-r2dbc. We recommend using eventsBySlices instead. " +
-        "The given tags are stored. " +
-        "eventsByTag may be implemented in the future if there is strong demand for it. " +
-        "Let us know in https://github.com/akka/akka-persistence-r2dbc/issues/82")
-    }
-  }
 
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
     log.debug("asyncDeleteMessagesTo persistenceId [{}], toSequenceNr [{}]", persistenceId, toSequenceNr)
