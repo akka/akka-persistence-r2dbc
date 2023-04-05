@@ -48,7 +48,7 @@ object Dependencies {
       "com.lightbend.akka" %% "akka-projection-durable-state" % AkkaProjectionVersion % Test
     val akkaProjectionTestKit = "com.lightbend.akka" %% "akka-projection-testkit" % AkkaProjectionVersion % Test
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.5.4" % Test // BSD-2-Clause
+    val postgresql = "org.postgresql" % "postgresql" % "42.6.0" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.11" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
