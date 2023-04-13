@@ -13,6 +13,9 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.typed.PersistenceId
@@ -38,24 +41,6 @@ private[r2dbc] object SnapshotDao {
 
   final case class SerializedSnapshotMetadata(payload: Array[Byte], serializerId: Int, serializerManifest: String)
 
-  private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
-    SerializedSnapshotRow(
-      row.get("persistence_id", classOf[String]),
-      row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-      row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
-      row.get("snapshot", classOf[Array[Byte]]),
-      row.get[Integer]("ser_id", classOf[Integer]),
-      row.get("ser_manifest", classOf[String]), {
-        val metaSerializerId = row.get[Integer]("meta_ser_id", classOf[Integer])
-        if (metaSerializerId eq null) None
-        else
-          Some(
-            SerializedSnapshotMetadata(
-              row.get("meta_payload", classOf[Array[Byte]]),
-              metaSerializerId,
-              row.get("meta_ser_manifest", classOf[String])))
-      })
-
 }
 
 /**
@@ -70,6 +55,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
   import SnapshotDao._
 
   private val snapshotTable = settings.snapshotsTableWithSchema
+  private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
@@ -136,6 +122,24 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition"""
   }
 
+  private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
+    SerializedSnapshotRow(
+      row.get("persistence_id", classOf[String]),
+      row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+      row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
+      row.getPayload("snapshot"),
+      row.get[Integer]("ser_id", classOf[Integer]),
+      row.get("ser_manifest", classOf[String]), {
+        val metaSerializerId = row.get("meta_ser_id", classOf[Integer])
+        if (metaSerializerId eq null) None
+        else
+          Some(
+            SerializedSnapshotMetadata(
+              row.get("meta_payload", classOf[Array[Byte]]),
+              metaSerializerId,
+              row.get("meta_ser_manifest", classOf[String])))
+      })
+
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
@@ -183,7 +187,7 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
               .bind(2, serializedRow.persistenceId)
               .bind(3, serializedRow.seqNr)
               .bind(4, serializedRow.writeTimestamp)
-              .bind(5, serializedRow.snapshot)
+              .bindPayload(5, serializedRow.snapshot)
               .bind(6, serializedRow.serializerId)
               .bind(7, serializedRow.serializerManifest)
 

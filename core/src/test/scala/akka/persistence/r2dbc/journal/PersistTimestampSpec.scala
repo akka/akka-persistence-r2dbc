@@ -12,6 +12,8 @@ import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
@@ -31,7 +33,7 @@ class PersistTimestampSpec
   override def typedSystem: ActorSystem[_] = system
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   private val serialization = SerializationExtension(system)
-
+  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
   case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)
 
   "Persist timestamp" should {
@@ -48,12 +50,12 @@ class PersistTimestampSpec
       (1 to 100).foreach { n =>
         val p = n % numberOfEntities
         // mix some persist 1 and persist 3 events
+        val event = s"e$p-$n"
         if (n % 5 == 0) {
           // same event stored 3 times
-          val event = s"e$p-$n"
           entities(p) ! Persister.PersistAll((0 until 3).map(_ => event).toList)
         } else {
-          entities(p) ! Persister.Persist(s"e$p-$n")
+          entities(p) ! Persister.Persist(event)
         }
       }
 
@@ -70,7 +72,7 @@ class PersistTimestampSpec
             row => {
               val event = serialization
                 .deserialize(
-                  row.get("event_payload", classOf[Array[Byte]]),
+                  row.getPayload("event_payload"),
                   row.get("event_ser_id", classOf[Integer]),
                   row.get("event_ser_manifest", classOf[String]))
                 .get

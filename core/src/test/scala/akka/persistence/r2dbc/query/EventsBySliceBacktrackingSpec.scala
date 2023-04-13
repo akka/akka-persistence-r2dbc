@@ -17,6 +17,8 @@ import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
@@ -49,6 +51,7 @@ class EventsBySliceBacktrackingSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val query = PersistenceQuery(testKit.system)
     .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
@@ -73,7 +76,7 @@ class EventsBySliceBacktrackingSpec
         .bind(3, seqNr)
         .bind(4, timestamp)
         .bind(5, stringSerializer.identifier)
-        .bind(6, stringSerializer.toBinary(event))
+        .bindPayload(6, stringSerializer.toBinary(event))
     }
     result.futureValue shouldBe 1
   }

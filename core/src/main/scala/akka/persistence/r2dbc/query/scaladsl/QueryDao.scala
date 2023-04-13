@@ -20,6 +20,8 @@ import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.journal.JournalDao
@@ -51,6 +53,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
   import QueryDao.log
 
   private val journalTable = settings.journalTableWithSchema
+  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val currentDbTimestampSql =
     "SELECT transaction_timestamp() AS db_timestamp"
@@ -201,7 +204,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-            payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+            payload = Some(row.getPayload("event_payload")),
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
@@ -282,7 +285,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           seqNr,
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+          payload = Some(row.getPayload("event_payload")),
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
@@ -310,7 +313,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = Some(row.get("event_payload", classOf[Array[Byte]])),
+          payload = Some(row.getPayload("event_payload")),
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
