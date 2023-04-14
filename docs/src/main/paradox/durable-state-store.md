@@ -108,6 +108,19 @@ Scala
 Java
 :  @@snip [BlogPostQuery.java](/docs/src/test/java/jdocs/home/state/BlogPostQuery.java) { #query }
 
+#### Additional column as PostgreSQL JSON
+
+With PostgreSQL the additional column type can be `JSONB` to take advantage of PostgreSQL support for [JSON Types](https://www.postgresql.org/docs/current/datatype-json.html).
+
+Then you would wrap the string or byte array representation of the JSON in `io.r2dbc.postgresql.codec.Json` when
+binding the value.
+
+Scala
+:  @@snip [BlogPostJsonColumn.scala](/docs/src/test/scala/docs/home/state/BlogPostJsonColumn.scala) { #additional-column-json }
+
+Java
+:  @@snip [BlogPostJsonColumn.java](/docs/src/test/java/jdocs/home/state/BlogPostJsonColumn.java) { #additional-column-json }
+
 ### Change handler
 
 For more advanced cases where the query representation would not fit in @ref:[additional columns](#additional-columns)
