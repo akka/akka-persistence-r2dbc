@@ -19,6 +19,11 @@ akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
 It can also be enabled with the `snapshotPluginId` for a specific `EventSourcedBehavior` and multiple plugin
 configurations are supported.
 
+@@@ note
+Snapshots are optional, and if you know that the application doesn't store many events for each entity it is more
+efficient to not enable the snapshot plugin, because then it will not try to read snapshots when recovering the entites.
+@@@
+
 See also @ref:[Connection configuration](config.md#connection-configuration).
 
 ### Reference configuration
@@ -31,6 +36,15 @@ The following can be overridden in your `application.conf` for the snapshot spec
 
 The snapshot plugin is used whenever a snapshot write is triggered through the
 @extref:[Akka Persistence APIs](akka:typed/persistence-snapshot.html).
+
+## Snapshot serialization
+
+The state is serialized with @extref:[Akka Serialization](akka:serialization.html) and the binary snapshot representation
+is stored in the `snapshot` column together with information about what serializer that was used in the
+`ser_id` and `ser_manifest` columns.
+
+For PostgreSQL the payload is stored as `BYTEA` type. Alternatively, you can use `JSONB` column type as described in
+@ref:[PostgreSQL JSON](postgres_json.md).
 
 ## Retention
 

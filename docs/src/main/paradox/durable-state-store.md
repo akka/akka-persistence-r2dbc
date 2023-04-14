@@ -29,6 +29,15 @@ The following can be overridden in your `application.conf` for the durable state
 
 @@snip [reference.conf](/core/src/main/resources/reference.conf) {#durable-state-settings}
 
+## State serialization
+
+The state is serialized with @extref:[Akka Serialization](akka:serialization.html) and the binary representation
+is stored in the `state_payload` column together with information about what serializer that was used in the
+`state_ser_id` and `state_ser_manifest` columns.
+
+For PostgreSQL the payload is stored as `BYTEA` type. Alternatively, you can use `JSONB` column type as described in
+@ref:[PostgreSQL JSON](postgres_json.md).
+
 ## Deletes
 
 The store supports deletes through hard deletes, which means the durable state store entries are actually deleted from
@@ -139,3 +148,9 @@ For a specific entity (persistenceId) one change is processed at a time and the 
 invoked with the next change for that entity until after the returned @scala[`Future`]@java[`CompletionStage`] is completed.
 
 @@@
+
+### PostgreSQL JSON payload
+
+For PostgreSQL, an alternative to defining additional columns or change handlers can be to store the state as JSON
+as described in @ref:[PostgreSQL JSON](postgres_json.md). Then you can add [secondary jsonb indexes](https://www.postgresql.org/docs/current/datatype-json.html#JSON-INDEXING)
+on the payload content for queries.

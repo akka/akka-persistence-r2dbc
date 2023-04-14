@@ -61,6 +61,9 @@ Tables and indexes:
 Postgres:
 : @@snip [create_tables.sql](/ddl-scripts/create_tables_postgres.sql)
 
+Postgres JSONB:
+: @@snip [create_tables.sql](/ddl-scripts/create_tables_postgres_jsonb.sql)
+
 Yugabyte:
 : @@snip [create_tables.sql](/ddl-scripts/create_tables_yugabyte.sql)
 

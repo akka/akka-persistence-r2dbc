@@ -29,6 +29,15 @@ The following can be overridden in your `application.conf` for the journal speci
 
 @@snip [reference.conf](/core/src/main/resources/reference.conf) {#journal-settings}
 
+## Event serialization
+
+The events are serialized with @extref:[Akka Serialization](akka:serialization.html) and the binary representation
+is stored in the `event_payload` column together with information about what serializer that was used in the
+`event_ser_id` and `event_ser_manifest` columns.
+
+For PostgreSQL the payload is stored as `BYTEA` type. Alternatively, you can use `JSONB` column type as described in
+@ref:[PostgreSQL JSON](postgres_json.md).
+
 ## Deletes
 
 The journal supports deletes through hard deletes, which means the journal entries are actually deleted from the
