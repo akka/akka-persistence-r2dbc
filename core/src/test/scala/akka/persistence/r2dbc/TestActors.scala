@@ -110,11 +110,11 @@ object TestActors {
     import akka.persistence.typed.state.scaladsl.Effect
 
     sealed trait Command
-    final case class Persist(payload: String) extends Command
-    final case class PersistWithAck(payload: String, replyTo: ActorRef[Done]) extends Command
+    final case class Persist(payload: Any) extends Command
+    final case class PersistWithAck(payload: Any, replyTo: ActorRef[Done]) extends Command
     final case class DeleteWithAck(replyTo: ActorRef[Done]) extends Command
     final case class Ping(replyTo: ActorRef[Done]) extends Command
-    final case class GetState(replyTo: ActorRef[String]) extends Command
+    final case class GetState(replyTo: ActorRef[Any]) extends Command
     final case class GetRevision(replyTo: ActorRef[Long]) extends Command
     final case class Stop(replyTo: ActorRef[Done]) extends Command
 
@@ -123,7 +123,7 @@ object TestActors {
 
     def apply(pid: PersistenceId): Behavior[Command] = {
       Behaviors.setup { context =>
-        DurableStateBehavior[Command, String](
+        DurableStateBehavior[Command, Any](
           persistenceId = pid,
           "",
           { (state, command) =>

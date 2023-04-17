@@ -6,6 +6,7 @@ package akka.persistence.r2dbc.state.scaladsl
 
 import java.lang
 import java.time.Instant
+import java.util
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
@@ -296,7 +297,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   private def getPayload(row: Row): Option[Array[Byte]] = {
     val serId = row.get("state_ser_id", classOf[Integer])
     val rowPayload = row.getPayload("state_payload")
-    if (serId == 0 && (rowPayload == null || rowPayload.isEmpty))
+    if (serId == 0 && (rowPayload == null || util.Arrays.equals(statePayloadCodec.nonePayload, rowPayload)))
       None // delete marker
     else
       Option(rowPayload)
@@ -357,7 +358,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(getAndIncIndex(), state.revision)
             .bind(getAndIncIndex(), state.serId)
             .bind(getAndIncIndex(), state.serManifest)
-            .bindPayload(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
+            .bindPayloadOption(getAndIncIndex(), state.payload)
           bindTags(stmt, getAndIncIndex())
           bindAdditionalColumns(stmt, additionalBindings)
         }
@@ -389,7 +390,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
             .bind(getAndIncIndex(), state.revision)
             .bind(getAndIncIndex(), state.serId)
             .bind(getAndIncIndex(), state.serManifest)
-            .bindPayload(getAndIncIndex(), state.payload.getOrElse(Array.emptyByteArray))
+            .bindPayloadOption(getAndIncIndex(), state.payload)
           bindTags(stmt, getAndIncIndex())
           bindAdditionalColumns(stmt, additionalBindings)
 
@@ -482,7 +483,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(3, revision)
               .bind(4, 0)
               .bind(5, "")
-              .bind(6, Array.emptyByteArray)
+              .bindPayloadOption(6, None)
               .bindNull(7, classOf[Array[String]])
           }
 
@@ -517,7 +518,7 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
               .bind(0, revision)
               .bind(1, 0)
               .bind(2, "")
-              .bind(3, Array.emptyByteArray)
+              .bindPayloadOption(3, None)
 
             if (settings.dbTimestampMonotonicIncreasing) {
               if (settings.durableStateAssertSingleWriter)

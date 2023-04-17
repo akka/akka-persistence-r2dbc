@@ -38,7 +38,7 @@ class DurableStateCleanupSpec
   "DurableStateCleanup" must {
     "delete state for one persistenceId" in {
       val ackProbe = createTestProbe[Done]()
-      val stateProbe = createTestProbe[String]()
+      val stateProbe = createTestProbe[Any]()
       val revisionProbe = createTestProbe[Long]()
       val pid = nextPid()
       val p = spawn(DurableStatePersister(pid))
@@ -60,7 +60,7 @@ class DurableStateCleanupSpec
 
     "delete events for one persistenceId, but keep seqNr" in {
       val ackProbe = createTestProbe[Done]()
-      val stateProbe = createTestProbe[String]()
+      val stateProbe = createTestProbe[Any]()
       val revisionProbe = createTestProbe[Long]()
       val pid = nextPid()
       val p = spawn(DurableStatePersister(pid))
@@ -84,7 +84,7 @@ class DurableStateCleanupSpec
 
     "delete all" in {
       val ackProbe = createTestProbe[Done]()
-      val stateProbe = createTestProbe[String]()
+      val stateProbe = createTestProbe[Any]()
       val seqNrProbe = createTestProbe[Long]()
       val pids = Vector(nextPid(), nextPid(), nextPid())
       val persisters = pids.map(pid => spawn(DurableStatePersister(pid)))
