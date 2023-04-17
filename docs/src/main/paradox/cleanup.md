@@ -9,7 +9,7 @@ not be running!
 
 @@@
 
-If possible, it is best to keep all events in an event sourced system. That way new @ref[Projections](projection.md)
+If possible, it is best to keep all events in an event sourced system. That way new @extref:[Akka Projection R2DBC](akka-projection:r2dbc.html)
 can be re-built.
 
 In some cases keeping all events is not possible or must be removed for regulatory reasons, such as compliance with
