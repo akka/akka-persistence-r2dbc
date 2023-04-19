@@ -178,6 +178,9 @@ final class ConnectionFactorySettings(config: Config) {
   val sslEnabled: Boolean = config.getBoolean("ssl.enabled")
   val sslMode: String = config.getString("ssl.mode")
   val sslRootCert: String = config.getString("ssl.root-cert")
+  val sslCert: String = config.getString("ssl.cert")
+  val sslKey: String = config.getString("ssl.key")
+  val sslPassword: String = config.getString("ssl.password")
 
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
