@@ -90,6 +90,15 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
 
       if (settings.sslRootCert.nonEmpty)
         builder.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
+
+      if (settings.sslCert.nonEmpty)
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_CERT, settings.sslCert)
+
+      if (settings.sslKey.nonEmpty)
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_KEY, settings.sslKey)
+
+      if (settings.sslPassword.nonEmpty)
+        builder.option(PostgresqlConnectionFactoryProvider.SSL_PASSWORD, settings.sslPassword)
     }
 
     ConnectionFactories.get(builder.build())
