@@ -10,7 +10,6 @@ object Dependencies {
   val Scala3 = "3.2.2"
   val Scala2Versions = Seq(Scala213, Scala212)
   val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
-  // FIXME final release bump once available
   val AkkaVersion = System.getProperty("override.akka.version", "2.8.1")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
