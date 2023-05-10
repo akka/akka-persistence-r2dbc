@@ -67,9 +67,7 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker-compose -f docker/docker-compose-postgres.yml up -d
-          # TODO: could we poll the port instead of sleep?
-          sleep 10
+          docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
           docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
       - name: sbt test
@@ -103,9 +101,7 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker-compose -f docker/docker-compose-postgres.yml up -d
-          # TODO: could we poll the port instead of sleep?
-          sleep 10
+          docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
           docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres_jsonb.sql
 
       - name: sbt test
