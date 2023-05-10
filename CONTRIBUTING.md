@@ -11,13 +11,13 @@ docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
 ```
 
 ```
-docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 ```
 
 ## Some useful debug queries for Postgres
 
 ```
-docker exec -it docker_postgres-db_1 psql -U postgres
+docker exec -it postgres_db psql -U postgres
 ```
 
 ```
