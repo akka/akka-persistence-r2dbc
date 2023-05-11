@@ -41,7 +41,7 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker-compose -f docker/docker-compose-postgres.yml --build --detach --wait 
+          docker-compose -f docker/docker-compose-postgres.yml --wait 
           # TODO: could we poll the port instead of sleep?
           sleep 10
           docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql

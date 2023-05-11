@@ -45,12 +45,12 @@ Start with:
 
 Postgres:
 : ```
-docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
+docker-compose -f docker/docker-compose-postgres.yml up --wait
 ```
 
 Yugabyte:
 : ```
-docker-compose -f docker/docker-compose-yugabyte.yml up --build --detach --wait
+docker-compose -f docker/docker-compose-yugabyte.yml up --wait
 ```
 
 <a id="schema"></a>

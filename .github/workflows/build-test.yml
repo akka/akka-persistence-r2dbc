@@ -67,7 +67,7 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
+          docker-compose -f docker/docker-compose-postgres.yml up --wait
           docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
       - name: sbt test
@@ -101,7 +101,7 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker-compose -f docker/docker-compose-postgres.yml up --build --detach --wait
+          docker-compose -f docker/docker-compose-postgres.yml up --wait
           docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres_jsonb.sql
 
       - name: sbt test
