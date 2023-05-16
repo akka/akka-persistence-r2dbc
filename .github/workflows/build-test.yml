@@ -43,7 +43,7 @@ jobs:
 
   test-postgres:
     name: Run test with Postgres
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-23.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -67,7 +67,12 @@ jobs:
 
       - name: Start DB
         run: |-
+          docker-compose --version
+          docker-compose -f docker/docker-compose-postgres.yml up --wait --help
           docker-compose -f docker/docker-compose-postgres.yml up --wait
+          # TODO: could we poll the port instead of sleep?
+          sleep 10
+          docker ps
           docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
       - name: sbt test
@@ -77,7 +82,7 @@ jobs:
 
   test-postgres-jsonb:
     name: Run test with Postgres and JSONB payload
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-23.04
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -101,7 +106,12 @@ jobs:
 
       - name: Start DB
         run: |-
+          docker-compose --version
+          docker-compose -f docker/docker-compose-postgres.yml up --wait --help
           docker-compose -f docker/docker-compose-postgres.yml up --wait
+          # TODO: could we poll the port instead of sleep?
+          sleep 10
+          docker ps
           docker exec -i postgres_db psql -U postgres -t < ddl-scripts/create_tables_postgres_jsonb.sql
 
       - name: sbt test
