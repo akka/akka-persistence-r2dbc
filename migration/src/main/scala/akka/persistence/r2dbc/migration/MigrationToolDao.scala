@@ -13,23 +13,26 @@ import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.journal.JournalDao.log
 import io.r2dbc.spi.ConnectionFactory
+import org.slf4j.LoggerFactory
 
 /**
  * INTERNAL API
  */
 @InternalApi private[r2dbc] object MigrationToolDao {
+  private val log = LoggerFactory.getLogger(classOf[MigrationToolDao])
+
   final case class CurrentProgress(persistenceId: String, eventSeqNr: Long, snapshotSeqNr: Long)
 }
 
 /**
  * INTERNAL API
  */
+// FIXME do we need dialect support here as well?
 @InternalApi private[r2dbc] class MigrationToolDao(
     connectionFactory: ConnectionFactory,
     logDbCallsExceeding: FiniteDuration)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
-  import MigrationToolDao.CurrentProgress
+  import MigrationToolDao._
 
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding)(ec, system)
 

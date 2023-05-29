@@ -31,7 +31,7 @@ import akka.persistence.query.scaladsl.ReadJournal
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
+import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.migration.MigrationToolDao.CurrentProgress
 import akka.persistence.r2dbc.snapshot.SnapshotDao
@@ -114,9 +114,9 @@ class MigrationTool(system: ActorSystem[_]) {
   private val targetConnectionFactory = ConnectionFactoryProvider(system)
     .connectionFactoryFor(targetPluginId + ".connection-factory")
   private val targetJournalDao =
-    new JournalDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
   private val targetSnapshotDao =
-    new SnapshotDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.dialect.createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 

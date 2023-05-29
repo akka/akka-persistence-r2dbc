@@ -1,0 +1,20 @@
+# FIXME Breaking but is that really a problem
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.R2dbcSettings.dialect")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$")
+
+# internal changes
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.metadata")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.copy")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.copy$default$12")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.this")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.apply")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.unapply")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow._12")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$Postgres$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$Yugabyte$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.journal.JournalDao$SerializedEventMetadata")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.journal.JournalDao$SerializedEventMetadata$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.query.scaladsl.QueryDao$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.state.scaladsl.DurableStateDao$EvaluatedAdditionalColumnBindings")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.state.scaladsl.DurableStateDao$EvaluatedAdditionalColumnBindings$")

@@ -5,13 +5,15 @@
 package akka.persistence.r2dbc
 
 import java.util.Locale
-
 import scala.collection.immutable
 import scala.concurrent.duration._
-
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.h2.H2Dialect
+import akka.persistence.r2dbc.internal.postgres.PostgresDialect
+import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 import akka.util.Helpers.toRootLowerCase
@@ -101,9 +103,14 @@ final class R2dbcSettings(config: Config) {
 
   val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
+  /**
+   * INTERNAL API
+   */
+  @InternalApi
   val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
-    case "yugabyte" => Dialect.Yugabyte
-    case "postgres" => Dialect.Postgres
+    case "yugabyte" => YugabyteDialect: Dialect
+    case "postgres" => PostgresDialect: Dialect
+    case "h2"       => H2Dialect: Dialect
     case other =>
       throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres].")
   }
@@ -126,21 +133,6 @@ final class R2dbcSettings(config: Config) {
     }
 
   val cleanupSettings = new CleanupSettings(config.getConfig("cleanup"))
-}
-
-/**
- * INTERNAL API
- */
-@InternalStableApi
-sealed trait Dialect
-
-/**
- * INTERNAL API
- */
-@InternalStableApi
-object Dialect {
-  case object Postgres extends Dialect
-  case object Yugabyte extends Dialect
 }
 
 /**

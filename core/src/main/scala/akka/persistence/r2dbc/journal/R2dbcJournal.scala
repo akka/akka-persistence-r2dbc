@@ -29,8 +29,8 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.PubSub
-import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
 import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
@@ -88,10 +88,9 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   private val serialization: Serialization = SerializationExtension(context.system)
   private val journalSettings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
 
-  private val journalDao =
-    new JournalDao(
-      journalSettings,
-      ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
+  private val journalDao = journalSettings.dialect.createJournalDao(
+    journalSettings,
+    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
   private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
 
   private val pubSub: Option[PubSub] =

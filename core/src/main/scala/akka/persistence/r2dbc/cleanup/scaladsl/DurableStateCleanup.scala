@@ -58,7 +58,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
 
   private val connectionFactory =
     ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val stateDao = new DurableStateDao(settings, connectionFactory)
+  private val stateDao = settings.dialect.createDurableStateDao(settings, connectionFactory)
 
   /**
    * Delete the state related to one single `persistenceId`.
