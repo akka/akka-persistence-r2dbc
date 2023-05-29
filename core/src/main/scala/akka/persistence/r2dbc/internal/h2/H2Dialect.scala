@@ -23,17 +23,17 @@ import scala.concurrent.ExecutionContext
 private[r2dbc] object H2Dialect extends Dialect {
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): JournalDao = ???
+      system: ActorSystem[_]): JournalDao = new H2JournalDao(settings, connectionFactory)
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): SnapshotDao = ???
+      system: ActorSystem[_]): SnapshotDao = new H2SnapshotDao(settings, connectionFactory)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): QueryDao = ???
+      system: ActorSystem[_]): QueryDao = new H2QueryDao(settings, connectionFactory)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): DurableStateDao = ???
+      system: ActorSystem[_]): DurableStateDao = new H2DurableStateDao(settings, connectionFactory)
 }

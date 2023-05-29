@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.journal
 
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -15,6 +14,7 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.typed.PersistenceId
 import org.scalatest.wordspec.AnyWordSpecLike
 
@@ -57,10 +57,18 @@ class PersistTagsSpec
           .select[Row]("test")(
             connection => connection.createStatement(s"select * from ${settings.journalTableWithSchema}"),
             row => {
-              val tags = row.get("tags", classOf[Array[String]]) match {
-                case null      => Set.empty[String]
-                case tagsArray => tagsArray.toSet
-              }
+              val tags =
+                if (settings.dialect == H2Dialect) {
+                  row.get("tags", classOf[Object]) match {
+                    case null           => Set.empty[String]
+                    case tags: Array[_] => tags.toSet.asInstanceOf[Set[String]]
+                  }
+                } else {
+                  row.get("tags", classOf[Array[String]]) match {
+                    case null      => Set.empty[String]
+                    case tagsArray => tagsArray.toSet
+                  }
+                }
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),

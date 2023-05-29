@@ -69,8 +69,8 @@ difficulties. When using `R2dbcProjection` the events will be delivered in seque
 The consumer can keep track of its current position in the event stream by storing the `offset` and restart the
 query from a given `offset` after a crash/restart.
 
-The offset is a `TimestampOffset` and it is based on the database `transaction_timestamp()` when the event was stored.
-`transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a
+The offset is a `TimestampOffset` and it is based on the database `CURRENT_TIMESTAMP` when the event was stored.
+`CURRENT_TIMESTAMP` is the time when the transaction started, not when it was committed. This means that a
 "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some
 events and emit event with a later sequence number for a persistence id without emitting all preceding events.
 In distributed SQL databases there can also be clock skews for the database timestamps. For that reason

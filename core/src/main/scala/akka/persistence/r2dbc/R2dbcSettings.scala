@@ -112,7 +112,7 @@ final class R2dbcSettings(config: Config) {
     case "postgres" => PostgresDialect: Dialect
     case "h2"       => H2Dialect: Dialect
     case other =>
-      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres].")
+      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres, h2].")
   }
 
   val querySettings = new QuerySettings(config.getConfig("query"))

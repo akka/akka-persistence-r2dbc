@@ -22,9 +22,9 @@ That rich offset can be stored in a database table with one row per persistence 
 
 With such sequence number tracking in place the `eventsBySlices` query can use an ordinary database timestamp as the offset.
 
-Using `transaction_timestamp()` as this timestamp based offset has a few challenges:
+Using `CURRENT_TIMESTAMP` as this timestamp based offset has a few challenges:
 
-* The `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some events.
+* The `CURRENT_TIMESTAMP` is the time when the transaction started, not when it was committed. This means that a "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some events.
 * In distributed SQL databases there can also be clock skews for the database timestamps.
 * There can be more than one event per timestamp.
 
@@ -39,7 +39,7 @@ SELECT * FROM event_journal
   WHERE entity_type = $1
   AND slice BETWEEN $2 AND $2
   AND db_timestamp >= $3
-  AND db_timestamp < transaction_timestamp() - interval '200 milliseconds'
+  AND db_timestamp < CURRENT_TIMESTAMP - interval '200 milliseconds'
   ORDER BY db_timestamp, seq_nr
 ```
 

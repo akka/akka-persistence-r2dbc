@@ -2,7 +2,7 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.internal.postgres
+package akka.persistence.r2dbc.internal.h2
 
 import akka.Done
 import akka.NotUsed
@@ -55,9 +55,9 @@ import scala.util.control.NonFatal
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] object PostgresDurableStateDao {
+private[r2dbc] object H2DurableStateDao {
 
-  private val log: Logger = LoggerFactory.getLogger(classOf[PostgresDurableStateDao])
+  private val log: Logger = LoggerFactory.getLogger(classOf[H2DurableStateDao])
 
   private final case class EvaluatedAdditionalColumnBindings(
       additionalColumn: AdditionalColumn[_, _],
@@ -70,13 +70,12 @@ private[r2dbc] object PostgresDurableStateDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(
-    implicit
+private[r2dbc] final class H2DurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends DurableStateDao {
   import DurableStateDao._
-  import PostgresDurableStateDao._
+  import H2DurableStateDao._
 
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
@@ -116,12 +115,8 @@ private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, conn
      """
   }
 
-  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
-    settings.dialect match {
-      case YugabyteDialect => s"slice BETWEEN $minSlice AND $maxSlice"
-      case PostgresDialect => s"slice in (${(minSlice to maxSlice).mkString(",")})"
-    }
-  }
+  private def sliceCondition(minSlice: Int, maxSlice: Int): String =
+    s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   private def insertStateSql(
       entityType: String,
@@ -243,14 +238,15 @@ private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, conn
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
-        s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis} milliseconds'"
+        s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis.toDouble / 1000}' second" // FIXME h2 interval
       else ""
 
+    // FIXME h2 statement_timestamp vs CURRENT_TIMESTAMP
     val selectColumns =
       if (backtracking)
-        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id "
+        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id "
       else
-        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
+        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
     sql"""
       $selectColumns

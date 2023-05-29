@@ -2,7 +2,7 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.internal.postgres
+package akka.persistence.r2dbc.internal.h2
 
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
@@ -33,8 +33,8 @@ import scala.concurrent.Future
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] object PostgresJournalDao {
-  private val log: Logger = LoggerFactory.getLogger(classOf[PostgresJournalDao])
+private[r2dbc] object H2JournalDao {
+  private val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
   val EmptyDbTimestamp: Instant = Instant.EPOCH
 
   final case class SerializedJournalRow(
@@ -72,13 +72,13 @@ private[r2dbc] object PostgresJournalDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends JournalDao {
 
   import JournalDao.SerializedJournalRow
-  import PostgresJournalDao.log
+  import H2JournalDao.log
 
   private val persistenceExt = Persistence(system)
 
@@ -100,12 +100,15 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable " +
       "WHERE persistence_id = ? AND seq_nr = ?)"
 
-    val insertEventWithParameterTimestampSql = {
-      if (journalSettings.dbTimestampMonotonicIncreasing)
-        sql"$baseSql ?) RETURNING db_timestamp"
-      else
-        sql"$baseSql GREATEST(?, $timestampSubSelect)) RETURNING db_timestamp"
-    }
+    val insertEventWithParameterTimestampSql =
+      if (journalSettings.dbTimestampMonotonicIncreasing) {
+        // FIXME h2 not supporting RETURNING
+        // sql"$baseSql ?) RETURNING db_timestamp"
+        sql"$baseSql ?)"
+      } else
+        // FIXME h2 not supporting RETURNING
+        // sql"$baseSql GREATEST(?, $timestampSubSelect)) RETURNING db_timestamp"
+        sql"$baseSql GREATEST(?, $timestampSubSelect))"
 
     val insertEventWithTransactionTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
@@ -210,27 +213,35 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
     val totalEvents = events.size
     if (totalEvents == 1) {
-      val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
-        connection => bind(connection.createStatement(insertSql), events.head),
-        row => row.get(0, classOf[Instant]))
+      val result = r2dbcExecutor.updateOne(s"insert [$persistenceId]")(connection =>
+        bind(connection.createStatement(insertSql), events.head))
+      // FIXME h2 not supporting RETURNING
+      //         ,
+      //        row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
         }
-      result
+      // FIXME h2 not supporting RETURNING
+      // result
+      result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
     } else {
-      val result = r2dbcExecutor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
-        connection =>
-          events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
-            stmt.add()
-            bind(stmt, write)
-          },
-        row => row.get(0, classOf[Instant]))
-      if (log.isDebugEnabled())
+      val result = r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
+        events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
+          stmt.add()
+          bind(stmt, write)
+        })
+      // FIXME h2 not supporting RETURNING
+      //        ,
+      //        row => row.get(0, classOf[Instant])) +
+      if (log.isDebugEnabled()) {
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
         }
-      result.map(_.head)(ExecutionContexts.parasitic)
+      }
+      // FIXME h2 not supporting RETURNING
+      // result.map(_.head)(ExecutionContexts.parasitic)
+      result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
     }
   }
 

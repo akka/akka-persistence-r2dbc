@@ -35,6 +35,23 @@ object TestConfig {
             database = "yugabyte"
           }
           """)
+      case "h2" =>
+        ConfigFactory.parseString("""
+          akka.persistence.r2dbc.connection-factory {
+           driver = "h2"
+           #url = "r2dbc:h2:mem:///test-db;DB_CLOSE_DELAY=-1"
+           url = "r2dbc:h2:file:///./target/h2-test-db;DB_CLOSE_DELAY=-1"
+           host = ""
+           port = 0
+           user = ""
+           password = ""
+           database = ""
+          }
+          akka.persistence.r2dbc {
+           db-timestamp-monotonic-increasing = on
+           use-app-timestamp = on
+          }
+          """)
     }
 
     // using load here so that connection-factory can be overridden

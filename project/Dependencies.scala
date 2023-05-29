@@ -24,6 +24,9 @@ object Dependencies {
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.1.RELEASE" // ApacheV2
+    // should they be provided/optional to not always pull in all concrete r2dbc drivers?
+    val h2 = "com.h2database" % "h2" % "2.1.210" // EPL 1.0
+    val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % "1.0.0.RELEASE" // ApacheV2
   }
 
   object TestDeps {
@@ -51,6 +54,8 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
+    h2,
+    r2dbcH2,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
