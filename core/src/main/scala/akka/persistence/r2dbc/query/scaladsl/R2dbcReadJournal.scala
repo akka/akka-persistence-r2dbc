@@ -78,7 +78,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
   private val connectionFactory = ConnectionFactoryProvider(typedSystem)
-    .connectionFactoryFor(sharedConfigPath + ".connection-factory")
+    .connectionFactoryFor(settings, sharedConfigPath + ".connection-factory")
   private val queryDao = settings.dialect.createQueryDao(settings, connectionFactory)(executionContext, typedSystem)
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {

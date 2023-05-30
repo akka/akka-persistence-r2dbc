@@ -107,17 +107,20 @@ final class R2dbcSettings(config: Config) {
    * INTERNAL API
    */
   @InternalApi
-  val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
+  private[akka] val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
     case "yugabyte" => YugabyteDialect: Dialect
     case "postgres" => PostgresDialect: Dialect
     case "h2"       => H2Dialect: Dialect
     case other =>
-      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres, h2].")
+      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
   }
 
-  val querySettings = new QuerySettings(config.getConfig("query"))
+  /**
+   * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
+   */
+  val dialectName: String = dialect.name
 
-  val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
+  val querySettings = new QuerySettings(config.getConfig("query"))
 
   val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
 
@@ -154,38 +157,16 @@ final class QuerySettings(config: Config) {
  * INTERNAL API
  */
 @InternalStableApi
-final class ConnectionFactorySettings(config: Config) {
-
-  val urlOption: Option[String] =
-    Option(config.getString("url"))
-      .filter(_.trim.nonEmpty)
-
-  val driver: String = config.getString("driver")
-  val host: String = config.getString("host")
-  val port: Int = config.getInt("port")
-  val user: String = config.getString("user")
-  val password: String = config.getString("password")
-  val database: String = config.getString("database")
-
-  val sslEnabled: Boolean = config.getBoolean("ssl.enabled")
-  val sslMode: String = config.getString("ssl.mode")
-  val sslRootCert: String = config.getString("ssl.root-cert")
-  val sslCert: String = config.getString("ssl.cert")
-  val sslKey: String = config.getString("ssl.key")
-  val sslPassword: String = config.getString("ssl.password")
-
+final class ConnectionPoolSettings(config: Config) {
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
   val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
 
-  val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
   val validationQuery: String = config.getString("validation-query")
-
-  val statementCacheSize: Int = config.getInt("statement-cache-size")
 }
 
 /**

@@ -16,7 +16,6 @@ object TestConfig {
       case "postgres" =>
         ConfigFactory.parseString("""
           akka.persistence.r2dbc.connection-factory {
-            driver = "postgres"
             host = "localhost"
             port = 5432
             user = "postgres"
@@ -27,7 +26,6 @@ object TestConfig {
       case "yugabyte" =>
         ConfigFactory.parseString("""
           akka.persistence.r2dbc.connection-factory {
-            driver = "postgres"
             host = "localhost"
             port = 5433
             user = "yugabyte"
@@ -36,18 +34,14 @@ object TestConfig {
           }
           """)
       case "h2" =>
-        ConfigFactory.parseString("""
+        ConfigFactory.parseString(s"""
+          akka.persistence.r2dbc.connection-factory = $${akka.persistence.r2dbc.h2.connection-factory}
           akka.persistence.r2dbc.connection-factory {
-           driver = "h2"
-           #url = "r2dbc:h2:mem:///test-db;DB_CLOSE_DELAY=-1"
-           url = "r2dbc:h2:file:///./target/h2-test-db;DB_CLOSE_DELAY=-1"
-           host = ""
-           port = 0
-           user = ""
-           password = ""
-           database = ""
+            protocol = "mem"
+            database = "./target/h2-test-db"
           }
           akka.persistence.r2dbc {
+           # FIXME do we know these are never changing for H2, could we avoid having users need configure them at all?
            db-timestamp-monotonic-increasing = on
            use-app-timestamp = on
           }

@@ -12,6 +12,7 @@ import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.r2dbc.query.scaladsl.QueryDao
 import akka.persistence.r2dbc.snapshot.SnapshotDao
 import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
+import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 
 import scala.concurrent.ExecutionContext
@@ -21,6 +22,12 @@ import scala.concurrent.ExecutionContext
  */
 @InternalApi
 private[r2dbc] object YugabyteDialect extends Dialect {
+
+  override def name: String = "yugabyte"
+
+  override def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory =
+    PostgresDialect.createConnectionFactory(settings, config)
+
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
       system: ActorSystem[_]): JournalDao =

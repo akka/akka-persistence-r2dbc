@@ -8,10 +8,9 @@ import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
-
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
-import akka.persistence.r2dbc.ConnectionFactoryProvider
+import akka.persistence.r2dbc.{ ConnectionFactoryProvider, R2dbcSettings }
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Row
@@ -29,12 +28,15 @@ object R2dbcSession {
    * transaction is committed at the end or rolled back in case of failures.
    */
   def withSession[A](system: ActorSystem[_])(fun: R2dbcSession => Future[A]): Future[A] = {
-    withSession(system, "akka.persistence.r2dbc.connection-factory")(fun)
+    // FIXME parsing these for each query is no good
+    val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+    withSession(system, settings, s"akka.persistence.r2dbc.${settings.dialectName}.connection-factory")(fun)
   }
 
-  def withSession[A](system: ActorSystem[_], connectionFactoryConfigPath: String)(
+  def withSession[A](system: ActorSystem[_], settings: R2dbcSettings, connectionFactoryConfigPath: String)(
       fun: R2dbcSession => Future[A]): Future[A] = {
-    val connectionFactory = ConnectionFactoryProvider(system).connectionFactoryFor(connectionFactoryConfigPath)
+    val connectionFactory =
+      ConnectionFactoryProvider(system).connectionFactoryFor(settings, connectionFactoryConfigPath)
     val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsDisabled)(system.executionContext, system)
     r2dbcExecutor.withConnection("R2dbcSession") { connection =>
       val session = new R2dbcSession(connection)(system.executionContext, system)

@@ -51,7 +51,7 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
     val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
     settings.dialect.createSnapshotDao(
       settings,
-      ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
+      ConnectionFactoryProvider(system).connectionFactoryFor(settings, sharedConfigPath + ".connection-factory"))
   }
 
   def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =

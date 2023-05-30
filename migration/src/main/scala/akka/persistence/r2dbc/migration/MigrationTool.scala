@@ -112,7 +112,7 @@ class MigrationTool(system: ActorSystem[_]) {
   private val serialization: Serialization = SerializationExtension(system)
 
   private val targetConnectionFactory = ConnectionFactoryProvider(system)
-    .connectionFactoryFor(targetPluginId + ".connection-factory")
+    .connectionFactoryFor(targetR2dbcSettings, targetPluginId + ".connection-factory")
   private val targetJournalDao =
     targetR2dbcSettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
   private val targetSnapshotDao =
