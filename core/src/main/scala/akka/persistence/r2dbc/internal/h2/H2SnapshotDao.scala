@@ -28,14 +28,6 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
 
   override protected val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 
-  // FIXME h2 merge + //  private val upsertSql = sql"""
-  //    INSERT INTO $snapshotTable + //    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
-  //    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) + //    ON CONFLICT (persistence_id)
-  //    DO UPDATE SET + //      seq_nr = excluded.seq_nr,
-  //      write_timestamp = excluded.write_timestamp, + //      snapshot = excluded.snapshot,
-  //      ser_id = excluded.ser_id, + //      ser_manifest = excluded.ser_manifest,
-  //      meta_payload = excluded.meta_payload, + //      meta_ser_id = excluded.meta_ser_id,
-  //      meta_ser_manifest = excluded.meta_ser_manifest"""
   override protected def createUpsertSql: String = sql"""
     MERGE INTO $snapshotTable
     (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)

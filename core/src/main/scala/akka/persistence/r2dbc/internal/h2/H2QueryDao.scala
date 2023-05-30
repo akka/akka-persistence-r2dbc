@@ -26,7 +26,7 @@ private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: Conn
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
-  override val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
+  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 
   override protected def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,

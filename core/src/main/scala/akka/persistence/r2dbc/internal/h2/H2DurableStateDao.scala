@@ -45,7 +45,6 @@ private[r2dbc] final class H2DurableStateDao(settings: R2dbcSettings, connection
         s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis.toDouble / 1000}' second" // FIXME h2 interval
       else ""
 
-    // FIXME h2 statement_timestamp vs CURRENT_TIMESTAMP
     val selectColumns =
       if (backtracking)
         "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id "

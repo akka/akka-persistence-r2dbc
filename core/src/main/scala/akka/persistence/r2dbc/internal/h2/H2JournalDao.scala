@@ -34,7 +34,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
   import JournalDao.SerializedJournalRow
   override protected val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
 
-  override protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
+  override protected def createInsertEventWithParameterTimestampAndTransactionTimestampSql: (String, String) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +

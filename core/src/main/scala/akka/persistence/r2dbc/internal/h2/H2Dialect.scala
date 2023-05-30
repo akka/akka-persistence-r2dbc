@@ -55,6 +55,7 @@ private[r2dbc] object H2Dialect extends Dialect {
       .option(r2option(H2ConnectionOption.TRACE_LEVEL_FILE), "4")
       // create schema on first connect
       .option(r2option(H2ConnectionOption.INIT), dbSchema(settings))
+      .option(io.r2dbc.spi.Option.valueOf("LOCK_TIMEOUT"), "10000")
 
     ConnectionFactories.get(builder.build())
   }
