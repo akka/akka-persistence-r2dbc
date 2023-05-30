@@ -37,7 +37,7 @@ object TestConfig {
         ConfigFactory.parseString(s"""
           akka.persistence.r2dbc.connection-factory = $${akka.persistence.r2dbc.h2.connection-factory}
           akka.persistence.r2dbc.connection-factory {
-            protocol = "mem"
+            protocol = "file"
             database = "./target/h2-test-db"
           }
           akka.persistence.r2dbc {
