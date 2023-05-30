@@ -1,7 +1,16 @@
-# FIXME Breaking but is that really a problem
+# FIXME Breaking but is that really a problem?
 ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.R2dbcSettings.dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.ConnectionFactoryProvider.connectionFactoryFor")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.ConnectionFactorySettings")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.connectionFactorySettings")
+
+# may change
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.javadsl.R2dbcSession.withSession")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.javadsl.R2dbcSession.withSession")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.scaladsl.R2dbcSession.withSession")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.scaladsl.R2dbcSession.withSession")
 
 # internal changes
 ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.metadata")

@@ -20,7 +20,7 @@ import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.QueryDao
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.{ ConnectionFactory, Row }
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -53,13 +53,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   import PostgresQueryDao._
   import PostgresJournalDao.readMetadata
 
-  private val journalTable = settings.journalTableWithSchema
-  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
+  protected val journalTable = settings.journalTableWithSchema
+  protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val currentDbTimestampSql =
     "SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
-  private def eventsBySlicesRangeSql(
+  protected def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean,
@@ -92,12 +92,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       LIMIT ?"""
   }
 
-  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
-    settings.dialect match {
-      case YugabyteDialect => s"slice BETWEEN $minSlice AND $maxSlice"
-      case PostgresDialect => s"slice in (${(minSlice to maxSlice).mkString(",")})"
-    }
-  }
+  protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
+    s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   private def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
     sql"""
@@ -115,12 +111,12 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     SELECT db_timestamp FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectOneEventSql = sql"""
+  protected val selectOneEventSql = sql"""
     SELECT slice, entity_type, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
     FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectEventsSql = sql"""
+  protected val selectEventsSql = sql"""
     SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
     from $journalTable
     WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
@@ -152,6 +148,9 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
       }
   }
+
+  protected def tagsFromDb(row: Row, columnName: String): Set[String] =
+    setFromDb(row.get("tags", classOf[Array[String]]))
 
   def rowsBySlices(
       entityType: String,
@@ -195,7 +194,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
-            tags = setFromDb(row.get("tags", classOf[Array[String]])),
+            tags = tagsFromDb(row, "tags"),
             metadata = None)
         else
           SerializedJournalRow(
@@ -209,7 +208,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
-            tags = setFromDb(row.get("tags", classOf[Array[String]])),
+            tags = tagsFromDb(row, "tags"),
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -290,7 +289,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
-          tags = setFromDb(row.get("tags", classOf[Array[String]])),
+          tags = tagsFromDb(row, "tags"),
           metadata = readMetadata(row)))
 
   def eventsByPersistenceId(
@@ -318,7 +317,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = setFromDb(row.get("tags", classOf[Array[String]])),
+          tags = tagsFromDb(row, "tags"),
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)

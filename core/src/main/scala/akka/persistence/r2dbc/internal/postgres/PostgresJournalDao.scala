@@ -82,12 +82,13 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
   private val persistenceExt = Persistence(system)
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
+  protected val r2dbcExecutor =
+    new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
 
-  private val journalTable = journalSettings.journalTableWithSchema
-  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
+  protected val journalTable = journalSettings.journalTableWithSchema
+  protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
 
-  private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
+  protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +

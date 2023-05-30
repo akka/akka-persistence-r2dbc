@@ -40,9 +40,9 @@ private[r2dbc] object YugabyteDialect extends Dialect {
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
       system: ActorSystem[_]): QueryDao =
-    new PostgresQueryDao(settings, connectionFactory)
+    new YugabyteQueryDao(settings, connectionFactory)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       ec: ExecutionContext,
-      system: ActorSystem[_]): DurableStateDao = new PostgresDurableStateDao(settings, connectionFactory)
+      system: ActorSystem[_]): DurableStateDao = new YugabyteDurableStateDao(settings, connectionFactory)
 }

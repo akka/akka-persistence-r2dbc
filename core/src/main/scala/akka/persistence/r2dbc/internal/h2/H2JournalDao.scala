@@ -16,6 +16,7 @@ import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 import akka.persistence.r2dbc.journal.JournalDao
 import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.Connection
@@ -75,19 +76,12 @@ private[r2dbc] object H2JournalDao {
 private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends JournalDao {
+    extends PostgresJournalDao(journalSettings, connectionFactory) {
 
   import JournalDao.SerializedJournalRow
   import H2JournalDao.log
 
-  private val persistenceExt = Persistence(system)
-
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
-
-  private val journalTable = journalSettings.journalTableWithSchema
-  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
-
-  private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
+  override protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
@@ -120,23 +114,6 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
   }
 
-  private val selectHighestSequenceNrSql = sql"""
-    SELECT MAX(seq_nr) from $journalTable
-    WHERE persistence_id = ? AND seq_nr >= ?"""
-
-  private val selectLowestSequenceNrSql =
-    sql"""
-    SELECT MIN(seq_nr) from $journalTable
-    WHERE persistence_id = ?"""
-
-  private val deleteEventsSql = sql"""
-    DELETE FROM $journalTable
-    WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?"""
-  private val insertDeleteMarkerSql = sql"""
-    INSERT INTO $journalTable
-    (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
-    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)"""
-
   /**
    * All events must be for the same persistenceId.
    *
@@ -147,7 +124,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
    * it can return `JournalDao.EmptyDbTimestamp` when the pub-sub feature is disabled. When enabled it would have to use
    * a select (in same transaction).
    */
-  def writeEvents(events: Seq[SerializedJournalRow]): Future[Instant] = {
+  override def writeEvents(events: Seq[SerializedJournalRow]): Future[Instant] = {
     require(events.nonEmpty)
 
     // it's always the same persistenceId for all events
@@ -243,122 +220,6 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
       // result.map(_.head)(ExecutionContexts.parasitic)
       result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
     }
-  }
-
-  def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
-    val result = r2dbcExecutor
-      .select(s"select highest seqNr [$persistenceId]")(
-        connection =>
-          connection
-            .createStatement(selectHighestSequenceNrSql)
-            .bind(0, persistenceId)
-            .bind(1, fromSequenceNr),
-        row => {
-          val seqNr = row.get(0, classOf[java.lang.Long])
-          if (seqNr eq null) 0L else seqNr.longValue
-        })
-      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContexts.parasitic)
-
-    if (log.isDebugEnabled)
-      result.foreach(seqNr => log.debug("Highest sequence nr for persistenceId [{}]: [{}]", persistenceId, seqNr))
-
-    result
-  }
-
-  def readLowestSequenceNr(persistenceId: String): Future[Long] = {
-    val result = r2dbcExecutor
-      .select(s"select lowest seqNr [$persistenceId]")(
-        connection =>
-          connection
-            .createStatement(selectLowestSequenceNrSql)
-            .bind(0, persistenceId),
-        row => {
-          val seqNr = row.get(0, classOf[java.lang.Long])
-          if (seqNr eq null) 0L else seqNr.longValue
-        })
-      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContexts.parasitic)
-
-    if (log.isDebugEnabled)
-      result.foreach(seqNr => log.debug("Lowest sequence nr for persistenceId [{}]: [{}]", persistenceId, seqNr))
-
-    result
-  }
-
-  private def highestSeqNrForDelete(persistenceId: String, toSequenceNr: Long): Future[Long] = {
-    if (toSequenceNr == Long.MaxValue)
-      readHighestSequenceNr(persistenceId, 0L)
-    else
-      Future.successful(toSequenceNr)
-  }
-
-  private def lowestSequenceNrForDelete(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
-    if (toSeqNr <= batchSize) {
-      Future.successful(1L)
-    } else {
-      readLowestSequenceNr(persistenceId)
-    }
-  }
-
-  def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
-
-    def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
-      val entityType = PersistenceId.extractEntityType(persistenceId)
-      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-      connection
-        .createStatement(insertDeleteMarkerSql)
-        .bind(0, slice)
-        .bind(1, entityType)
-        .bind(2, persistenceId)
-        .bind(3, deleteMarkerSeqNr)
-        .bind(4, "")
-        .bind(5, "")
-        .bind(6, 0)
-        .bind(7, "")
-        .bindPayloadOption(8, None)
-        .bind(9, true)
-    }
-
-    def deleteBatch(from: Long, to: Long, lastBatch: Boolean): Future[Unit] = {
-      (if (lastBatch && !resetSequenceNumber) {
-         r2dbcExecutor
-           .update(s"delete [$persistenceId] and insert marker") { connection =>
-             Vector(
-               connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, from).bind(2, to),
-               insertDeleteMarkerStmt(to, connection))
-           }
-           .map(_.head)
-       } else {
-         r2dbcExecutor
-           .updateOne(s"delete [$persistenceId]") { connection =>
-             connection.createStatement(deleteEventsSql).bind(0, persistenceId).bind(1, from).bind(2, to)
-           }
-       }).map(deletedRows =>
-        if (log.isDebugEnabled) {
-          log.debugN(
-            "Deleted [{}] events for persistenceId [{}], from seq num [{}] to [{}]",
-            deletedRows,
-            persistenceId,
-            from,
-            to)
-        })(ExecutionContexts.parasitic)
-    }
-
-    val batchSize = journalSettings.cleanupSettings.eventsJournalDeleteBatchSize
-
-    def deleteInBatches(from: Long, maxTo: Long): Future[Unit] = {
-      if (from + batchSize > maxTo) {
-        deleteBatch(from, maxTo, true)
-      } else {
-        val to = from + batchSize - 1
-        deleteBatch(from, to, false).flatMap(_ => deleteInBatches(to + 1, maxTo))
-      }
-    }
-
-    for {
-      toSeqNr <- highestSeqNrForDelete(persistenceId, toSequenceNr)
-      fromSeqNr <- lowestSequenceNrForDelete(persistenceId, toSeqNr, batchSize)
-      _ <- deleteInBatches(fromSeqNr, toSeqNr)
-    } yield ()
   }
 
 }

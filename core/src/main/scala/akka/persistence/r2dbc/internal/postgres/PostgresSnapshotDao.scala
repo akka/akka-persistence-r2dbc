@@ -39,32 +39,35 @@ private[r2dbc] object PostgresSnapshotDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] final class PostgresSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends SnapshotDao {
   import PostgresSnapshotDao._
   import SnapshotDao._
 
-  private val snapshotTable = settings.snapshotsTableWithSchema
+  protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
-  private val upsertSql = sql"""
-    INSERT INTO $snapshotTable
-    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (persistence_id)
-    DO UPDATE SET
-      seq_nr = excluded.seq_nr,
-      write_timestamp = excluded.write_timestamp,
-      snapshot = excluded.snapshot,
-      ser_id = excluded.ser_id,
-      ser_manifest = excluded.ser_manifest,
-      meta_payload = excluded.meta_payload,
-      meta_ser_id = excluded.meta_ser_id,
-      meta_ser_manifest = excluded.meta_ser_manifest"""
+  protected def createUpsertSql: String =
+    sql"""
+      INSERT INTO $snapshotTable
+      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (persistence_id)
+      DO UPDATE SET
+        seq_nr = excluded.seq_nr,
+        write_timestamp = excluded.write_timestamp,
+        snapshot = excluded.snapshot,
+        ser_id = excluded.ser_id,
+        ser_manifest = excluded.ser_manifest,
+        meta_payload = excluded.meta_payload,
+        meta_ser_id = excluded.meta_ser_id,
+        meta_ser_manifest = excluded.meta_ser_manifest"""
+
+  private val upsertSql = createUpsertSql
 
   private def selectSql(criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =

@@ -70,8 +70,7 @@ private[r2dbc] object PostgresDurableStateDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(
-    implicit
+private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends DurableStateDao {
@@ -116,12 +115,8 @@ private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, conn
      """
   }
 
-  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
-    settings.dialect match {
-      case YugabyteDialect => s"slice BETWEEN $minSlice AND $maxSlice"
-      case PostgresDialect => s"slice in (${(minSlice to maxSlice).mkString(",")})"
-    }
-  }
+  protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
+    s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   private def insertStateSql(
       entityType: String,
@@ -229,7 +224,7 @@ private[r2dbc] final class PostgresDurableStateDao(settings: R2dbcSettings, conn
   private def persistenceIdsForEntityTypeAfterSql(table: String): String =
     sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
-  private def stateBySlicesRangeSql(
+  protected def stateBySlicesRangeSql(
       entityType: String,
       maxDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
