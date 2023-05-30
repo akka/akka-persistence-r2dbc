@@ -10,6 +10,8 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.postgres.PostgresSnapshotDao
 import io.r2dbc.spi.ConnectionFactory
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.ExecutionContext
 
@@ -23,6 +25,8 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresSnapshotDao(settings, connectionFactory) {
+
+  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 
   // FIXME h2 merge + //  private val upsertSql = sql"""
   //    INSERT INTO $snapshotTable + //    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)

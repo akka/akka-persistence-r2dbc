@@ -4,44 +4,19 @@
 
 package akka.persistence.r2dbc.internal.h2
 
-import akka.NotUsed
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.query.scaladsl.QueryDao
-import akka.persistence.typed.PersistenceId
-import akka.stream.scaladsl.Source
-import io.r2dbc.spi.{ ConnectionFactory, Row }
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import java.time.Instant
 import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
-/**
- * INTERNAL API
- */
-@InternalApi
-object H2QueryDao {
-  private val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
-  private def tagsFromDb(array: AnyRef): Set[String] = array match {
-    case null              => Set.empty[String]
-    case entries: Array[_] => entries.toSet.asInstanceOf[Set[String]]
-  }
-}
 
 /**
  * INTERNAL API
@@ -51,8 +26,7 @@ private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: Conn
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
-  import H2QueryDao._
-  import H2JournalDao.readMetadata
+  override val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 
   override protected def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
@@ -101,6 +75,6 @@ private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: Conn
     LIMIT ?"""
 
   override protected def tagsFromDb(row: Row, columnName: String): Set[String] =
-    H2QueryDao.tagsFromDb(row.get("tags", classOf[AnyRef]))
+    H2Utils.tagsFromDb(row, columnName)
 
 }

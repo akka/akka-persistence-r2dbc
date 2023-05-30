@@ -4,7 +4,6 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
-import java.time.{ Duration => JDuration }
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
@@ -17,8 +16,11 @@ import akka.util.JavaDurationConverters.JavaDurationOps
 import com.typesafe.config.Config
 import io.r2dbc.postgresql.PostgresqlConnectionFactoryProvider
 import io.r2dbc.postgresql.client.SSLMode
-import io.r2dbc.spi.{ ConnectionFactories, ConnectionFactory, ConnectionFactoryOptions }
+import io.r2dbc.spi.ConnectionFactories
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.ConnectionFactoryOptions
 
+import java.time.{ Duration => JDuration }
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 

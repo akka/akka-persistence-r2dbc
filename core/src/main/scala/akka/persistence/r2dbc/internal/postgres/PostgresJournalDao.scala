@@ -78,7 +78,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     extends JournalDao {
 
   import JournalDao.SerializedJournalRow
-  import PostgresJournalDao.log
+  protected def log: Logger = PostgresJournalDao.log
 
   private val persistenceExt = Persistence(system)
 

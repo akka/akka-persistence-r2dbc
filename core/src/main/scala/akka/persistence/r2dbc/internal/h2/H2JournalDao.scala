@@ -5,23 +5,14 @@
 package akka.persistence.r2dbc.internal.h2
 
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
-import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery
-import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.typed.PersistenceId
-import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -29,43 +20,6 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-
-/**
- * INTERNAL API
- */
-@InternalApi
-private[r2dbc] object H2JournalDao {
-  private val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
-  val EmptyDbTimestamp: Instant = Instant.EPOCH
-
-  final case class SerializedJournalRow(
-      slice: Int,
-      entityType: String,
-      persistenceId: String,
-      seqNr: Long,
-      dbTimestamp: Instant,
-      readDbTimestamp: Instant,
-      payload: Option[Array[Byte]],
-      serId: Int,
-      serManifest: String,
-      writerUuid: String,
-      tags: Set[String],
-      metadata: Option[SerializedEventMetadata])
-      extends BySliceQuery.SerializedRow
-
-  def readMetadata(row: Row): Option[SerializedEventMetadata] = {
-    row.get("meta_payload", classOf[Array[Byte]]) match {
-      case null => None
-      case metaPayload =>
-        Some(
-          SerializedEventMetadata(
-            serId = row.get[Integer]("meta_ser_id", classOf[Integer]),
-            serManifest = row.get("meta_ser_manifest", classOf[String]),
-            metaPayload))
-    }
-  }
-
-}
 
 /**
  * INTERNAL API
@@ -77,9 +31,8 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresJournalDao(journalSettings, connectionFactory) {
-
   import JournalDao.SerializedJournalRow
-  import H2JournalDao.log
+  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
 
   override protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =

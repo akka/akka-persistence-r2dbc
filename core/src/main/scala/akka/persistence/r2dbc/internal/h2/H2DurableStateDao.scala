@@ -4,27 +4,18 @@
 
 package akka.persistence.r2dbc.internal.h2
 
-import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
-import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
 import io.r2dbc.spi.ConnectionFactory
-import org.slf4j.{ Logger, LoggerFactory }
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
-import scala.concurrent.{ ExecutionContext, Future }
-import scala.concurrent.duration.{ Duration, FiniteDuration }
-
-/**
- * INTERNAL API
- */
-@InternalApi
-private[r2dbc] object H2DurableStateDao {
-
-  val FutureDone: Future[Done] = Future.successful(Done)
-}
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * INTERNAL API
@@ -34,6 +25,8 @@ private[r2dbc] final class H2DurableStateDao(settings: R2dbcSettings, connection
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresDurableStateDao(settings, connectionFactory) {
+
+  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2DurableStateDao])
 
   override protected def stateBySlicesRangeSql(
       entityType: String,

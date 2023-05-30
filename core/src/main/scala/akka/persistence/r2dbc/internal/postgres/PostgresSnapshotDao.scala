@@ -30,21 +30,19 @@ import scala.concurrent.Future
  */
 private[r2dbc] object PostgresSnapshotDao {
   private val log: Logger = LoggerFactory.getLogger(classOf[PostgresSnapshotDao])
-
 }
 
 /**
  * INTERNAL API
- *
- * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
 private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends SnapshotDao {
-  import PostgresSnapshotDao._
   import SnapshotDao._
+
+  protected def log: Logger = PostgresSnapshotDao.log
 
   protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec

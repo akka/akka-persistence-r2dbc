@@ -20,7 +20,8 @@ import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.QueryDao
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.{ ConnectionFactory, Row }
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -50,9 +51,10 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends QueryDao {
-  import PostgresQueryDao._
   import PostgresJournalDao.readMetadata
+  import PostgresQueryDao.setFromDb
 
+  protected def log: Logger = PostgresQueryDao.log
   protected val journalTable = settings.journalTableWithSchema
   protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
