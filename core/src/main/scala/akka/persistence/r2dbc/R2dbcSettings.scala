@@ -4,18 +4,20 @@
 
 package akka.persistence.r2dbc
 
-import java.util.Locale
-import scala.collection.immutable
-import scala.concurrent.duration._
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
-import akka.persistence.r2dbc.internal.{ Dialect, PayloadCodec }
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
+import akka.persistence.r2dbc.internal.Dialect
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.util.Helpers.toRootLowerCase
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
-import akka.util.Helpers.toRootLowerCase
+
+import java.util.Locale
+import scala.collection.immutable
+import scala.concurrent.duration._
 
 /**
  * INTERNAL API

@@ -15,7 +15,9 @@ import akka.persistence.r2dbc.snapshot.SnapshotDao
 import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
 import com.typesafe.config.Config
 import io.r2dbc.h2.H2ConnectionOption
-import io.r2dbc.spi.{ ConnectionFactories, ConnectionFactory, ConnectionFactoryOptions }
+import io.r2dbc.spi.ConnectionFactories
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.ConnectionFactoryOptions
 
 import scala.concurrent.ExecutionContext
 

@@ -9,10 +9,12 @@ import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
 import io.r2dbc.spi.ConnectionFactory
-import org.slf4j.{ Logger, LoggerFactory }
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{ Duration, FiniteDuration }
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * INTERNAL API
