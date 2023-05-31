@@ -111,8 +111,6 @@ class DurableStateStoreChangeHandlerSpec
       .contains(1)
 
   "The R2DBC durable state store change handler" should {
-    // FIXME this test breaks db cleanup for h2 somehow leaving a transaction against the durable_state table uncommitted
-    pending
 
     "be invoked for first revision" in {
       val entityType = "CustomEntity"
