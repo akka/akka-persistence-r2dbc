@@ -17,8 +17,6 @@ import scala.concurrent.ExecutionContext
 
 /**
  * INTERNAL API
- *
- * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
 private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit

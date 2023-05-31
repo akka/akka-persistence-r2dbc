@@ -23,8 +23,6 @@ import scala.concurrent.Future
 
 /**
  * INTERNAL API
- *
- * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
 private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
