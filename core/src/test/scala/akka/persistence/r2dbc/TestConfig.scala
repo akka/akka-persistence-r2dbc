@@ -39,6 +39,7 @@ object TestConfig {
           akka.persistence.r2dbc.connection-factory {
             protocol = "file"
             database = "./target/h2-test-db"
+            trace-logging = on
           }
           akka.persistence.r2dbc {
            # FIXME do we know these are never changing for H2, could we avoid having users need configure them at all?

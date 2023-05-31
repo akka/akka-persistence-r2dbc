@@ -38,12 +38,14 @@ private[r2dbc] object H2Dialect extends Dialect {
     val builder = ConnectionFactoryOptions.builder()
     builder
       .option(ConnectionFactoryOptions.DRIVER, "h2")
-      // log to SLF4J instead of print to stdout, logger name will be 'h2database'
-      .option(r2option(H2ConnectionOption.TRACE_LEVEL_FILE), "4")
       // create schema on first connect
       .option(r2option(H2ConnectionOption.INIT), dbSchema(settings))
       // don't auto close connections
       .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
+
+    if (config.getBoolean("trace-logging"))
+      // log to SLF4J instead of print to stdout, logger name will be 'h2database'
+      builder.option(r2option(H2ConnectionOption.TRACE_LEVEL_FILE), "4")
 
     val url = config.getString("url")
     if (url.isEmpty) {
