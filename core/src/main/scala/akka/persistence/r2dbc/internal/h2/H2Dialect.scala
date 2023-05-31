@@ -14,12 +14,10 @@ import akka.persistence.r2dbc.query.scaladsl.QueryDao
 import akka.persistence.r2dbc.snapshot.SnapshotDao
 import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
 import com.typesafe.config.Config
+import io.r2dbc.h2.H2ConnectionOption
 import io.r2dbc.spi.{ ConnectionFactories, ConnectionFactory, ConnectionFactoryOptions }
 
 import scala.concurrent.ExecutionContext
-import io.r2dbc.h2.{ H2ConnectionFactoryProvider, H2ConnectionOption }
-
-import akka.util.ccompat.JavaConverters._
 
 /**
  * INTERNAL API
@@ -28,6 +26,14 @@ import akka.util.ccompat.JavaConverters._
 private[r2dbc] object H2Dialect extends Dialect {
 
   override def name: String = "h2"
+
+  override def adaptSettings(settings: R2dbcSettings): R2dbcSettings = {
+    val res = settings
+      // app timestamp is db timestamp because same process
+      .withUseAppTimestamp(true)
+      .withDbTimestampMonotonicIncreasing(true)
+    res
+  }
 
   override def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory = {
     def r2option[T](h2Option: H2ConnectionOption): io.r2dbc.spi.Option[T] =

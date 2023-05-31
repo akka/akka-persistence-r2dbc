@@ -26,7 +26,7 @@ class PersistTagsSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 

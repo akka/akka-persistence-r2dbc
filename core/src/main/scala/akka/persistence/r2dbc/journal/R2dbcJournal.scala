@@ -87,6 +87,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   private val sharedConfigPath = cfgPath.replaceAll("""\.journal$""", "")
   private val serialization: Serialization = SerializationExtension(context.system)
   private val journalSettings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC journal starting up with dialect [{}]", journalSettings.dialectName)
 
   private val journalDao = journalSettings.dialect.createJournalDao(
     journalSettings,

@@ -27,6 +27,12 @@ private[r2dbc] trait Dialect {
    */
   def name: String
 
+  /**
+   * Possibly override settings from config with config that is specific to the dialect and where config could be
+   * incorrect.
+   */
+  def adaptSettings(settings: R2dbcSettings): R2dbcSettings = settings
+
   def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory
 
   def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit

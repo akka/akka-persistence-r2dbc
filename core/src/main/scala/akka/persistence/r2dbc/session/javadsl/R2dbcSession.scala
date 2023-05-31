@@ -30,7 +30,7 @@ object R2dbcSession {
    */
   def withSession[A](system: ActorSystem[_], fun: JFunction[R2dbcSession, CompletionStage[A]]): CompletionStage[A] = {
     // FIXME parsing these for each query is no good
-    val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+    val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
     withSession(system, settings, s"akka.persistence.r2dbc.${settings.dialectName}.connection-factory", fun)
   }
 

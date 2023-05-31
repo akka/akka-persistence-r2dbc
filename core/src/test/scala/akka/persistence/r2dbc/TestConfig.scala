@@ -41,11 +41,6 @@ object TestConfig {
             database = "./target/h2-test-db"
             trace-logging = on
           }
-          akka.persistence.r2dbc {
-           # FIXME do we know these are never changing for H2, could we avoid having users need configure them at all?
-           db-timestamp-monotonic-increasing = on
-           use-app-timestamp = on
-          }
           """)
     }
 

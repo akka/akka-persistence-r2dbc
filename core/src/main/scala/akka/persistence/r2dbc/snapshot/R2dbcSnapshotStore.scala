@@ -49,6 +49,7 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   private val dao = {
     val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
     val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+    log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
     settings.dialect.createSnapshotDao(
       settings,
       ConnectionFactoryProvider(system).connectionFactoryFor(settings, sharedConfigPath + ".connection-factory"))

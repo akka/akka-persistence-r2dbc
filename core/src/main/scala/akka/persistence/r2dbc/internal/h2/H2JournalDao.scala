@@ -40,31 +40,13 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
 
-    // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
-    // always increasing for a pid (time not going backwards).
-    // TODO we could skip the subselect when inserting seqNr 1 as a possible optimization
-    def timestampSubSelect =
-      s"(SELECT db_timestamp + '1 microsecond'::interval FROM $journalTable " +
-      "WHERE persistence_id = ? AND seq_nr = ?)"
+    // always app timestamp (db is same process) monotonic increasing
+    require(journalSettings.useAppTimestamp)
+    require(journalSettings.dbTimestampMonotonicIncreasing)
+    val insertEventWithParameterTimestampSql = sql"$baseSql ?)"
+    val insertEventIthTransactionTimestampSql = sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
 
-    val insertEventWithParameterTimestampSql =
-      if (journalSettings.dbTimestampMonotonicIncreasing) {
-        // FIXME h2 not supporting RETURNING
-        // sql"$baseSql ?) RETURNING db_timestamp"
-        sql"$baseSql ?)"
-      } else
-        // FIXME h2 not supporting RETURNING
-        // sql"$baseSql GREATEST(?, $timestampSubSelect)) RETURNING db_timestamp"
-        sql"$baseSql GREATEST(?, $timestampSubSelect))"
-
-    val insertEventWithTransactionTimestampSql = {
-      if (journalSettings.dbTimestampMonotonicIncreasing)
-        sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
-      else
-        sql"$baseSql GREATEST(CURRENT_TIMESTAMP, $timestampSubSelect)) RETURNING db_timestamp"
-    }
-
-    (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
+    (insertEventWithParameterTimestampSql, insertEventIthTransactionTimestampSql)
   }
 
   /**

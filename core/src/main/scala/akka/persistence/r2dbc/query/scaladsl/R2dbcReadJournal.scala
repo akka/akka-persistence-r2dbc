@@ -72,6 +72,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC read journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
   import typedSystem.executionContext

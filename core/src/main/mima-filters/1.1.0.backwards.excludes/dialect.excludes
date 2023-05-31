@@ -5,6 +5,7 @@ ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.ConnectionFactoryProvider.connectionFactoryFor")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.ConnectionFactorySettings")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.connectionFactorySettings")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.this")
 
 # may change
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.javadsl.R2dbcSession.withSession")

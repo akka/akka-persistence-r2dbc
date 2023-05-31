@@ -52,6 +52,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.state$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)

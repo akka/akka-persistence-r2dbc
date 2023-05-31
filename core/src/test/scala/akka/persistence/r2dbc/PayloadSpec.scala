@@ -60,7 +60,7 @@ class PayloadSpec
   import PayloadSpec._
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private def testJournalPersister(persistenceId: String, msg: Any): Unit = {
     val probe = createTestProbe[Any]()
