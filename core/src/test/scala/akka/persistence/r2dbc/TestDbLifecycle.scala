@@ -15,6 +15,9 @@ import org.slf4j.LoggerFactory
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 
+import java.time.Instant
+import scala.util.control.NonFatal
+
 trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
 
   def typedSystem: ActorSystem[_]
@@ -35,18 +38,22 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   lazy val persistenceExt: Persistence = Persistence(typedSystem)
 
   override protected def beforeAll(): Unit = {
-    Await.result(
-      r2dbcExecutor.updateOne("beforeAll delete")(
-        _.createStatement(s"delete from ${r2dbcSettings.journalTableWithSchema}")),
-      10.seconds)
-    Await.result(
-      r2dbcExecutor.updateOne("beforeAll delete")(
-        _.createStatement(s"delete from ${r2dbcSettings.snapshotsTableWithSchema}")),
-      10.seconds)
-    Await.result(
-      r2dbcExecutor.updateOne("beforeAll delete")(
-        _.createStatement(s"delete from ${r2dbcSettings.durableStateTableWithSchema}")),
-      10.seconds)
+    try {
+      Await.result(
+        r2dbcExecutor.updateOne("beforeAll delete")(
+          _.createStatement(s"delete from ${r2dbcSettings.journalTableWithSchema}")),
+        10.seconds)
+      Await.result(
+        r2dbcExecutor.updateOne("beforeAll delete")(
+          _.createStatement(s"delete from ${r2dbcSettings.snapshotsTableWithSchema}")),
+        10.seconds)
+      Await.result(
+        r2dbcExecutor.updateOne("beforeAll delete")(
+          _.createStatement(s"delete from ${r2dbcSettings.durableStateTableWithSchema}")),
+        10.seconds)
+    } catch {
+      case NonFatal(ex) => throw new RuntimeException(s"Test db cleanup failed", ex)
+    }
     super.beforeAll()
   }
 

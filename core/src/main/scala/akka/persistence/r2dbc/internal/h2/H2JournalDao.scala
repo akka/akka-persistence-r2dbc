@@ -32,7 +32,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     system: ActorSystem[_])
     extends PostgresJournalDao(journalSettings, connectionFactory) {
   import JournalDao.SerializedJournalRow
-  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
+  override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
 
   override protected def createInsertEventWithParameterTimestampAndTransactionTimestampSql: (String, String) = {
     val baseSql =

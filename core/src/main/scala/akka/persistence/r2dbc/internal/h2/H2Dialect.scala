@@ -33,29 +33,31 @@ private[r2dbc] object H2Dialect extends Dialect {
     def r2option[T](h2Option: H2ConnectionOption): io.r2dbc.spi.Option[T] =
       io.r2dbc.spi.Option.valueOf[T](h2Option.getKey)
 
-    val url = config.getString("url")
-    val builder =
-      if (url.isEmpty) {
-        ConnectionFactoryOptions
-          .builder()
-          .option(ConnectionFactoryOptions.DRIVER, "h2")
-          // note: protocol other than mem or file is validated in r2db driver
-          .option(ConnectionFactoryOptions.PROTOCOL, config.getString("protocol"))
-          .option(ConnectionFactoryOptions.DATABASE, config.getString("database"))
-          .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), config.getString("dbCloseDelay"))
-      } else {
-        ConnectionFactoryOptions
-          .parse(url)
-          .mutate()
-      }
-
-    // for both url and regular configs
+    // starting point for both url and regular configs,
+    // to allow url to override anything but provide sane defaults
+    val builder = ConnectionFactoryOptions.builder()
     builder
+      .option(ConnectionFactoryOptions.DRIVER, "h2")
       // log to SLF4J instead of print to stdout, logger name will be 'h2database'
       .option(r2option(H2ConnectionOption.TRACE_LEVEL_FILE), "4")
       // create schema on first connect
       .option(r2option(H2ConnectionOption.INIT), dbSchema(settings))
-      .option(io.r2dbc.spi.Option.valueOf("LOCK_TIMEOUT"), "10000")
+      // don't auto close connections
+      .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
+
+    val url = config.getString("url")
+    if (url.isEmpty) {
+      builder
+        // note: protocol other than mem or file is validated in r2db driver
+        .option(ConnectionFactoryOptions.PROTOCOL, config.getString("protocol"))
+        .option(ConnectionFactoryOptions.DATABASE, config.getString("database"))
+    } else {
+      val urlConfig = ConnectionFactoryOptions
+        .parse(url)
+        .mutate()
+        .build()
+      builder.from(urlConfig)
+    }
 
     ConnectionFactories.get(builder.build())
   }

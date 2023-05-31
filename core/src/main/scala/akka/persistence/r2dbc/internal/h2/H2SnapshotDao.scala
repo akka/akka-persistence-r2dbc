@@ -26,7 +26,7 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
     system: ActorSystem[_])
     extends PostgresSnapshotDao(settings, connectionFactory) {
 
-  override protected val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
+  override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 
   override protected def createUpsertSql: String = sql"""
     MERGE INTO $snapshotTable

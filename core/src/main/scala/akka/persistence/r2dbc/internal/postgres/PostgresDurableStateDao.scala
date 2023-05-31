@@ -225,6 +225,11 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
   private def persistenceIdsForEntityTypeAfterSql(table: String): String =
     sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
+  protected def behindCurrentTimeIntervalConditionFor(behindCurrentTime: FiniteDuration): String =
+    if (behindCurrentTime > Duration.Zero)
+      s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis} milliseconds'"
+    else ""
+
   protected def stateBySlicesRangeSql(
       entityType: String,
       maxDbTimestampParam: Boolean,
@@ -237,16 +242,13 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""
 
-    def behindCurrentTimeIntervalCondition =
-      if (behindCurrentTime > Duration.Zero)
-        s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis} milliseconds'"
-      else ""
+    val behindCurrentTimeIntervalCondition = behindCurrentTimeIntervalConditionFor(behindCurrentTime)
 
     val selectColumns =
       if (backtracking)
-        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id "
+        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id "
       else
-        "SELECT persistence_id, revision, db_timestamp, statement_timestamp() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
+        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
     sql"""
       $selectColumns

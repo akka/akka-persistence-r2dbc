@@ -15,6 +15,7 @@ private[akka] object H2Utils {
 
   def tagsFromDb(row: Row, columnName: String): Set[String] = {
     // needs to be picked up with Object event though it is an Array[String]
+    // https://github.com/r2dbc/r2dbc-h2/issues/208
     row.get(columnName, classOf[AnyRef]) match {
       case null              => Set.empty[String]
       case entries: Array[_] => entries.toSet.asInstanceOf[Set[String]]

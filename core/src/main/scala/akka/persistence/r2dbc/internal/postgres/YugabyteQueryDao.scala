@@ -22,7 +22,7 @@ private[r2dbc] final class YugabyteQueryDao(settings: R2dbcSettings, connectionF
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
 
-  override protected val log: Logger = LoggerFactory.getLogger(classOf[YugabyteQueryDao])
+  override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[YugabyteQueryDao])
 
   override protected def sliceCondition(minSlice: Int, maxSlice: Int): String = {
     s"slice BETWEEN $minSlice AND $maxSlice"
