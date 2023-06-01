@@ -45,10 +45,13 @@ private[r2dbc] object H2Dialect extends Dialect {
     // starting point for both url and regular configs,
     // to allow url to override anything but provide sane defaults
     val builder = ConnectionFactoryOptions.builder()
+    val createSliceIndexes = config.getBoolean("create-slice-indexes")
     builder
       .option(ConnectionFactoryOptions.DRIVER, "h2")
       // create schema on first connect
-      .option(r2option(H2ConnectionOption.INIT), dbSchema(settings) + config.getString("additional-init"))
+      .option(
+        r2option(H2ConnectionOption.INIT),
+        dbSchema(settings, createSliceIndexes) + config.getString("additional-init"))
       // don't auto close connections
       .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
 
@@ -92,10 +95,17 @@ private[r2dbc] object H2Dialect extends Dialect {
     system.dispatchers.lookup(DispatcherSelector.blocking())
   }
 
-  private def dbSchema(settings: R2dbcSettings): String = {
-    val sliceIndexWithSchema = settings.journalTableWithSchema + "_slice_idx"
-    val durableStateSliceIndexWithSchema = settings.durableStateTableWithSchema + "_slice_idx"
-    Seq(
+  private def dbSchema(settings: R2dbcSettings, createSliceIndexes: Boolean): String = {
+    val sliceIndexes = if (createSliceIndexes) {
+      val sliceIndexWithSchema = settings.journalTableWithSchema + "_slice_idx"
+      val durableStateSliceIndexWithSchema = settings.durableStateTableWithSchema + "_slice_idx"
+      Seq(
+        sql"""
+             CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON ${settings.journalTableWithSchema}(slice, entity_type, db_timestamp, seq_nr)""",
+        sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
+    } else Seq.empty[String]
+
+    (Seq(
       sql"""CREATE TABLE IF NOT EXISTS ${settings.journalTableWithSchema}(
         slice INT NOT NULL,
         entity_type VARCHAR(255) NOT NULL,
@@ -118,8 +128,6 @@ private[r2dbc] object H2Dialect extends Dialect {
 
         PRIMARY KEY(persistence_id, seq_nr)
       )""",
-      sql"""
-           CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON ${settings.journalTableWithSchema}(slice, entity_type, db_timestamp, seq_nr)""",
       sql"""
         CREATE TABLE IF NOT EXISTS ${settings.snapshotsTableWithSchema}(
           slice INT NOT NULL,
@@ -151,8 +159,7 @@ private[r2dbc] object H2Dialect extends Dialect {
 
           PRIMARY KEY(persistence_id, revision)
         )
-      """,
-      sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
+      """) ++ sliceIndexes)
       .mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
   }
 }
