@@ -93,10 +93,8 @@ private[r2dbc] object H2Dialect extends Dialect {
   }
 
   private def dbSchema(settings: R2dbcSettings): String = {
-    val sliceIndexWithSchema =
-      settings.schema
-        .map(_ + ".event_journal_slice_idx")
-        .getOrElse("event_journal_slice_idx")
+    val sliceIndexWithSchema = settings.journalTableWithSchema + "_slice_idx"
+    val durableStateSliceIndexWithSchema = settings.durableStateTableWithSchema + "_slice_idx"
     Seq(
       sql"""CREATE TABLE IF NOT EXISTS ${settings.journalTableWithSchema}(
         slice INT NOT NULL,
@@ -153,6 +151,8 @@ private[r2dbc] object H2Dialect extends Dialect {
 
           PRIMARY KEY(persistence_id, revision)
         )
-      """).mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
+      """,
+      sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
+      .mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
   }
 }
