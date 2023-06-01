@@ -60,9 +60,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val stateDao = settings.dialect.createDurableStateDao(
     settings,
     ConnectionFactoryProvider(typedSystem)
-      .connectionFactoryFor(settings, sharedConfigPath + ".connection-factory"))(
-    typedSystem.executionContext,
-    typedSystem)
+      .connectionFactoryFor(settings, sharedConfigPath + ".connection-factory"))(typedSystem)
 
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {

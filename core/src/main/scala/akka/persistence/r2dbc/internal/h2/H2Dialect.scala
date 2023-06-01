@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.internal.h2
 
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.DispatcherSelector
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Dialect
@@ -47,7 +48,7 @@ private[r2dbc] object H2Dialect extends Dialect {
     builder
       .option(ConnectionFactoryOptions.DRIVER, "h2")
       // create schema on first connect
-      .option(r2option(H2ConnectionOption.INIT), dbSchema(settings))
+      .option(r2option(H2ConnectionOption.INIT), dbSchema(settings) + config.getString("additional-init"))
       // don't auto close connections
       .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
 
@@ -73,20 +74,23 @@ private[r2dbc] object H2Dialect extends Dialect {
   }
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): JournalDao = new H2JournalDao(settings, connectionFactory)
+      system: ActorSystem[_]): JournalDao = new H2JournalDao(settings, connectionFactory)(ecForDaos(system), system)
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): SnapshotDao = new H2SnapshotDao(settings, connectionFactory)
+      system: ActorSystem[_]): SnapshotDao = new H2SnapshotDao(settings, connectionFactory)(ecForDaos(system), system)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): QueryDao = new H2QueryDao(settings, connectionFactory)
+      system: ActorSystem[_]): QueryDao = new H2QueryDao(settings, connectionFactory)(ecForDaos(system), system)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): DurableStateDao = new H2DurableStateDao(settings, connectionFactory)
+      system: ActorSystem[_]): DurableStateDao =
+    new H2DurableStateDao(settings, connectionFactory)(ecForDaos(system), system)
+
+  private def ecForDaos(system: ActorSystem[_]): ExecutionContext = {
+    // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
+    // FIXME is the default blocking good enough, should we have a separate to compartmentalize?
+    system.dispatchers.lookup(DispatcherSelector.blocking())
+  }
 
   private def dbSchema(settings: R2dbcSettings): String =
     Seq(

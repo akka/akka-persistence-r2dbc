@@ -29,20 +29,18 @@ private[r2dbc] object YugabyteDialect extends Dialect {
     PostgresDialect.createConnectionFactory(settings, config)
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
       system: ActorSystem[_]): JournalDao =
-    new PostgresJournalDao(settings, connectionFactory)
+    new PostgresJournalDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): SnapshotDao = new PostgresSnapshotDao(settings, connectionFactory)
+      system: ActorSystem[_]): SnapshotDao =
+    new PostgresSnapshotDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
       system: ActorSystem[_]): QueryDao =
-    new YugabyteQueryDao(settings, connectionFactory)
+    new YugabyteQueryDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): DurableStateDao = new YugabyteDurableStateDao(settings, connectionFactory)
+      system: ActorSystem[_]): DurableStateDao =
+    new YugabyteDurableStateDao(settings, connectionFactory)(system.executionContext, system)
 }

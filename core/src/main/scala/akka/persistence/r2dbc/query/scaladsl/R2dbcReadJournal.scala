@@ -80,7 +80,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val persistenceExt = Persistence(system)
   private val connectionFactory = ConnectionFactoryProvider(typedSystem)
     .connectionFactoryFor(settings, sharedConfigPath + ".connection-factory")
-  private val queryDao = settings.dialect.createQueryDao(settings, connectionFactory)(executionContext, typedSystem)
+  private val queryDao = settings.dialect.createQueryDao(settings, connectionFactory)(typedSystem)
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
@@ -111,7 +111,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
 
   private val journalDao =
-    settings.dialect.createJournalDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
+    settings.dialect.createJournalDao(settings, connectionFactory)(typedSystem)
 
   def extractEntityTypeFromPersistenceId(persistenceId: String): String =
     PersistenceId.extractEntityType(persistenceId)

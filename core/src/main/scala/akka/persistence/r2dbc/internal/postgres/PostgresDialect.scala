@@ -104,21 +104,18 @@ private[r2dbc] object PostgresDialect extends Dialect {
   }
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
       system: ActorSystem[_]): JournalDao =
-    new PostgresJournalDao(settings, connectionFactory)
+    new PostgresJournalDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
       system: ActorSystem[_]): SnapshotDao =
-    new PostgresSnapshotDao(settings, connectionFactory)
+    new PostgresSnapshotDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
       system: ActorSystem[_]): QueryDao =
-    new PostgresQueryDao(settings, connectionFactory)
+    new PostgresQueryDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      ec: ExecutionContext,
-      system: ActorSystem[_]): DurableStateDao = new PostgresDurableStateDao(settings, connectionFactory)
+      system: ActorSystem[_]): DurableStateDao =
+    new PostgresDurableStateDao(settings, connectionFactory)(system.executionContext, system)
 }
