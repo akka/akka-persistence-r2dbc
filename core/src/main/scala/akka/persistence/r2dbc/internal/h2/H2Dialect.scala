@@ -92,7 +92,11 @@ private[r2dbc] object H2Dialect extends Dialect {
     system.dispatchers.lookup(DispatcherSelector.blocking())
   }
 
-  private def dbSchema(settings: R2dbcSettings): String =
+  private def dbSchema(settings: R2dbcSettings): String = {
+    val sliceIndexWithSchema =
+      settings.schema
+        .map(_ + ".event_journal_slice_idx")
+        .getOrElse("event_journal_slice_idx")
     Seq(
       sql"""CREATE TABLE IF NOT EXISTS ${settings.journalTableWithSchema}(
         slice INT NOT NULL,
@@ -116,6 +120,8 @@ private[r2dbc] object H2Dialect extends Dialect {
 
         PRIMARY KEY(persistence_id, seq_nr)
       )""",
+      sql"""
+           CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON ${settings.journalTableWithSchema}(slice, entity_type, db_timestamp, seq_nr)""",
       sql"""
         CREATE TABLE IF NOT EXISTS ${settings.snapshotsTableWithSchema}(
           slice INT NOT NULL,
@@ -148,4 +154,5 @@ private[r2dbc] object H2Dialect extends Dialect {
           PRIMARY KEY(persistence_id, revision)
         )
       """).mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
+  }
 }
