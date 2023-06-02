@@ -16,9 +16,11 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
   def postgresConnectionFactorySettings(config: Config) =
     new PostgresConnectionFactorySettings(config.getConfig("akka.persistence.r2dbc.connection-factory"))
 
-  "Settings" should {
+  "Settings for postgres" should {
     "have table names with schema" in {
-      val config = ConfigFactory.parseString("akka.persistence.r2dbc.schema=s1").withFallback(ConfigFactory.load())
+      val config = ConfigFactory
+        .parseString("akka.persistence.r2dbc.schema=s1")
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       settings.journalTableWithSchema shouldBe "s1.event_journal"
       settings.snapshotsTableWithSchema shouldBe "s1.snapshot"
@@ -34,7 +36,7 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val config =
         ConfigFactory
           .parseString("akka.persistence.r2dbc.connection-factory.url=whatever-url")
-          .withFallback(ConfigFactory.load())
+          .withFallback(ConfigFactory.load("application-postgres.conf"))
 
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
@@ -45,7 +47,7 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
     "support ssl-mode as enum name" in {
       val config = ConfigFactory
         .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=VERIFY_FULL")
-        .withFallback(ConfigFactory.load())
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings.sslMode shouldBe "VERIFY_FULL"
@@ -55,7 +57,7 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
     "support ssl-mode values in lower and dashes" in {
       val config = ConfigFactory
         .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=verify-full")
-        .withFallback(ConfigFactory.load())
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings.sslMode shouldBe "verify-full"

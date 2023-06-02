@@ -32,7 +32,7 @@ object MultiPluginSpec {
     second-r2dbc = ${akka.persistence.r2dbc}
     second-r2dbc {
       # chose dialect unless using the same as the default
-      connection-factory = ${akka.persistence.r2dbc.postgres}
+      # connection-factory = ${akka.persistence.r2dbc.postgres}
       connection-factory {
         # specific connection properties here
 
