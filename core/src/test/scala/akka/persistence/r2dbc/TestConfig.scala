@@ -14,25 +14,11 @@ object TestConfig {
 
     val dialectConfig = dialect match {
       case "postgres" =>
-        ConfigFactory.parseString("""
-          akka.persistence.r2dbc.connection-factory {
-            host = "localhost"
-            port = 5432
-            user = "postgres"
-            password = "postgres"
-            database = "postgres"
-          }
-          """)
+        // defaults are fine
+        ConfigFactory.empty()
       case "yugabyte" =>
-        ConfigFactory.parseString("""
-          akka.persistence.r2dbc.connection-factory {
-            host = "localhost"
-            port = 5433
-            user = "yugabyte"
-            password = "yugabyte"
-            database = "yugabyte"
-          }
-          """)
+        // defaults are fine
+        ConfigFactory.empty()
       case "h2" =>
         ConfigFactory.parseString(s"""
           akka.persistence.r2dbc.connection-factory {
