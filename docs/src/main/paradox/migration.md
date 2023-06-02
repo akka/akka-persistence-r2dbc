@@ -42,7 +42,7 @@ The migration tool can be run as main class `akka.persistence.r2dbc.migration.Mi
 
 You need to provide configuration for the source persistence plugin and the target Rd2BC plugin in your `application.conf`. An example of such configuration for migration from Akka Persistence JDBC: 
 
-@@snip [docker-compose.yml](/migration-tests/src/test/resources/application.conf)
+@@snip [application-postgres.conf](/migration-tests/src/test/resources/application-postgres.conf)
 
 @@@ note
 

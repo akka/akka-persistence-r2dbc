@@ -4,16 +4,10 @@
 
 package akka.persistence.r2dbc
 
-import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.internal.ConnectionFactorySettings
-import akka.persistence.r2dbc.internal.h2.H2Dialect
-import akka.persistence.r2dbc.internal.postgres.PostgresDialect
-import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
-import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.util.Helpers.toRootLowerCase
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 
@@ -33,14 +27,14 @@ object R2dbcSettings {
         "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
         "the old 'dialect' config entry must be removed, " +
         "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/config.html")
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
     }
     if (!config.hasPath("connection-factory.dialect")) {
       throw new IllegalArgumentException(
         "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
         "to choose database dialect using the connection-factory block, " +
         "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/config.html")
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
     }
 
     val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
