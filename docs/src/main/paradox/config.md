@@ -2,13 +2,18 @@
 
 ## Connection configuration
 
-Shared configuration for the connection pool is located under `akka.persistence.r2dbc.connection-factory`. You have to set at least:
+Shared configuration for the connection pool is located under `akka.persistence.r2dbc.connection-factory`.
+Selecting a database dialect is done by first assigning one of the existing dialect blocks and then overriding
+specific configuration keys to specific values for your environment:
 
 Postgres:
 : @@snip [application.conf](/docs/src/test/resources/application-postgres.conf) { #connection-settings }
 
 Yugabyte:
 : @@snip [application.conf](/docs/src/test/resources/application-yugabyte.conf) { #connection-settings }
+
+H2:
+: @@snip [application.conf](/docs/src/test/resources/application-h2.conf) { #connection-settings }
 
 The following can be overridden in your `application.conf` for the connection settings:
 
