@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 object TestConfig {
   lazy val config: Config = {
     val defaultConfig = ConfigFactory.load()
-    val dialect = defaultConfig.getString("akka.persistence.r2dbc.dialect")
+    val dialect = defaultConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
 
     val dialectConfig = dialect match {
       case "postgres" =>
@@ -35,7 +35,6 @@ object TestConfig {
           """)
       case "h2" =>
         ConfigFactory.parseString(s"""
-          akka.persistence.r2dbc.connection-factory = $${akka.persistence.r2dbc.h2.connection-factory}
           akka.persistence.r2dbc.connection-factory {
             protocol = "file"
             database = "./target/h2-test-db"
@@ -44,8 +43,9 @@ object TestConfig {
           """)
     }
 
-    // using load here so that connection-factory can be overridden
-    ConfigFactory.load(dialectConfig.withFallback(ConfigFactory.parseString("""
+    // fallback to default here so that connection-factory can be overridden
+    dialectConfig
+      .withFallback(ConfigFactory.parseString("""
     akka.loglevel = DEBUG
     akka.persistence.journal.plugin = "akka.persistence.r2dbc.journal"
     akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
@@ -62,7 +62,8 @@ object TestConfig {
       }
     }
     akka.actor.testkit.typed.default-timeout = 10s
-    """)))
+    """))
+      .withFallback(defaultConfig)
   }
 
   val backtrackingDisabledConfig: Config =

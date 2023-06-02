@@ -4,8 +4,10 @@
 
 package akka.persistence.r2dbc
 
+import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.ConnectionFactorySettings
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
@@ -25,12 +27,22 @@ import scala.concurrent.duration._
 @InternalStableApi
 object R2dbcSettings {
 
-  private def configToMap(cfg: Config): Map[String, String] = {
-    import akka.util.ccompat.JavaConverters._
-    cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
-  }
-
   def apply(config: Config): R2dbcSettings = {
+    if (config.hasPath("dialect")) {
+      throw new IllegalArgumentException(
+        "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
+        "the old 'dialect' config entry must be removed, " +
+        "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/config.html")
+    }
+    if (!config.hasPath("connection-factory.dialect")) {
+      throw new IllegalArgumentException(
+        "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
+        "to choose database dialect using the connection-factory block, " +
+        "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/config.html")
+    }
+
     val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
 
     val journalTable: String = config.getString("journal.table")
@@ -75,14 +87,7 @@ object R2dbcSettings {
 
     val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
-    val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
-      case "yugabyte" => YugabyteDialect: Dialect
-      case "postgres" => PostgresDialect: Dialect
-      case "h2"       => H2Dialect: Dialect
-      case other =>
-        throw new IllegalArgumentException(
-          s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
-    }
+    val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
 
     val querySettings = new QuerySettings(config.getConfig("query"))
 
@@ -112,13 +117,19 @@ object R2dbcSettings {
       querySettings,
       dbTimestampMonotonicIncreasing,
       cleanupSettings,
-      dialect,
+      connectionFactorySettings,
       durableStateTableByEntityType,
       durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses,
       useAppTimestamp)
 
-    settingsFromConfig.dialect.adaptSettings(settingsFromConfig)
+    // let the dialect trump settings that does not make sense for it
+    settingsFromConfig.connectionFactorySettings.dialect.adaptSettings(settingsFromConfig)
+  }
+
+  private def configToMap(cfg: Config): Map[String, String] = {
+    import akka.util.ccompat.JavaConverters._
+    cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
   }
 }
 
@@ -140,7 +151,7 @@ final class R2dbcSettings private (
     val querySettings: QuerySettings,
     val dbTimestampMonotonicIncreasing: Boolean,
     val cleanupSettings: CleanupSettings,
-    _dialect: Dialect,
+    _connectionFactorySettings: ConnectionFactorySettings,
     _durableStateTableByEntityType: Map[String, String],
     _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
     _durableStateChangeHandlerClasses: Map[String, String],
@@ -153,7 +164,7 @@ final class R2dbcSettings private (
   /**
    * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
    */
-  val dialectName: String = _dialect.name
+  def dialectName: String = _connectionFactorySettings.dialect.name
 
   def getDurableStateTable(entityType: String): String =
     _durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
@@ -185,12 +196,6 @@ final class R2dbcSettings private (
   /**
    * INTERNAL API
    */
-  @InternalApi
-  private[akka] def dialect: Dialect = _dialect
-
-  /**
-   * INTERNAL API
-   */
   @InternalApi private[akka] def durableStateChangeHandlerClasses: Map[String, String] =
     _durableStateChangeHandlerClasses
 
@@ -204,6 +209,11 @@ final class R2dbcSettings private (
    * INTERNAL API
    */
   @InternalApi private[akka] def useAppTimestamp: Boolean = _useAppTimestamp
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def connectionFactorySettings: ConnectionFactorySettings = _connectionFactorySettings
 
   private def copy(
       schema: Option[String] = schema,
@@ -219,7 +229,7 @@ final class R2dbcSettings private (
       querySettings: QuerySettings = querySettings,
       dbTimestampMonotonicIncreasing: Boolean = dbTimestampMonotonicIncreasing,
       cleanupSettings: CleanupSettings = cleanupSettings,
-      dialect: Dialect = _dialect,
+      connectionFactorySettings: ConnectionFactorySettings = connectionFactorySettings,
       durableStateTableByEntityType: Map[String, String] = _durableStateTableByEntityType,
       durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
         _durableStateAdditionalColumnClasses,
@@ -239,7 +249,7 @@ final class R2dbcSettings private (
       querySettings,
       dbTimestampMonotonicIncreasing,
       cleanupSettings,
-      _dialect,
+      connectionFactorySettings,
       _durableStateTableByEntityType,
       _durableStateAdditionalColumnClasses,
       _durableStateChangeHandlerClasses,

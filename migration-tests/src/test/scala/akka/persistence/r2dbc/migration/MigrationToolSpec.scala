@@ -76,7 +76,7 @@ class MigrationToolSpec
 
   private val testEnabled: Boolean = {
     // don't run this for Yugabyte since it is using akka-persistence-jdbc
-    system.settings.config.getString("akka.persistence.r2dbc.dialect") == "postgres"
+    system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect") == "postgres"
   }
 
   override protected def beforeAll(): Unit = {
@@ -167,7 +167,8 @@ class MigrationToolSpec
 
   "MigrationTool" should {
     if (!testEnabled) {
-      info(s"MigrationToolSpec not enabled for ${system.settings.config.getString("akka.persistence.r2dbc.dialect")}")
+      info(
+        s"MigrationToolSpec not enabled for ${system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect")}")
       pending
     }
 

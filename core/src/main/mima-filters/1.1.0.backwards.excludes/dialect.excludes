@@ -1,10 +1,10 @@
-# FIXME Breaking but is that really a problem?
-ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.R2dbcSettings.dialect")
+# FIXME Following settings changes are breaking, but is that really a problem?
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$")
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.ConnectionFactoryProvider.connectionFactoryFor")
+# now internal
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.ConnectionFactorySettings")
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.connectionFactorySettings")
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.R2dbcSettings.connectionFactorySettings")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.this")
 
 # may change

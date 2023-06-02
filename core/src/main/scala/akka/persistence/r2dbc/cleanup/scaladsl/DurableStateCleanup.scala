@@ -57,8 +57,8 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 
   private val connectionFactory =
-    ConnectionFactoryProvider(system).connectionFactoryFor(settings, sharedConfigPath + ".connection-factory")
-  private val stateDao = settings.dialect.createDurableStateDao(settings, connectionFactory)
+    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
+  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(settings, connectionFactory)
 
   /**
    * Delete the state related to one single `persistenceId`.

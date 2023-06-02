@@ -28,12 +28,10 @@ import org.slf4j.LoggerFactory
 /**
  * INTERNAL API
  */
-// FIXME do we need dialect support here as well?
 @InternalApi private[r2dbc] class MigrationToolDao(
     connectionFactory: ConnectionFactory,
     logDbCallsExceeding: FiniteDuration)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   import MigrationToolDao._
-
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding)(ec, system)
 
   def createProgressTable(): Future[Done] = {

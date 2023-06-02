@@ -55,7 +55,8 @@ def common: Seq[Setting[_]] =
       // include all passed -Dakka. properties to the javaOptions for forked tests
       // useful to switch DB dialects for example
       val akkaProperties = System.getProperties.stringPropertyNames.asScala.toList.collect {
-        case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
+        case key: String if key.startsWith("akka.") || key.startsWith("conf") =>
+          "-D" + key + "=" + System.getProperty(key)
       }
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     },

@@ -25,8 +25,8 @@ private[r2dbc] object YugabyteDialect extends Dialect {
 
   override def name: String = "yugabyte"
 
-  override def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory =
-    PostgresDialect.createConnectionFactory(settings, config)
+  override def createConnectionFactory(config: Config): ConnectionFactory =
+    PostgresDialect.createConnectionFactory(config)
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): JournalDao =

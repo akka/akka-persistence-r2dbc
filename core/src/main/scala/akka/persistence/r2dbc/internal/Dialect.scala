@@ -33,7 +33,7 @@ private[r2dbc] trait Dialect {
    */
   def adaptSettings(settings: R2dbcSettings): R2dbcSettings = settings
 
-  def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory
+  def createConnectionFactory(config: Config): ConnectionFactory
 
   def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): JournalDao

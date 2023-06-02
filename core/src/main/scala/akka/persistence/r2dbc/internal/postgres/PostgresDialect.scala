@@ -56,7 +56,7 @@ private[r2dbc] object PostgresDialect extends Dialect {
     val statementCacheSize: Int = config.getInt("statement-cache-size")
   }
 
-  override def createConnectionFactory(r2dbcSettings: R2dbcSettings, config: Config): ConnectionFactory = {
+  override def createConnectionFactory(config: Config): ConnectionFactory = {
     val settings = new PostgresConnectionFactorySettings(config)
     val builder =
       settings.urlOption match {

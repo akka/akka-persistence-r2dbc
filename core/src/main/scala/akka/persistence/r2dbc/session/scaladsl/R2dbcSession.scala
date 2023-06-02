@@ -36,7 +36,7 @@ object R2dbcSession {
   def withSession[A](system: ActorSystem[_], settings: R2dbcSettings, connectionFactoryConfigPath: String)(
       fun: R2dbcSession => Future[A]): Future[A] = {
     val connectionFactory =
-      ConnectionFactoryProvider(system).connectionFactoryFor(settings, connectionFactoryConfigPath)
+      ConnectionFactoryProvider(system).connectionFactoryFor(connectionFactoryConfigPath)
     val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsDisabled)(system.executionContext, system)
     r2dbcExecutor.withConnection("R2dbcSession") { connection =>
       val session = new R2dbcSession(connection)(system.executionContext, system)

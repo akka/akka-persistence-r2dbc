@@ -112,11 +112,12 @@ class MigrationTool(system: ActorSystem[_]) {
   private val serialization: Serialization = SerializationExtension(system)
 
   private val targetConnectionFactory = ConnectionFactoryProvider(system)
-    .connectionFactoryFor(targetR2dbcSettings, targetPluginId + ".connection-factory")
+    .connectionFactoryFor(targetPluginId + ".connection-factory")
   private val targetJournalDao =
-    targetR2dbcSettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
   private val targetSnapshotDao =
-    targetR2dbcSettings.dialect.createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.connectionFactorySettings.dialect
+      .createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 
@@ -128,6 +129,9 @@ class MigrationTool(system: ActorSystem[_]) {
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
   private lazy val sourceSnapshotStore = Persistence(system).snapshotStoreFor(sourceSnapshotPluginId)
 
+  if (targetR2dbcSettings.dialectName == "h2") {
+    log.error("Migrating to H2 using the migration tool not currently supported")
+  }
   private[r2dbc] val migrationDao =
     new MigrationToolDao(targetConnectionFactory, targetR2dbcSettings.logDbCallsExceeding)
 

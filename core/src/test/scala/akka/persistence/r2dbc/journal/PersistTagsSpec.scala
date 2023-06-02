@@ -58,7 +58,7 @@ class PersistTagsSpec
             connection => connection.createStatement(s"select * from ${settings.journalTableWithSchema}"),
             row => {
               val tags =
-                if (settings.dialect == H2Dialect) {
+                if (settings.dialectName == "h2") {
                   row.get("tags", classOf[Object]) match {
                     case null           => Set.empty[String]
                     case tags: Array[_] => tags.toSet.asInstanceOf[Set[String]]

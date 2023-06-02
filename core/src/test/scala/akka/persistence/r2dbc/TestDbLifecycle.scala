@@ -30,7 +30,7 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   lazy val r2dbcExecutor: R2dbcExecutor = {
     new R2dbcExecutor(
       ConnectionFactoryProvider(typedSystem)
-        .connectionFactoryFor(r2dbcSettings, testConfigPath + ".connection-factory"),
+        .connectionFactoryFor(testConfigPath + ".connection-factory"),
       LoggerFactory.getLogger(getClass),
       r2dbcSettings.logDbCallsExceeding)(typedSystem.executionContext, typedSystem)
   }

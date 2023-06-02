@@ -38,7 +38,7 @@ private[r2dbc] object H2Dialect extends Dialect {
     res
   }
 
-  override def createConnectionFactory(settings: R2dbcSettings, config: Config): ConnectionFactory = {
+  override def createConnectionFactory(config: Config): ConnectionFactory = {
     def r2option[T](h2Option: H2ConnectionOption): io.r2dbc.spi.Option[T] =
       io.r2dbc.spi.Option.valueOf[T](h2Option.getKey)
 
@@ -51,7 +51,7 @@ private[r2dbc] object H2Dialect extends Dialect {
       // create schema on first connect
       .option(
         r2option(H2ConnectionOption.INIT),
-        dbSchema(settings, createSliceIndexes) + config.getString("additional-init"))
+        dbSchema(config, createSliceIndexes) + config.getString("additional-init"))
       // don't auto close connections
       .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
 
@@ -95,18 +95,31 @@ private[r2dbc] object H2Dialect extends Dialect {
     system.dispatchers.lookup(DispatcherSelector.blocking())
   }
 
-  private def dbSchema(settings: R2dbcSettings, createSliceIndexes: Boolean): String = {
+  private def dbSchema(config: Config, createSliceIndexes: Boolean): String = {
+    def optionalConfString(name: String): Option[String] = {
+      val s = config.getString(name)
+      if (s.isEmpty) None
+      else Some(s)
+    }
+    val schema = optionalConfString("schema")
+    val journalTable = config.getString("journal-table")
+    val journalTableWithSchema = schema.map(_ + ".").getOrElse("") + journalTable
+    val snapshotTable = config.getString("snapshot-table")
+    val snapshotTableWithSchema = schema.map(_ + ".").getOrElse("") + snapshotTable
+    val durableStateTable = config.getString("state-table")
+    val durableStateTableWithSchema = schema.map(_ + ".").getOrElse("") + durableStateTable
+
     val sliceIndexes = if (createSliceIndexes) {
-      val sliceIndexWithSchema = settings.journalTableWithSchema + "_slice_idx"
-      val durableStateSliceIndexWithSchema = settings.durableStateTableWithSchema + "_slice_idx"
+      val sliceIndexWithSchema = journalTableWithSchema + "_slice_idx"
+      val durableStateSliceIndexWithSchema = durableStateTableWithSchema + "_slice_idx"
       Seq(
         sql"""
-             CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON ${settings.journalTableWithSchema}(slice, entity_type, db_timestamp, seq_nr)""",
+             CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $journalTableWithSchema(slice, entity_type, db_timestamp, seq_nr)""",
         sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
     } else Seq.empty[String]
 
     (Seq(
-      sql"""CREATE TABLE IF NOT EXISTS ${settings.journalTableWithSchema}(
+      sql"""CREATE TABLE IF NOT EXISTS $journalTableWithSchema (
         slice INT NOT NULL,
         entity_type VARCHAR(255) NOT NULL,
         persistence_id VARCHAR(255) NOT NULL,
@@ -129,7 +142,7 @@ private[r2dbc] object H2Dialect extends Dialect {
         PRIMARY KEY(persistence_id, seq_nr)
       )""",
       sql"""
-        CREATE TABLE IF NOT EXISTS ${settings.snapshotsTableWithSchema}(
+        CREATE TABLE IF NOT EXISTS $snapshotTableWithSchema (
           slice INT NOT NULL,
           entity_type VARCHAR(255) NOT NULL,
           persistence_id VARCHAR(255) NOT NULL,
@@ -145,7 +158,7 @@ private[r2dbc] object H2Dialect extends Dialect {
           PRIMARY KEY(persistence_id)
         )""",
       sql"""
-        CREATE TABLE IF NOT EXISTS ${settings.durableStateTableWithSchema} (
+        CREATE TABLE IF NOT EXISTS $durableStateTableWithSchema (
           slice INT NOT NULL,
           entity_type VARCHAR(255) NOT NULL,
           persistence_id VARCHAR(255) NOT NULL,

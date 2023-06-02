@@ -111,7 +111,10 @@ jobs:
       - name: sbt test
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt -Dakka.persistence.r2dbc.journal.payload-column-type=JSONB -Dakka.persistence.r2dbc.snapshot.payload-column-type=JSONB -Dakka.persistence.r2dbc.state.payload-column-type=JSONB "core/testOnly akka.persistence.r2dbc.PayloadSpec"
+          sbt -Dakka.persistence.r2dbc.journal.payload-column-type=JSONB \
+            -Dakka.persistence.r2dbc.snapshot.payload-column-type=JSONB \
+            -Dakka.persistence.r2dbc.state.payload-column-type=JSONB \
+            "core/testOnly akka.persistence.r2dbc.PayloadSpec"
 
   test-yugabyte:
     name: Run tests with Yugabyte
@@ -147,7 +150,7 @@ jobs:
       - name: sbt test
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt -Dakka.persistence.r2dbc.dialect=yugabyte test
+          sbt -Dconfig.resource=application-yugabyte.conf test
 
   test-h2:
     name: Run test with H2
@@ -176,7 +179,7 @@ jobs:
       - name: sbt test
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt -Dakka.persistence.r2dbc.dialect=h2 test
+          sbt -Dconfig.resource=application-h2.conf test
 
   test-docs:
     name: Docs
