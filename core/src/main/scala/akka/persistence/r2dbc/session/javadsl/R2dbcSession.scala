@@ -29,17 +29,14 @@ object R2dbcSession {
    * transaction is committed at the end or rolled back in case of failures.
    */
   def withSession[A](system: ActorSystem[_], fun: JFunction[R2dbcSession, CompletionStage[A]]): CompletionStage[A] = {
-    // FIXME parsing these for each query is no good
-    val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-    withSession(system, settings, s"akka.persistence.r2dbc.${settings.dialectName}.connection-factory", fun)
+    withSession(system, s"akka.persistence.r2dbc.connection-factory", fun)
   }
 
   def withSession[A](
       system: ActorSystem[_],
-      settings: R2dbcSettings,
       connectionFactoryConfigPath: String,
       fun: JFunction[R2dbcSession, CompletionStage[A]]): CompletionStage[A] = {
-    scaladsl.R2dbcSession.withSession(system, settings, connectionFactoryConfigPath) { scaladslSession =>
+    scaladsl.R2dbcSession.withSession(system, connectionFactoryConfigPath) { scaladslSession =>
       val javadslSession = new R2dbcSession(scaladslSession.connection)(system.executionContext, system)
       fun(javadslSession).toScala
     }

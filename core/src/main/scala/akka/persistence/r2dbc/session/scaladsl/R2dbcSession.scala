@@ -28,12 +28,10 @@ object R2dbcSession {
    * transaction is committed at the end or rolled back in case of failures.
    */
   def withSession[A](system: ActorSystem[_])(fun: R2dbcSession => Future[A]): Future[A] = {
-    // FIXME parsing these for each query is no good
-    val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-    withSession(system, settings, s"akka.persistence.r2dbc.${settings.dialectName}.connection-factory")(fun)
+    withSession(system, s"akka.persistence.r2dbc.connection-factory")(fun)
   }
 
-  def withSession[A](system: ActorSystem[_], settings: R2dbcSettings, connectionFactoryConfigPath: String)(
+  def withSession[A](system: ActorSystem[_], connectionFactoryConfigPath: String)(
       fun: R2dbcSession => Future[A]): Future[A] = {
     val connectionFactory =
       ConnectionFactoryProvider(system).connectionFactoryFor(connectionFactoryConfigPath)
