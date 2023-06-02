@@ -88,7 +88,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   protected val journalTable = journalSettings.journalTableWithSchema
   protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
 
-  protected def createInsertEventWithParameterTimestampAndTransactionTimestampSql: (String, String) = {
+  private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
@@ -117,9 +117,6 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
   }
-
-  protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) =
-    createInsertEventWithParameterTimestampAndTransactionTimestampSql
 
   private val selectHighestSequenceNrSql = sql"""
     SELECT MAX(seq_nr) from $journalTable

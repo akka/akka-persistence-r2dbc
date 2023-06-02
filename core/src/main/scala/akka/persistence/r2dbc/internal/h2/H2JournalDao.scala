@@ -31,21 +31,13 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     extends PostgresJournalDao(journalSettings, connectionFactory) {
   import JournalDao.SerializedJournalRow
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
+  // always app timestamp (db is same process) monotonic increasing
+  require(journalSettings.useAppTimestamp)
+  require(journalSettings.dbTimestampMonotonicIncreasing)
 
-  override protected def createInsertEventWithParameterTimestampAndTransactionTimestampSql: (String, String) = {
-    val baseSql =
-      s"INSERT INTO $journalTable " +
-      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-
-    // always app timestamp (db is same process) monotonic increasing
-    require(journalSettings.useAppTimestamp)
-    require(journalSettings.dbTimestampMonotonicIncreasing)
-    val insertEventWithParameterTimestampSql = sql"$baseSql ?)"
-    val insertEventIthTransactionTimestampSql = sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
-
-    (insertEventWithParameterTimestampSql, insertEventIthTransactionTimestampSql)
-  }
+  val insertSql = sql"INSERT INTO $journalTable " +
+    "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
   /**
    * All events must be for the same persistenceId.
@@ -63,9 +55,6 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
     val previousSeqNr = events.head.seqNr - 1
-
-    // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
-    val useTimestampFromDb = events.head.dbTimestamp == Instant.EPOCH
 
     def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
       stmt
@@ -98,42 +87,19 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
             .bindNull(12, classOf[Array[Byte]])
       }
 
-      if (useTimestampFromDb) {
-        if (!journalSettings.dbTimestampMonotonicIncreasing)
-          stmt
-            .bind(13, write.persistenceId)
-            .bind(14, previousSeqNr)
-      } else {
-        if (journalSettings.dbTimestampMonotonicIncreasing)
-          stmt
-            .bind(13, write.dbTimestamp)
-        else
-          stmt
-            .bind(13, write.dbTimestamp)
-            .bind(14, write.persistenceId)
-            .bind(15, previousSeqNr)
-      }
+      stmt.bind(13, write.dbTimestamp)
 
       stmt
     }
-
-    val insertSql =
-      if (useTimestampFromDb) insertEventWithTransactionTimestampSql
-      else insertEventWithParameterTimestampSql
 
     val totalEvents = events.size
     if (totalEvents == 1) {
       val result = r2dbcExecutor.updateOne(s"insert [$persistenceId]")(connection =>
         bind(connection.createStatement(insertSql), events.head))
-      // FIXME h2 not supporting RETURNING
-      //         ,
-      //        row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
         }
-      // FIXME h2 not supporting RETURNING
-      // result
       result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
     } else {
       val result = r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
@@ -141,16 +107,11 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
           stmt.add()
           bind(stmt, write)
         })
-      // FIXME h2 not supporting RETURNING
-      //        ,
-      //        row => row.get(0, classOf[Instant])) +
       if (log.isDebugEnabled()) {
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
         }
       }
-      // FIXME h2 not supporting RETURNING
-      // result.map(_.head)(ExecutionContexts.parasitic)
       result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
     }
   }
