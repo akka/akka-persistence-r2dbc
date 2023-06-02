@@ -4,7 +4,7 @@
 
 ### Configuration file changes
 The configuration file structure has changed in an incompatible way (to make room for the H2 dialect), 
-an existing project using postgres or yugabyte will need the following changes to its config:
+an existing project using Postgres or Yugabyte will need the following changes to its config:
 
 Remove `akka.persistence.r2dbc.dialect` from the config if present
 

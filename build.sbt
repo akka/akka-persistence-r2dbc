@@ -138,6 +138,8 @@ lazy val docs = project
       "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
       "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
       "akka.version" -> Dependencies.AkkaVersion,
+      "h2.version" -> Dependencies.H2Version,
+      "r2dbc-h2.version" -> Dependencies.R2dbcH2Version,
       "scala.version" -> scalaVersion.value,
       "scala.binary.version" -> scalaBinaryVersion.value,
       "extref.akka.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",

@@ -14,6 +14,8 @@ object Dependencies {
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
+  val H2Version = "2.1.210"
+  val R2dbcH2Version = "1.0.0.RELEASE"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -25,8 +27,8 @@ object Dependencies {
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.1.RELEASE" // ApacheV2
 
-    val h2 = "com.h2database" % "h2" % "2.1.210" % Provided // EPL 1.0
-    val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % "1.0.0.RELEASE" % Provided // ApacheV2
+    val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
+    val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
   }
 
   object TestDeps {
