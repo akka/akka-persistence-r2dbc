@@ -1,17 +1,11 @@
-# FIXME Following settings changes are breaking, but is that really a problem?
+# Note, the following settings changes are breaking, all related to dialect/settings
+# now internal
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.Dialect$")
-# now internal
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.dialect")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.ConnectionFactorySettings")
 ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.R2dbcSettings.connectionFactorySettings")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.this")
-
-# may change
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.javadsl.R2dbcSession.withSession")
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.javadsl.R2dbcSession.withSession")
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.scaladsl.R2dbcSession.withSession")
-ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.session.scaladsl.R2dbcSession.withSession")
 
 # internal changes
 ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.journal.JournalDao#SerializedJournalRow.metadata")
