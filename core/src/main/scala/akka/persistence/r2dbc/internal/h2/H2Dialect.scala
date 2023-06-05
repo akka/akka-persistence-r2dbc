@@ -51,7 +51,7 @@ private[r2dbc] object H2Dialect extends Dialect {
       // create schema on first connect
       .option(
         r2option(H2ConnectionOption.INIT),
-        dbSchema(config, createSliceIndexes) + config.getString("additional-init"))
+        dbSchema(config, createSliceIndexes, config.getString("additional-init")))
       // don't auto close connections
       .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
 
@@ -95,7 +95,7 @@ private[r2dbc] object H2Dialect extends Dialect {
     system.dispatchers.lookup(DispatcherSelector.blocking())
   }
 
-  private def dbSchema(config: Config, createSliceIndexes: Boolean): String = {
+  private def dbSchema(config: Config, createSliceIndexes: Boolean, additionalInit: String): String = {
     def optionalConfString(name: String): Option[String] = {
       val s = config.getString(name)
       if (s.isEmpty) None
@@ -172,7 +172,7 @@ private[r2dbc] object H2Dialect extends Dialect {
 
           PRIMARY KEY(persistence_id, revision)
         )
-      """) ++ sliceIndexes)
+      """) ++ sliceIndexes ++ (if (additionalInit.trim.nonEmpty) Seq(additionalInit) else Seq.empty[String]))
       .mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
   }
 }
