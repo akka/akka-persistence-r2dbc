@@ -31,7 +31,7 @@ private[r2dbc] object ConnectionFactorySettings {
           s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
     }
 
-    ConnectionFactorySettings(dialect)
+    ConnectionFactorySettings(dialect, config)
   }
 
 }
@@ -40,4 +40,4 @@ private[r2dbc] object ConnectionFactorySettings {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] case class ConnectionFactorySettings(dialect: Dialect)
+private[r2dbc] case class ConnectionFactorySettings(dialect: Dialect, config: Config)

@@ -61,7 +61,7 @@ docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl
 
 Run tests with:
 ```
-sbt -Dakka.persistence.r2dbc.dialect=yugabyte
+sbt -Dconfig.resource=application-yugabyte.conf
 ```
 
 ### Connect with ysqlsh
@@ -70,7 +70,14 @@ sbt -Dakka.persistence.r2dbc.dialect=yugabyte
 docker exec -it yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1
 ```
 
+## Running the tests with H2
 
+Convenient for quick turnaround as it requires no external db to be started, test database is stored
+under `target/` so is deleted on clean.
+
+```
+sbt -Dconfig.resource=application-h2.conf
+```
 
 ## General Workflow
 

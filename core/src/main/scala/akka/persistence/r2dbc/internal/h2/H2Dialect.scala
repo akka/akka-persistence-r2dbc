@@ -77,22 +77,25 @@ private[r2dbc] object H2Dialect extends Dialect {
   }
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      system: ActorSystem[_]): JournalDao = new H2JournalDao(settings, connectionFactory)(ecForDaos(system), system)
+      system: ActorSystem[_]): JournalDao =
+    new H2JournalDao(settings, connectionFactory)(ecForDaos(system, settings), system)
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      system: ActorSystem[_]): SnapshotDao = new H2SnapshotDao(settings, connectionFactory)(ecForDaos(system), system)
+      system: ActorSystem[_]): SnapshotDao =
+    new H2SnapshotDao(settings, connectionFactory)(ecForDaos(system, settings), system)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-      system: ActorSystem[_]): QueryDao = new H2QueryDao(settings, connectionFactory)(ecForDaos(system), system)
+      system: ActorSystem[_]): QueryDao =
+    new H2QueryDao(settings, connectionFactory)(ecForDaos(system, settings), system)
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new H2DurableStateDao(settings, connectionFactory)(ecForDaos(system), system)
+    new H2DurableStateDao(settings, connectionFactory)(ecForDaos(system, settings), system)
 
-  private def ecForDaos(system: ActorSystem[_]): ExecutionContext = {
+  private def ecForDaos(system: ActorSystem[_], settings: R2dbcSettings): ExecutionContext = {
     // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
-    // FIXME is the default blocking good enough, should we have a separate to compartmentalize?
-    system.dispatchers.lookup(DispatcherSelector.blocking())
+    system.dispatchers.lookup(
+      DispatcherSelector.fromConfig(settings.connectionFactorySettings.config.getString("use-dispatcher")))
   }
 
   private def dbSchema(config: Config, createSliceIndexes: Boolean, additionalInit: String): String = {
