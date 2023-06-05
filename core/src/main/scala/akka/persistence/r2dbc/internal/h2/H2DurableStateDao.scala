@@ -27,9 +27,6 @@ private[r2dbc] final class H2DurableStateDao(settings: R2dbcSettings, connection
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2DurableStateDao])
 
-  override protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
-    s"slice in (${(minSlice to maxSlice).mkString(",")})"
-
   protected override def behindCurrentTimeIntervalConditionFor(behindCurrentTime: FiniteDuration): String =
     if (behindCurrentTime > Duration.Zero)
       s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis.toDouble / 1000}' second"
