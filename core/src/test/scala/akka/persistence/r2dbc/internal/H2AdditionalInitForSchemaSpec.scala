@@ -11,10 +11,9 @@ import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.state.DurableStateStoreAdditionalColumnSpec
 import akka.persistence.r2dbc.state.scaladsl.R2dbcDurableStateStore
 import akka.persistence.state.DurableStateStoreRegistry
-import com.typesafe.config.ConfigFactory
-import org.scalatest.matchers.should.Matchers
-import org.scalatest.wordspec.AnyWordSpecLike
 import akka.persistence.state.scaladsl.GetObjectResult
+import com.typesafe.config.ConfigFactory
+import org.scalatest.wordspec.AnyWordSpecLike
 
 object H2AdditionalInitForSchemaSpec {
 
@@ -25,12 +24,14 @@ object H2AdditionalInitForSchemaSpec {
            "CustomEntity" = ["${classOf[DurableStateStoreAdditionalColumnSpec.Column1].getName}"]
          }
       }
+      // #additionalColumn
       akka.persistence.r2dbc.connection-factory = $${akka.persistence.r2dbc.h2}
       akka.persistence.r2dbc.connection-factory {
         protocol = "mem"
         database = "h2-test-db"
         additional-init = "alter table durable_state add if not exists col1 varchar(256)"
       }
+      // #additionalColumn
       """)
     .withFallback(ConfigFactory.load())
     .resolve()

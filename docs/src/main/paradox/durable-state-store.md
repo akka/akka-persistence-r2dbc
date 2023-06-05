@@ -121,6 +121,14 @@ Scala
 Java
 :  @@snip [BlogPostJsonColumn.java](/docs/src/test/java/jdocs/home/state/BlogPostJsonColumn.java) { #additional-column-json }
 
+
+#### Additional column schema with H2
+
+As it runs in-process it is not possible to create schema up front with H2, instead additional columns to the state table or additional tables can be created through the `additional-init` setting:
+
+@@snip [Sample config](/core/src/test/scala/akka/persistence/r2dbc/internal/H2AdditionalInitForSchemaSpec.scala) { #additionalColumn }
+
+
 ### Change handler
 
 For more advanced cases where the query representation would not fit in @ref:[additional columns](#additional-columns)
