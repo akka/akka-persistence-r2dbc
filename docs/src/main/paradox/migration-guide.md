@@ -25,7 +25,7 @@ Yugabyte:
 akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.yugabyte}
 akka.persistence.r2dbc.connection-factory {
   # only overrides from the default values needs to be defined
-  database = "my-postgres-database"
+  database = "my-yugabyte-database"
   database = ${?DB_NAME}
 }
 ```
