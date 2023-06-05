@@ -24,14 +24,46 @@ akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
 akka.persistence.state.plugin = "akka.persistence.r2dbc.state"
 ```
 
-More information in:
+More information about each individual plugin in:
 
 * @ref:[journal](journal.md)
 * @ref:[snapshot store](snapshots.md)
 * @ref:[durable state store](durable-state-store.md)
 * @ref:[queries](query.md)
 
-## Using H2
+### Selecting database dialect
+
+You will also need to configure which database dialect to use:
+
+#### Postgres
+
+A transitive dependency pulls in Postgres drivers by default. To use Postgres you only configure the connection factory to the default Postgres block:
+
+```hocon
+akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.postgres}
+akka.persistence.r2dbc.connection-factory = {
+  # overrides for default values from the 'akka.persistence.r2dbc.postgres' config block
+  user = "myuser"
+}
+```
+
+See @ref[Configuration](config.md) for more configuration details.
+
+#### Yugabyte
+
+A transitive dependency pulls in Postgres drivers that can be used to connect to Yugabyte by default. To use Yugabyte you only configure the connection factory to the default Yugabyte block:
+
+```hocon
+akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.yugabyte}
+akka.persistence.r2dbc.connection-factory = {
+  # overrides for default values from the 'akka.persistence.r2dbc.yugabyte' config block
+  user = "myuser"
+}
+```
+
+See @ref[Configuration](config.md) for more configuration details.
+
+#### Using H2
 
 The H2 dependencies are marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using H2. They must be listed explicitly as dependencies in the build configuration for projects that use them. The two required artifacts are:
 
@@ -43,6 +75,19 @@ The H2 dependencies are marked as `provided` dependencies of `akka-persistence-r
   artifact2=r2dbc-h2
   version2=$r2dbc-h2.version$
 }
+
+With the dependencies added to your project, configure the connection factory to the default H2 block:
+
+```hocon
+akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.h2}
+akka.persistence.r2dbc.connection-factory = {
+  # overrides for default values from the 'akka.persistence.r2dbc.h2' config block
+  protocol = "mem"
+  database = "mydb"
+}
+```
+
+See @ref[Configuration](config.md) for more configuration details.
 
 ## Local testing with docker
 

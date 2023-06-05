@@ -2,7 +2,8 @@
 
 ## Connection configuration
 
-Shared configuration for the connection pool is located under `akka.persistence.r2dbc.connection-factory`.
+Configuration for how to connect to the database and which dialect to use is located under `akka.persistence.r2dbc.connection-factory`.
+
 Selecting a database dialect is done by first assigning one of the existing dialect blocks and then overriding
 specific configuration keys to specific values for your environment:
 
@@ -15,9 +16,31 @@ Yugabyte:
 H2:
 : @@snip [application.conf](/docs/src/test/resources/application-h2.conf) { #connection-settings }
 
-The following can be overridden in your `application.conf` for the connection settings:
+Full set of settings that can be overridden for each of the dialects, and their default values:
 
-@@snip [reference.conf](/core/src/main/resources/reference.conf) {#connection-settings}
+Postgres:
+: @@snip [reference.conf](/core/src/main/resources/reference.conf) { #connection-settings-postgres }
+
+Yugabyte:
+: @@snip [reference.conf](/core/src/main/resources/reference.conf) { #connection-settings-yugabyte }
+
+H2:
+: @@snip [reference.conf](/core/src/main/resources/reference.conf) { #connection-settings-h2 }
+
+Connection pool settings are the same across the different dialects, but are defined in-line in the connection factory block:
+
+```shell
+akka.persistence.r2dbc.connection-factory = {
+  # Initial pool size.
+  initial-size = 10
+  # Maximum pool size.
+  max-size = 30  
+}
+```
+
+The following connection pool settings be overridden directly in the `connection-factory` block:
+
+@@snip [reference.conf](/core/src/main/resources/reference.conf) {#connection-pool-settings}
 
 ## Journal configuration
 
