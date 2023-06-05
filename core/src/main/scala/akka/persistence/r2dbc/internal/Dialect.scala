@@ -7,10 +7,6 @@ package akka.persistence.r2dbc.internal
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.query.scaladsl.QueryDao
-import akka.persistence.r2dbc.snapshot.SnapshotDao
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 

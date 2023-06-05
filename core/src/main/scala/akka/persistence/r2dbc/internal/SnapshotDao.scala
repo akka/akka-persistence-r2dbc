@@ -2,27 +2,12 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.snapshot
+package akka.persistence.r2dbc.internal
 
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-
-import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
-import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
-import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.typed.PersistenceId
-import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.Row
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+
+import scala.concurrent.Future
 
 /**
  * INTERNAL API

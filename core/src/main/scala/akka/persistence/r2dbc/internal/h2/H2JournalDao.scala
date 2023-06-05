@@ -8,10 +8,10 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
-import akka.persistence.r2dbc.journal.JournalDao
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger

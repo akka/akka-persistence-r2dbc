@@ -5,14 +5,12 @@
 package akka.persistence.r2dbc.journal
 
 import java.time.Instant
-
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import akka.Done
 import akka.actor.ActorRef
 import akka.actor.typed.ActorSystem
@@ -29,9 +27,10 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.PubSub
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.serialization.Serialization

@@ -20,6 +20,7 @@ import akka.persistence.r2dbc.internal.AdditionalColumnFactory
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.ChangeHandlerFactory
+import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
@@ -30,7 +31,6 @@ import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
 import akka.persistence.r2dbc.state.ChangeHandlerException
 import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.Connection

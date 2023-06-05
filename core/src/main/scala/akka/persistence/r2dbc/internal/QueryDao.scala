@@ -2,12 +2,11 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.query.scaladsl
+package akka.persistence.r2dbc.internal
 
 import akka.NotUsed
 import akka.annotation.InternalApi
-import akka.persistence.r2dbc.internal.BySliceQuery
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import JournalDao.SerializedJournalRow
 import akka.stream.scaladsl.Source
 
 import java.time.Instant

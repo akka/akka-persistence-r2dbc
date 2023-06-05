@@ -18,8 +18,8 @@ import akka.annotation.InternalApi
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.snapshot.SnapshotDao
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.SnapshotDao
 import org.slf4j.LoggerFactory
 
 /**

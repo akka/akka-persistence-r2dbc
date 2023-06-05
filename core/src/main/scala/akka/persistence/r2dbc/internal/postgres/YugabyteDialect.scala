@@ -8,10 +8,10 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Dialect
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.query.scaladsl.QueryDao
-import akka.persistence.r2dbc.snapshot.SnapshotDao
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
+import akka.persistence.r2dbc.internal.DurableStateDao
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.QueryDao
+import akka.persistence.r2dbc.internal.SnapshotDao
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 

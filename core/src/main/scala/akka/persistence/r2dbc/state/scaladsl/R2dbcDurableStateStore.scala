@@ -24,7 +24,8 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao.SerializedStateRow
+import akka.persistence.r2dbc.internal.DurableStateDao
+import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.state.scaladsl.DurableStateUpdateStore
 import akka.persistence.state.scaladsl.GetObjectResult
 import akka.serialization.SerializationExtension

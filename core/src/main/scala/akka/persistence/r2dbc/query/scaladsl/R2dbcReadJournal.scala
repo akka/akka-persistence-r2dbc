@@ -35,9 +35,9 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PubSub
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import JournalDao.SerializedJournalRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy

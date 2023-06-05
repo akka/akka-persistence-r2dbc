@@ -2,16 +2,15 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.state.scaladsl
+package akka.persistence.r2dbc.internal
 
 import akka.Done
 import akka.NotUsed
 import akka.annotation.InternalApi
+import akka.stream.scaladsl.Source
 
 import java.time.Instant
 import scala.concurrent.Future
-import akka.persistence.r2dbc.internal.BySliceQuery
-import akka.stream.scaladsl.Source
 
 /**
  * INTERNAL API

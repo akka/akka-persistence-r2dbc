@@ -17,7 +17,7 @@ import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
+import akka.persistence.r2dbc.internal.DurableStateDao
 import org.slf4j.LoggerFactory
 
 /**

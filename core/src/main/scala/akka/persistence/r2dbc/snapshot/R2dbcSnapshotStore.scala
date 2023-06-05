@@ -14,8 +14,8 @@ import com.typesafe.config.Config
 import scala.concurrent.{ ExecutionContext, Future }
 
 import akka.annotation.InternalApi
-import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotMetadata
-import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.serialization.Serializers
 
 object R2dbcSnapshotStore {
