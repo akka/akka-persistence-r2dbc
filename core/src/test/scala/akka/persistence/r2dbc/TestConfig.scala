@@ -10,35 +10,28 @@ import com.typesafe.config.ConfigFactory
 object TestConfig {
   lazy val config: Config = {
     val defaultConfig = ConfigFactory.load()
-    val dialect = defaultConfig.getString("akka.persistence.r2dbc.dialect")
+    val dialect = defaultConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
 
     val dialectConfig = dialect match {
       case "postgres" =>
-        ConfigFactory.parseString("""
-          akka.persistence.r2dbc.connection-factory {
-            driver = "postgres"
-            host = "localhost"
-            port = 5432
-            user = "postgres"
-            password = "postgres"
-            database = "postgres"
-          }
-          """)
+        // defaults are fine
+        ConfigFactory.empty()
       case "yugabyte" =>
-        ConfigFactory.parseString("""
+        // defaults are fine
+        ConfigFactory.empty()
+      case "h2" =>
+        ConfigFactory.parseString(s"""
           akka.persistence.r2dbc.connection-factory {
-            driver = "postgres"
-            host = "localhost"
-            port = 5433
-            user = "yugabyte"
-            password = "yugabyte"
-            database = "yugabyte"
+            protocol = "file"
+            database = "./target/h2-test-db"
+            trace-logging = on
           }
           """)
     }
 
-    // using load here so that connection-factory can be overridden
-    ConfigFactory.load(dialectConfig.withFallback(ConfigFactory.parseString("""
+    // fallback to default here so that connection-factory can be overridden
+    dialectConfig
+      .withFallback(ConfigFactory.parseString("""
     akka.loglevel = DEBUG
     akka.persistence.journal.plugin = "akka.persistence.r2dbc.journal"
     akka.persistence.snapshot-store.plugin = "akka.persistence.r2dbc.snapshot"
@@ -55,7 +48,8 @@ object TestConfig {
       }
     }
     akka.actor.testkit.typed.default-timeout = 10s
-    """)))
+    """))
+      .withFallback(defaultConfig)
   }
 
   val backtrackingDisabledConfig: Config =

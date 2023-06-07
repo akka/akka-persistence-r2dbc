@@ -17,6 +17,7 @@ The Akka Persistence R2DBC plugin allows for using SQL database with R2DBC as a 
 * [Configuration](config.md)
 * [Cleanup tool](cleanup.md)
 * [Migration tool](migration.md)
+* [Migration Guide](migration-guide.md)
 * [Contributing](contributing.md)
 
 @@@

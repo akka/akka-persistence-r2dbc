@@ -53,7 +53,7 @@ object DurableStateStoreChangeHandlerSpec {
             session
               .updateOne(
                 session
-                  .createStatement(sql"insert into changes_test (pid, rev, value) values (?, ?, ?)")
+                  .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
                   .bind(0, upd.persistenceId)
                   .bind(1, upd.revision)
                   .bind(2, upd.value))
@@ -63,7 +63,7 @@ object DurableStateStoreChangeHandlerSpec {
           session
             .updateOne(
               session
-                .createStatement(sql"insert into changes_test (pid, rev, value) values (?, ?, ?)")
+                .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
                 .bind(0, del.persistenceId)
                 .bind(1, del.revision)
                 .bindNull(2, classOf[String]))
@@ -90,7 +90,7 @@ class DurableStateStoreChangeHandlerSpec
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
         _.createStatement(
-          s"create table if not exists $anotherTable (pid varchar(256), rev bigint, value varchar(256))")),
+          s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))")),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $anotherTable")),
@@ -111,6 +111,7 @@ class DurableStateStoreChangeHandlerSpec
       .contains(1)
 
   "The R2DBC durable state store change handler" should {
+
     "be invoked for first revision" in {
       val entityType = "CustomEntity"
       val persistenceId = nextPid(entityType)
@@ -119,7 +120,7 @@ class DurableStateStoreChangeHandlerSpec
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
 
-      exists(s"pid = '$persistenceId' and rev = 1 and value = '$value'") should be(true)
+      exists(s"pid = '$persistenceId' and rev = 1 and the_value = '$value'") should be(true)
     }
 
     "be invoked for updates" in {
@@ -133,7 +134,7 @@ class DurableStateStoreChangeHandlerSpec
       store.upsertObject(persistenceId, 2L, updatedValue, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(updatedValue), 2L))
 
-      exists(s"pid = '$persistenceId' and rev = 2 and value = '$updatedValue'") should be(true)
+      exists(s"pid = '$persistenceId' and rev = 2 and the_value = '$updatedValue'") should be(true)
     }
 
     "be invoked for deletes" in {
@@ -146,7 +147,7 @@ class DurableStateStoreChangeHandlerSpec
       store.deleteObject(persistenceId, 2L).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(None, 2L))
 
-      exists(s"pid = '$persistenceId' and rev = 2 and value is null") should be(true)
+      exists(s"pid = '$persistenceId' and rev = 2 and the_value is null") should be(true)
     }
 
     "be invoked for hard deletes" in {
@@ -160,7 +161,7 @@ class DurableStateStoreChangeHandlerSpec
       store.deleteObject(persistenceId, 0L).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(None, 0L))
 
-      exists(s"pid = '$persistenceId' and rev = 0 and value is null") should be(true)
+      exists(s"pid = '$persistenceId' and rev = 0 and the_value is null") should be(true)
     }
 
     "use same transaction" in {
@@ -187,7 +188,7 @@ class DurableStateStoreChangeHandlerSpec
       store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
 
-      exists(s"pid = '$persistenceId' and rev = 1 and value = '$value'") should be(true)
+      exists(s"pid = '$persistenceId' and rev = 1 and the_value = '$value'") should be(true)
     }
 
   }

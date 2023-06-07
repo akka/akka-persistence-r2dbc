@@ -4,143 +4,253 @@
 
 package akka.persistence.r2dbc
 
-import java.util.Locale
-
-import scala.collection.immutable
-import scala.concurrent.duration._
-
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.ConnectionFactorySettings
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
-import akka.util.Helpers.toRootLowerCase
+
+import java.util.Locale
+import scala.collection.immutable
+import scala.concurrent.duration._
 
 /**
  * INTERNAL API
  */
 @InternalStableApi
 object R2dbcSettings {
-  def apply(config: Config): R2dbcSettings =
-    new R2dbcSettings(config)
-}
 
-/**
- * INTERNAL API
- */
-@InternalStableApi
-final class R2dbcSettings(config: Config) {
-  val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
-
-  val journalTable: String = config.getString("journal.table")
-  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
-
-  private def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type").toUpperCase match {
-    case "BYTEA"          => false
-    case "JSONB" | "JSON" => true
-    case t =>
-      throw new IllegalStateException(
-        s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'BYTEA', 'JSON' or 'JSONB' but found '$t'")
-  }
-  val journalPayloadCodec: PayloadCodec =
-    if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
-
-  val journalPublishEvents: Boolean = config.getBoolean("journal.publish-events")
-
-  val snapshotsTable: String = config.getString("snapshot.table")
-  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
-
-  val snapshotPayloadCodec: PayloadCodec =
-    if (useJsonPayload("snapshot")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
-
-  val durableStateTable: String = config.getString("state.table")
-  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
-
-  val durableStatePayloadCodec: PayloadCodec =
-    if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
-
-  private val durableStateTableByEntityType: Map[String, String] =
-    configToMap(config.getConfig("state.custom-table"))
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
-    durableStateTableByEntityType.map { case (entityType, table) =>
-      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+  def apply(config: Config): R2dbcSettings = {
+    if (config.hasPath("dialect")) {
+      throw new IllegalArgumentException(
+        "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
+        "the old 'dialect' config entry must be removed, " +
+        "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+    }
+    if (!config.hasPath("connection-factory.dialect")) {
+      throw new IllegalArgumentException(
+        "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
+        "to choose database dialect using the connection-factory block, " +
+        "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
+        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
     }
 
-  def getDurableStateTable(entityType: String): String =
-    durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
+    val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
 
-  def getDurableStateTableWithSchema(entityType: String): String =
-    durableStateTableByEntityTypeWithSchema.getOrElse(entityType, durableStateTableWithSchema)
+    val journalTable: String = config.getString("journal.table")
+
+    def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type").toUpperCase match {
+      case "BYTEA"          => false
+      case "JSONB" | "JSON" => true
+      case t =>
+        throw new IllegalStateException(
+          s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'BYTEA', 'JSON' or 'JSONB' but found '$t'")
+    }
+
+    val journalPayloadCodec: PayloadCodec =
+      if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
+    val journalPublishEvents: Boolean = config.getBoolean("journal.publish-events")
+
+    val snapshotsTable: String = config.getString("snapshot.table")
+
+    val snapshotPayloadCodec: PayloadCodec =
+      if (useJsonPayload("snapshot")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
+    val durableStateTable: String = config.getString("state.table")
+
+    val durableStatePayloadCodec: PayloadCodec =
+      if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
+    val durableStateTableByEntityType: Map[String, String] =
+      configToMap(config.getConfig("state.custom-table"))
+
+    val durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = {
+      import akka.util.ccompat.JavaConverters._
+      val cfg = config.getConfig("state.additional-columns")
+      cfg.root.unwrapped.asScala.toMap.map {
+        case (k, v: java.util.List[_]) => k -> v.iterator.asScala.map(_.toString).toVector
+        case (k, v)                    => k -> Vector(v.toString)
+      }
+    }
+
+    val durableStateChangeHandlerClasses: Map[String, String] =
+      configToMap(config.getConfig("state.change-handler"))
+
+    val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
+
+    val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
+
+    val querySettings = new QuerySettings(config.getConfig("query"))
+
+    val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
+
+    // FIXME remove when https://github.com/yugabyte/yugabyte-db/issues/10995 has been resolved
+    val useAppTimestamp: Boolean = config.getBoolean("use-app-timestamp")
+
+    val logDbCallsExceeding: FiniteDuration =
+      config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {
+        case "off" => -1.millis
+        case _     => config.getDuration("log-db-calls-exceeding").asScala
+      }
+
+    val cleanupSettings = new CleanupSettings(config.getConfig("cleanup"))
+    val settingsFromConfig = new R2dbcSettings(
+      schema,
+      journalTable,
+      journalPayloadCodec,
+      journalPublishEvents,
+      snapshotsTable,
+      snapshotPayloadCodec,
+      durableStateTable,
+      durableStatePayloadCodec,
+      durableStateAssertSingleWriter,
+      logDbCallsExceeding,
+      querySettings,
+      dbTimestampMonotonicIncreasing,
+      cleanupSettings,
+      connectionFactorySettings,
+      durableStateTableByEntityType,
+      durableStateAdditionalColumnClasses,
+      durableStateChangeHandlerClasses,
+      useAppTimestamp)
+
+    // let the dialect trump settings that does not make sense for it
+    settingsFromConfig.connectionFactorySettings.dialect.adaptSettings(settingsFromConfig)
+  }
 
   private def configToMap(cfg: Config): Map[String, String] = {
     import akka.util.ccompat.JavaConverters._
     cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
   }
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = {
-    import akka.util.ccompat.JavaConverters._
-    val cfg = config.getConfig("state.additional-columns")
-    cfg.root.unwrapped.asScala.toMap.map {
-      case (k, v: java.util.List[_]) => k -> v.iterator.asScala.map(_.toString).toVector
-      case (k, v)                    => k -> Vector(v.toString)
-    }
-  }
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val durableStateChangeHandlerClasses: Map[String, String] =
-    configToMap(config.getConfig("state.change-handler"))
-
-  val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
-
-  val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
-    case "yugabyte" => Dialect.Yugabyte
-    case "postgres" => Dialect.Postgres
-    case other =>
-      throw new IllegalArgumentException(s"Unknown dialect [$other]. Supported dialects are [yugabyte, postgres].")
-  }
-
-  val querySettings = new QuerySettings(config.getConfig("query"))
-
-  val connectionFactorySettings = new ConnectionFactorySettings(config.getConfig("connection-factory"))
-
-  val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
-
-  /**
-   * INTERNAL API FIXME remove when https://github.com/yugabyte/yugabyte-db/issues/10995 has been resolved
-   */
-  @InternalApi private[akka] val useAppTimestamp: Boolean = config.getBoolean("use-app-timestamp")
-
-  val logDbCallsExceeding: FiniteDuration =
-    config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {
-      case "off" => -1.millis
-      case _     => config.getDuration("log-db-calls-exceeding").asScala
-    }
-
-  val cleanupSettings = new CleanupSettings(config.getConfig("cleanup"))
 }
 
 /**
  * INTERNAL API
  */
 @InternalStableApi
-sealed trait Dialect
+final class R2dbcSettings private (
+    val schema: Option[String],
+    val journalTable: String,
+    val journalPayloadCodec: PayloadCodec,
+    val journalPublishEvents: Boolean,
+    val snapshotsTable: String,
+    val snapshotPayloadCodec: PayloadCodec,
+    val durableStateTable: String,
+    val durableStatePayloadCodec: PayloadCodec,
+    val durableStateAssertSingleWriter: Boolean,
+    val logDbCallsExceeding: FiniteDuration,
+    val querySettings: QuerySettings,
+    val dbTimestampMonotonicIncreasing: Boolean,
+    val cleanupSettings: CleanupSettings,
+    _connectionFactorySettings: ConnectionFactorySettings,
+    _durableStateTableByEntityType: Map[String, String],
+    _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
+    _durableStateChangeHandlerClasses: Map[String, String],
+    _useAppTimestamp: Boolean) {
 
-/**
- * INTERNAL API
- */
-@InternalStableApi
-object Dialect {
-  case object Postgres extends Dialect
-  case object Yugabyte extends Dialect
+  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
+  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
+  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  /**
+   * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
+   */
+  def dialectName: String = _connectionFactorySettings.dialect.name
+
+  def getDurableStateTable(entityType: String): String =
+    _durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
+
+  def getDurableStateTableWithSchema(entityType: String): String =
+    durableStateTableByEntityTypeWithSchema.getOrElse(entityType, durableStateTableWithSchema)
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def withDbTimestampMonotonicIncreasing(
+      dbTimestampMonotonicIncreasing: Boolean): R2dbcSettings =
+    copy(dbTimestampMonotonicIncreasing = dbTimestampMonotonicIncreasing)
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def withUseAppTimestamp(useAppTimestamp: Boolean): R2dbcSettings =
+    copy(useAppTimestamp = useAppTimestamp)
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
+    _durableStateTableByEntityType.map { case (entityType, table) =>
+      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+    }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def durableStateChangeHandlerClasses: Map[String, String] =
+    _durableStateChangeHandlerClasses
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
+    _durableStateAdditionalColumnClasses
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def useAppTimestamp: Boolean = _useAppTimestamp
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def connectionFactorySettings: ConnectionFactorySettings = _connectionFactorySettings
+
+  private def copy(
+      schema: Option[String] = schema,
+      journalTable: String = journalTable,
+      journalPayloadCodec: PayloadCodec = journalPayloadCodec,
+      journalPublishEvents: Boolean = journalPublishEvents,
+      snapshotsTable: String = snapshotsTable,
+      snapshotPayloadCodec: PayloadCodec = snapshotPayloadCodec,
+      durableStateTable: String = durableStateTable,
+      durableStatePayloadCodec: PayloadCodec = durableStatePayloadCodec,
+      durableStateAssertSingleWriter: Boolean = durableStateAssertSingleWriter,
+      logDbCallsExceeding: FiniteDuration = logDbCallsExceeding,
+      querySettings: QuerySettings = querySettings,
+      dbTimestampMonotonicIncreasing: Boolean = dbTimestampMonotonicIncreasing,
+      cleanupSettings: CleanupSettings = cleanupSettings,
+      connectionFactorySettings: ConnectionFactorySettings = connectionFactorySettings,
+      durableStateTableByEntityType: Map[String, String] = _durableStateTableByEntityType,
+      durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
+        _durableStateAdditionalColumnClasses,
+      durableStateChangeHandlerClasses: Map[String, String] = _durableStateChangeHandlerClasses,
+      useAppTimestamp: Boolean = _useAppTimestamp): R2dbcSettings =
+    new R2dbcSettings(
+      schema,
+      journalTable,
+      journalPayloadCodec,
+      journalPublishEvents,
+      snapshotsTable,
+      snapshotPayloadCodec,
+      durableStateTable,
+      durableStatePayloadCodec,
+      durableStateAssertSingleWriter,
+      logDbCallsExceeding,
+      querySettings,
+      dbTimestampMonotonicIncreasing,
+      cleanupSettings,
+      connectionFactorySettings,
+      _durableStateTableByEntityType,
+      _durableStateAdditionalColumnClasses,
+      _durableStateChangeHandlerClasses,
+      useAppTimestamp)
+
+  override def toString =
+    s"R2dbcSettings(dialectName=$dialectName, schema=$schema, journalTable=$journalTable, snapshotsTable=$snapshotsTable, durableStateTable=$durableStateTable, logDbCallsExceeding=$logDbCallsExceeding, dbTimestampMonotonicIncreasing=$dbTimestampMonotonicIncreasing, useAppTimestamp=$useAppTimestamp)"
 }
 
 /**
@@ -162,38 +272,16 @@ final class QuerySettings(config: Config) {
  * INTERNAL API
  */
 @InternalStableApi
-final class ConnectionFactorySettings(config: Config) {
-
-  val urlOption: Option[String] =
-    Option(config.getString("url"))
-      .filter(_.trim.nonEmpty)
-
-  val driver: String = config.getString("driver")
-  val host: String = config.getString("host")
-  val port: Int = config.getInt("port")
-  val user: String = config.getString("user")
-  val password: String = config.getString("password")
-  val database: String = config.getString("database")
-
-  val sslEnabled: Boolean = config.getBoolean("ssl.enabled")
-  val sslMode: String = config.getString("ssl.mode")
-  val sslRootCert: String = config.getString("ssl.root-cert")
-  val sslCert: String = config.getString("ssl.cert")
-  val sslKey: String = config.getString("ssl.key")
-  val sslPassword: String = config.getString("ssl.password")
-
+final class ConnectionPoolSettings(config: Config) {
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
   val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
 
-  val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
   val validationQuery: String = config.getString("validation-query")
-
-  val statementCacheSize: Int = config.getInt("statement-cache-size")
 }
 
 /**

@@ -2,10 +2,7 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.snapshot
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+package akka.persistence.r2dbc.internal.postgres
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -16,63 +13,59 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.SnapshotDao
+import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+
 /**
  * INTERNAL API
  */
-private[r2dbc] object SnapshotDao {
-  private val log: Logger = LoggerFactory.getLogger(classOf[SnapshotDao])
-
-  final case class SerializedSnapshotRow(
-      persistenceId: String,
-      seqNr: Long,
-      writeTimestamp: Long,
-      snapshot: Array[Byte],
-      serializerId: Int,
-      serializerManifest: String,
-      metadata: Option[SerializedSnapshotMetadata])
-
-  final case class SerializedSnapshotMetadata(payload: Array[Byte], serializerId: Int, serializerManifest: String)
-
+private[r2dbc] object PostgresSnapshotDao {
+  private val log: Logger = LoggerFactory.getLogger(classOf[PostgresSnapshotDao])
 }
 
 /**
  * INTERNAL API
- *
- * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
-    system: ActorSystem[_]) {
+    system: ActorSystem[_])
+    extends SnapshotDao {
   import SnapshotDao._
 
-  private val snapshotTable = settings.snapshotsTableWithSchema
+  protected def log: Logger = PostgresSnapshotDao.log
+
+  protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
   private val persistenceExt = Persistence(system)
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
-  private val upsertSql = sql"""
-    INSERT INTO $snapshotTable
-    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (persistence_id)
-    DO UPDATE SET
-      seq_nr = excluded.seq_nr,
-      write_timestamp = excluded.write_timestamp,
-      snapshot = excluded.snapshot,
-      ser_id = excluded.ser_id,
-      ser_manifest = excluded.ser_manifest,
-      meta_payload = excluded.meta_payload,
-      meta_ser_id = excluded.meta_ser_id,
-      meta_ser_manifest = excluded.meta_ser_manifest"""
+  protected def createUpsertSql: String =
+    sql"""
+      INSERT INTO $snapshotTable
+      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (persistence_id)
+      DO UPDATE SET
+        seq_nr = excluded.seq_nr,
+        write_timestamp = excluded.write_timestamp,
+        snapshot = excluded.snapshot,
+        ser_id = excluded.ser_id,
+        ser_manifest = excluded.ser_manifest,
+        meta_payload = excluded.meta_payload,
+        meta_ser_id = excluded.meta_ser_id,
+        meta_ser_manifest = excluded.meta_ser_manifest"""
+
+  private val upsertSql = createUpsertSql
 
   private def selectSql(criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =
@@ -140,7 +133,9 @@ private[r2dbc] final class SnapshotDao(settings: R2dbcSettings, connectionFactor
               row.get("meta_ser_manifest", classOf[String])))
       })
 
-  def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
+  override def load(
+      persistenceId: String,
+      criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
         { connection =>

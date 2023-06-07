@@ -24,7 +24,8 @@ import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao.SerializedStateRow
+import akka.persistence.r2dbc.internal.DurableStateDao
+import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.state.scaladsl.DurableStateUpdateStore
 import akka.persistence.state.scaladsl.GetObjectResult
 import akka.serialization.SerializationExtension
@@ -52,16 +53,15 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.state$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
-  private val stateDao =
-    new DurableStateDao(
-      settings,
-      ConnectionFactoryProvider(typedSystem).connectionFactoryFor(sharedConfigPath + ".connection-factory"))(
-      typedSystem.executionContext,
-      typedSystem)
+  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(
+    settings,
+    ConnectionFactoryProvider(typedSystem)
+      .connectionFactoryFor(sharedConfigPath + ".connection-factory"))(typedSystem)
 
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {

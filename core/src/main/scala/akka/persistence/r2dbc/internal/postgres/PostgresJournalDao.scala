@@ -2,38 +2,39 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.journal
-
-import java.time.Instant
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+package akka.persistence.r2dbc.internal.postgres
 
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
+import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import akka.actor.typed.scaladsl.LoggerOps
-import io.r2dbc.spi.Connection
+
+import java.time.Instant
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] object JournalDao {
-  val log: Logger = LoggerFactory.getLogger(classOf[JournalDao])
+private[r2dbc] object PostgresJournalDao {
+  private val log: Logger = LoggerFactory.getLogger(classOf[PostgresJournalDao])
   val EmptyDbTimestamp: Instant = Instant.EPOCH
 
   final case class SerializedJournalRow(
@@ -50,8 +51,6 @@ private[r2dbc] object JournalDao {
       tags: Set[String],
       metadata: Option[SerializedEventMetadata])
       extends BySliceQuery.SerializedRow
-
-  final case class SerializedEventMetadata(serId: Int, serManifest: String, payload: Array[Byte])
 
   def readMetadata(row: Row): Option[SerializedEventMetadata] = {
     row.get("meta_payload", classOf[Array[Byte]]) match {
@@ -73,19 +72,21 @@ private[r2dbc] object JournalDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
-    system: ActorSystem[_]) {
+    system: ActorSystem[_])
+    extends JournalDao {
 
   import JournalDao.SerializedJournalRow
-  import JournalDao.log
+  protected def log: Logger = PostgresJournalDao.log
 
   private val persistenceExt = Persistence(system)
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
+  protected val r2dbcExecutor =
+    new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
 
-  private val journalTable = journalSettings.journalTableWithSchema
-  private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
+  protected val journalTable = journalSettings.journalTableWithSchema
+  protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
 
   private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
@@ -109,9 +110,9 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
     val insertEventWithTransactionTimestampSql = {
       if (journalSettings.dbTimestampMonotonicIncreasing)
-        sql"$baseSql transaction_timestamp()) RETURNING db_timestamp"
+        sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
       else
-        sql"$baseSql GREATEST(transaction_timestamp(), $timestampSubSelect)) RETURNING db_timestamp"
+        sql"$baseSql GREATEST(CURRENT_TIMESTAMP, $timestampSubSelect)) RETURNING db_timestamp"
     }
 
     (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql)
@@ -132,7 +133,7 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
   private val insertDeleteMarkerSql = sql"""
     INSERT INTO $journalTable
     (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
-    VALUES (?, ?, ?, ?, transaction_timestamp(), ?, ?, ?, ?, ?, ?)"""
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)"""
 
   /**
    * All events must be for the same persistenceId.

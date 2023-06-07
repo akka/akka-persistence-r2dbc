@@ -30,13 +30,13 @@ import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
 import akka.persistence.query.scaladsl.ReadJournal
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedEventMetadata
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.internal.SerializedEventMetadata
+import akka.persistence.r2dbc.internal.SnapshotDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.migration.MigrationToolDao.CurrentProgress
-import akka.persistence.r2dbc.snapshot.SnapshotDao
-import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotMetadata
-import akka.persistence.r2dbc.snapshot.SnapshotDao.SerializedSnapshotRow
+import SnapshotDao.SerializedSnapshotMetadata
+import SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.typed.PersistenceId
 import akka.serialization.Serialization
 import akka.serialization.SerializationExtension
@@ -114,9 +114,10 @@ class MigrationTool(system: ActorSystem[_]) {
   private val targetConnectionFactory = ConnectionFactoryProvider(system)
     .connectionFactoryFor(targetPluginId + ".connection-factory")
   private val targetJournalDao =
-    new JournalDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
   private val targetSnapshotDao =
-    new SnapshotDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.connectionFactorySettings.dialect
+      .createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 
@@ -128,6 +129,9 @@ class MigrationTool(system: ActorSystem[_]) {
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
   private lazy val sourceSnapshotStore = Persistence(system).snapshotStoreFor(sourceSnapshotPluginId)
 
+  if (targetR2dbcSettings.dialectName == "h2") {
+    log.error("Migrating to H2 using the migration tool not currently supported")
+  }
   private[r2dbc] val migrationDao =
     new MigrationToolDao(targetConnectionFactory, targetR2dbcSettings.logDbCallsExceeding)
 

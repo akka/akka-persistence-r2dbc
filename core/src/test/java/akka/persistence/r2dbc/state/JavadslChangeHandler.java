@@ -21,7 +21,7 @@ public class JavadslChangeHandler implements ChangeHandler<String> {
       return session
           .updateOne(
               session
-                  .createStatement("insert into changes_test (pid, rev, value) values ($1, $2, $3)")
+                  .createStatement("insert into changes_test (pid, rev, the_value) values ($1, $2, $3)")
                   .bind(0, upd.persistenceId())
                   .bind(1, upd.revision())
                   .bind(2, upd.value()))

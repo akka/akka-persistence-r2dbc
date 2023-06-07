@@ -17,7 +17,7 @@ import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.state.scaladsl.DurableStateDao
+import akka.persistence.r2dbc.internal.DurableStateDao
 import org.slf4j.LoggerFactory
 
 /**
@@ -58,7 +58,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
 
   private val connectionFactory =
     ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val stateDao = new DurableStateDao(settings, connectionFactory)
+  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(settings, connectionFactory)
 
   /**
    * Delete the state related to one single `persistenceId`.

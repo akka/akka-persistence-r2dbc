@@ -55,7 +55,8 @@ def common: Seq[Setting[_]] =
       // include all passed -Dakka. properties to the javaOptions for forked tests
       // useful to switch DB dialects for example
       val akkaProperties = System.getProperties.stringPropertyNames.asScala.toList.collect {
-        case key: String if key.startsWith("akka.") => "-D" + key + "=" + System.getProperty(key)
+        case key: String if key.startsWith("akka.") || key.startsWith("conf") =>
+          "-D" + key + "=" + System.getProperty(key)
       }
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     },
@@ -137,6 +138,8 @@ lazy val docs = project
       "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
       "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
       "akka.version" -> Dependencies.AkkaVersion,
+      "h2.version" -> Dependencies.H2Version,
+      "r2dbc-h2.version" -> Dependencies.R2dbcH2Version,
       "scala.version" -> scalaVersion.value,
       "scala.binary.version" -> scalaBinaryVersion.value,
       "extref.akka.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",

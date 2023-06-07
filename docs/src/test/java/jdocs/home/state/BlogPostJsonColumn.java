@@ -1,6 +1,7 @@
-/**
- * Copyright (C) 2022 Lightbend Inc. <https://www.lightbend.com>
+/*
+ * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package jdocs.home.state;
 
 import akka.persistence.r2dbc.state.javadsl.AdditionalColumn;

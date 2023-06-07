@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
+ */
+
 package jdocs.home.cleanup;
 
 import akka.actor.typed.ActorSystem;

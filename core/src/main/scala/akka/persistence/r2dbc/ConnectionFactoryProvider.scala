@@ -4,26 +4,22 @@
 
 package akka.persistence.r2dbc
 
-import java.time.{ Duration => JDuration }
-import java.util.concurrent.ConcurrentHashMap
-
-import scala.concurrent.Future
-import scala.concurrent.duration.Duration
-import scala.collection.JavaConverters._
-
 import akka.Done
 import akka.actor.CoordinatedShutdown
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
+import akka.persistence.r2dbc.internal.ConnectionFactorySettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
-import io.r2dbc.postgresql.PostgresqlConnectionFactoryProvider
-import io.r2dbc.postgresql.client.SSLMode
-import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.ConnectionFactoryOptions
+
+import java.time.{ Duration => JDuration }
+import java.util.concurrent.ConcurrentHashMap
+import scala.collection.JavaConverters._
+import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 
 object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] {
   def createExtension(system: ActorSystem[_]): ConnectionFactoryProvider = new ConnectionFactoryProvider(system)
@@ -51,64 +47,21 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         configLocation,
         configLocation => {
           val config = system.settings.config.getConfig(configLocation)
-          val settings = new ConnectionFactorySettings(config)
-          createConnectionPoolFactory(settings)
+          val connectionFactory = ConnectionFactorySettings(config).dialect.createConnectionFactory(config)
+          // pool settings are common to all dialects but defined inline in the connection factory block
+          // for backwards compatibility/convenience
+          val poolSettings = new ConnectionPoolSettings(config)
+          createConnectionPoolFactory(poolSettings, connectionFactory)
         })
       .asInstanceOf[ConnectionFactory]
   }
 
-  private def createConnectionFactory(settings: ConnectionFactorySettings): ConnectionFactory = {
-
-    val builder =
-      settings.urlOption match {
-        case Some(url) =>
-          ConnectionFactoryOptions.builder().from(ConnectionFactoryOptions.parse(url))
-        case _ =>
-          ConnectionFactoryOptions
-            .builder()
-            .option(ConnectionFactoryOptions.DRIVER, settings.driver)
-            .option(ConnectionFactoryOptions.HOST, settings.host)
-            .option(ConnectionFactoryOptions.PORT, Integer.valueOf(settings.port))
-            .option(ConnectionFactoryOptions.USER, settings.user)
-            .option(ConnectionFactoryOptions.PASSWORD, settings.password)
-            .option(ConnectionFactoryOptions.DATABASE, settings.database)
-            .option(ConnectionFactoryOptions.CONNECT_TIMEOUT, JDuration.ofMillis(settings.connectTimeout.toMillis))
-      }
-
-    builder
-      .option(PostgresqlConnectionFactoryProvider.FORCE_BINARY, java.lang.Boolean.TRUE)
-      .option(PostgresqlConnectionFactoryProvider.PREFER_ATTACHED_BUFFERS, java.lang.Boolean.TRUE)
-      .option(
-        PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
-        Integer.valueOf(settings.statementCacheSize))
-
-    if (settings.sslEnabled) {
-      builder.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
-
-      if (settings.sslMode.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_MODE, SSLMode.fromValue(settings.sslMode))
-
-      if (settings.sslRootCert.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_ROOT_CERT, settings.sslRootCert)
-
-      if (settings.sslCert.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_CERT, settings.sslCert)
-
-      if (settings.sslKey.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_KEY, settings.sslKey)
-
-      if (settings.sslPassword.nonEmpty)
-        builder.option(PostgresqlConnectionFactoryProvider.SSL_PASSWORD, settings.sslPassword)
-    }
-
-    ConnectionFactories.get(builder.build())
-  }
-
-  private def createConnectionPoolFactory(settings: ConnectionFactorySettings): ConnectionPool = {
-    val connectionFactory = createConnectionFactory(settings)
-
+  private def createConnectionPoolFactory(
+      settings: ConnectionPoolSettings,
+      connectionFactory: ConnectionFactory): ConnectionPool = {
     val evictionInterval = {
-      import settings.{ maxIdleTime, maxLifeTime }
+      import settings.maxIdleTime
+      import settings.maxLifeTime
       if (maxIdleTime <= Duration.Zero && maxLifeTime <= Duration.Zero) {
         JDuration.ZERO
       } else if (maxIdleTime <= Duration.Zero) {

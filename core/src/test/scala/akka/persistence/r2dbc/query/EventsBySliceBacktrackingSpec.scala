@@ -50,7 +50,7 @@ class EventsBySliceBacktrackingSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = new R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
+  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val query = PersistenceQuery(testKit.system)
@@ -169,6 +169,8 @@ class EventsBySliceBacktrackingSpec
       val env9 = result.expectNext()
       env9.persistenceId shouldBe pid1
       env9.sequenceNr shouldBe 4L
+
+      result.cancel()
     }
 
     "emit from backtracking after first normal query" in {
@@ -226,6 +228,7 @@ class EventsBySliceBacktrackingSpec
       // from normal query
       expect(result2.expectNext(), pid2, 3L, Some("e2-3"))
 
+      result2.cancel()
     }
   }
 

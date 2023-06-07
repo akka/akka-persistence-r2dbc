@@ -35,9 +35,9 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PubSub
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import JournalDao.SerializedJournalRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -72,6 +72,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC read journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
   import typedSystem.executionContext
@@ -80,7 +81,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val connectionFactory = ConnectionFactoryProvider(typedSystem)
     .connectionFactoryFor(sharedConfigPath + ".connection-factory")
   private val queryDao =
-    new QueryDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
+    settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)(typedSystem)
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
@@ -110,7 +111,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
     _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
 
-  private val journalDao = new JournalDao(settings, connectionFactory)(typedSystem.executionContext, typedSystem)
+  private val journalDao =
+    settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)(typedSystem)
 
   def extractEntityTypeFromPersistenceId(persistenceId: String): String =
     PersistenceId.extractEntityType(persistenceId)
@@ -140,14 +142,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * The supported offset is [[TimestampOffset]] and [[Offset.noOffset]].
    *
-   * The timestamp is based on the database `transaction_timestamp()` when the event was stored.
-   * `transaction_timestamp()` is the time when the transaction started, not when it was committed. This means that a
-   * "later" event may be visible first and when retrieving events after the previously seen timestamp we may miss some
-   * events. In distributed SQL databases there can also be clock skews for the database timestamps. For that reason it
-   * will perform additional backtracking queries to catch missed events. Events from backtracking will typically be
-   * duplicates of previously emitted events. It's the responsibility of the consumer to filter duplicates and make sure
-   * that events are processed in exact sequence number order for each persistence id. Such deduplication is provided by
-   * the R2DBC Projection.
+   * The timestamp is based on the database `CURRENT_TIMESTAMP` when the event was stored. `CURRENT_TIMESTAMP` is the
+   * time when the transaction started, not when it was committed. This means that a "later" event may be visible first
+   * and when retrieving events after the previously seen timestamp we may miss some events. In distributed SQL
+   * databases there can also be clock skews for the database timestamps. For that reason it will perform additional
+   * backtracking queries to catch missed events. Events from backtracking will typically be duplicates of previously
+   * emitted events. It's the responsibility of the consumer to filter duplicates and make sure that events are
+   * processed in exact sequence number order for each persistence id. Such deduplication is provided by the R2DBC
+   * Projection.
    *
    * Events emitted by the backtracking don't contain the event payload (`EventBySliceEnvelope.event` is None) and the
    * consumer can load the full `EventBySliceEnvelope` with [[R2dbcReadJournal.loadEnvelope]].

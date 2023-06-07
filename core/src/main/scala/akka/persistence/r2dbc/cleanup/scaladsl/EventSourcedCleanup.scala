@@ -18,8 +18,8 @@ import akka.annotation.InternalApi
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.snapshot.SnapshotDao
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.SnapshotDao
 import org.slf4j.LoggerFactory
 
 /**
@@ -60,9 +60,8 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
 
   private val connectionFactory =
     ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val journalDao = new JournalDao(settings, connectionFactory)
-  private val snapshotDao =
-    new SnapshotDao(settings, connectionFactory)
+  private val journalDao = settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)
+  private val snapshotDao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)
 
   /**
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.

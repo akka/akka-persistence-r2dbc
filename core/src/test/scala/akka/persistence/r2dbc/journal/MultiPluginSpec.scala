@@ -31,8 +31,13 @@ object MultiPluginSpec {
     // #second-config
     second-r2dbc = ${akka.persistence.r2dbc}
     second-r2dbc {
+      # chose dialect unless using the same as the default
+      # connection-factory = ${akka.persistence.r2dbc.postgres}
       connection-factory {
         # specific connection properties here
+
+        # Note if using H2 and customizing table names you will need to repeat the custom table names
+        # for the second config in this config block, see reference.conf for the table name config keys.
       }
       journal {
         # specific journal properties here

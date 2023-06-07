@@ -2,39 +2,41 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.query.scaladsl
+package akka.persistence.r2dbc.internal.postgres
+
+import akka.NotUsed
+import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.LoggerOps
+import akka.annotation.InternalApi
+import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.QueryDao
+import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
+import akka.persistence.typed.PersistenceId
+import akka.stream.scaladsl.Source
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import java.time.Instant
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import akka.NotUsed
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
-import akka.annotation.InternalApi
-import akka.persistence.Persistence
-import akka.persistence.r2dbc.Dialect
-import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.BySliceQuery
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.journal.JournalDao
-import akka.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.query.scaladsl.QueryDao.setFromDb
-import akka.persistence.typed.PersistenceId
-import akka.stream.scaladsl.Source
-import io.r2dbc.spi.ConnectionFactory
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
-object QueryDao {
-  val log: Logger = LoggerFactory.getLogger(classOf[QueryDao])
+/**
+ * INTERNAL API
+ */
+@InternalApi
+object PostgresQueryDao {
+  private val log: Logger = LoggerFactory.getLogger(classOf[PostgresQueryDao])
   private def setFromDb[T](array: Array[T]): Set[T] = array match {
     case null    => Set.empty[T]
     case entries => entries.toSet
@@ -45,20 +47,21 @@ object QueryDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends BySliceQuery.Dao[SerializedJournalRow] {
-  import JournalDao.readMetadata
-  import QueryDao.log
+    extends QueryDao {
+  import PostgresJournalDao.readMetadata
+  import PostgresQueryDao.setFromDb
 
-  private val journalTable = settings.journalTableWithSchema
-  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
+  protected def log: Logger = PostgresQueryDao.log
+  protected val journalTable = settings.journalTableWithSchema
+  protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
 
   private val currentDbTimestampSql =
-    "SELECT transaction_timestamp() AS db_timestamp"
+    "SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
-  private def eventsBySlicesRangeSql(
+  protected def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean,
@@ -70,14 +73,14 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
-        s"AND db_timestamp < transaction_timestamp() - interval '${behindCurrentTime.toMillis} milliseconds'"
+        s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis} milliseconds'"
       else ""
 
     val selectColumns = {
       if (backtracking)
-        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, tags "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags "
       else
-        "SELECT slice, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, tags, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
     sql"""
@@ -91,12 +94,8 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
       LIMIT ?"""
   }
 
-  private def sliceCondition(minSlice: Int, maxSlice: Int): String = {
-    settings.dialect match {
-      case Dialect.Yugabyte => s"slice BETWEEN $minSlice AND $maxSlice"
-      case Dialect.Postgres => s"slice in (${(minSlice to maxSlice).mkString(",")})"
-    }
-  }
+  protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
+    s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   private def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
     sql"""
@@ -114,13 +113,13 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
     SELECT db_timestamp FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectOneEventSql = sql"""
-    SELECT slice, entity_type, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
+  protected val selectOneEventSql = sql"""
+    SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
     FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
-  private val selectEventsSql = sql"""
-    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, statement_timestamp() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+  protected val selectEventsSql = sql"""
+    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
     from $journalTable
     WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
     AND deleted = false
@@ -151,6 +150,9 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
       }
   }
+
+  protected def tagsFromDb(row: Row, columnName: String): Set[String] =
+    setFromDb(row.get("tags", classOf[Array[String]]))
 
   def rowsBySlices(
       entityType: String,
@@ -194,7 +196,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = 0,
             serManifest = "",
             writerUuid = "", // not need in this query
-            tags = setFromDb(row.get("tags", classOf[Array[String]])),
+            tags = tagsFromDb(row, "tags"),
             metadata = None)
         else
           SerializedJournalRow(
@@ -208,7 +210,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
-            tags = setFromDb(row.get("tags", classOf[Array[String]])),
+            tags = tagsFromDb(row, "tags"),
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -289,7 +291,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
-          tags = setFromDb(row.get("tags", classOf[Array[String]])),
+          tags = tagsFromDb(row, "tags"),
           metadata = readMetadata(row)))
 
   def eventsByPersistenceId(
@@ -317,7 +319,7 @@ private[r2dbc] class QueryDao(settings: R2dbcSettings, connectionFactory: Connec
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = setFromDb(row.get("tags", classOf[Array[String]])),
+          tags = tagsFromDb(row, "tags"),
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
