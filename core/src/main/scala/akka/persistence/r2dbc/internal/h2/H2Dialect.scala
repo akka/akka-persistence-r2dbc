@@ -14,12 +14,13 @@ import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.util.ccompat.JavaConverters._
 import com.typesafe.config.Config
+import io.r2dbc.h2.H2ConnectionConfiguration
+import io.r2dbc.h2.H2ConnectionFactory
 import io.r2dbc.h2.H2ConnectionOption
-import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.ConnectionFactoryOptions
-
+import java.util.Locale
 import scala.concurrent.ExecutionContext
 
 /**
@@ -39,41 +40,41 @@ private[r2dbc] object H2Dialect extends Dialect {
   }
 
   override def createConnectionFactory(config: Config): ConnectionFactory = {
-    def r2option[T](h2Option: H2ConnectionOption): io.r2dbc.spi.Option[T] =
-      io.r2dbc.spi.Option.valueOf[T](h2Option.getKey)
-
     // starting point for both url and regular configs,
     // to allow url to override anything but provide sane defaults
-    val builder = ConnectionFactoryOptions.builder()
-    val createSliceIndexes = config.getBoolean("create-slice-indexes")
-    builder
-      .option(ConnectionFactoryOptions.DRIVER, "h2")
-      // create schema on first connect
-      .option(
-        r2option(H2ConnectionOption.INIT),
-        dbSchema(config, createSliceIndexes, config.getString("additional-init")))
-      // don't auto close connections
-      .option(r2option(H2ConnectionOption.DB_CLOSE_DELAY), "-1")
-
-    if (config.getBoolean("trace-logging"))
-      // log to SLF4J instead of print to stdout, logger name will be 'h2database'
-      builder.option(r2option(H2ConnectionOption.TRACE_LEVEL_FILE), "4")
-
+    val builder = H2ConnectionConfiguration.builder()
     val url = config.getString("url")
-    if (url.isEmpty) {
-      builder
-        // note: protocol other than mem or file is validated in r2db driver
-        .option(ConnectionFactoryOptions.PROTOCOL, config.getString("protocol"))
-        .option(ConnectionFactoryOptions.DATABASE, config.getString("database"))
+    if (url.nonEmpty) {
+      builder.url(url)
     } else {
-      val urlConfig = ConnectionFactoryOptions
-        .parse(url)
-        .mutate()
-        .build()
-      builder.from(urlConfig)
+      val db = config.getString("database")
+      config.getString("protocol").toLowerCase(Locale.ROOT) match {
+        case "file" => builder.file(db)
+        case "mem"  => builder.inMemory(db)
+      }
+
+      val createSliceIndexes = config.getBoolean("create-slice-indexes")
+      builder
+        // create schema on first connect
+        .property(H2ConnectionOption.INIT, dbSchema(config, createSliceIndexes, config.getString("additional-init")))
+        // don't auto close connections
+        .property(H2ConnectionOption.DB_CLOSE_DELAY, "-1")
+
+      if (config.getBoolean("trace-logging"))
+        // log to SLF4J instead of print to stdout, logger name will be 'h2database'
+        builder.property(H2ConnectionOption.TRACE_LEVEL_FILE, "4")
+
+      // Arbitrary config pass through/override for non-url setup
+      config
+        .getConfig("additional-options")
+        .entrySet()
+        .iterator()
+        .asScala
+        .foreach(entry => builder.option(s"${entry.getKey}=${entry.getValue.render()}"))
     }
 
-    ConnectionFactories.get(builder.build())
+    val h2Config = builder.build()
+    new H2ConnectionFactory(h2Config)
   }
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
