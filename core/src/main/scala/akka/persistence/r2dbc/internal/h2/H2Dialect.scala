@@ -14,17 +14,14 @@ import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.util.ccompat.JavaConverters._
 import com.typesafe.config.Config
 import io.r2dbc.h2.H2ConnectionConfiguration
 import io.r2dbc.h2.H2ConnectionFactory
 import io.r2dbc.h2.H2ConnectionOption
-import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.ConnectionFactoryOptions
-
 import java.util.Locale
 import scala.concurrent.ExecutionContext
-import scala.jdk.CollectionConverters.IteratorHasAsScala
 
 /**
  * INTERNAL API
