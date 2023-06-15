@@ -285,7 +285,8 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[Envelope, NotUsed] = {
+      offset: Offset,
+      compactionOffsets: Map[String, (Long, Instant)]): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
@@ -430,6 +431,26 @@ import org.slf4j.Logger
             toTimestamp,
             behindCurrentTime,
             backtracking = newState.backtracking)
+          .filter { row =>
+            if (compactionOffsets.isEmpty)
+              true
+            else
+              compactionOffsets.get(row.persistenceId) match {
+                case None                       => true
+                case Some((compactionSeqNr, _)) =>
+                  // FIXME when equal to the compactionSeqNr we can remove entry from the compactionOffsets
+                  // Map to release memory, at least when it's from backtracking
+                  row.seqNr >= compactionSeqNr
+
+                // FIXME we might want to skip subsequent compaction events, i.e. those that are
+                // emitted after the query started? Compaction events should be redundant after the first
+                // compaction event.
+                // That could also be an application concern but if we want to avoid deserialization and other
+                // overhead they should be filtered out early.
+                // Also, when the compactionOffsets Map has become empty we don't even have to retrieve them from
+                // the database, i.e. `compaction = false` in the sql.
+              }
+          }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 

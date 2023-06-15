@@ -134,6 +134,9 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             SerializedEventMetadata(id, metaManifest, serializedMeta)
           }
 
+          // FIXME set the compaction column. One easy way to define that an event is an compaction event
+          // would be to use a special tag. We don't have to store that tag.
+
           SerializedJournalRow(
             slice,
             entityType,

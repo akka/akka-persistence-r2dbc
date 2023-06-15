@@ -24,12 +24,14 @@ import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
+import akka.persistence.query.TimestampOffset
 
 /**
  * INTERNAL API
@@ -109,6 +111,22 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       """
   }
 
+  private def selectCompactionOffsetsSql(minSlice: Int, maxSlice: Int): String = {
+    sql"""
+      SELECT max.persistence_id, max_seq_nr, events.db_timestamp
+      FROM (SELECT persistence_id, MAX(seq_nr) AS max_seq_nr
+          FROM $journalTable
+          WHERE entity_type = ?
+          AND ${sliceCondition(minSlice, maxSlice)}
+          AND db_timestamp >= ?
+          AND deleted = false
+          AND compaction = true
+          GROUP BY persistence_id) AS max
+          JOIN events ON events.persistence_id = max.persistence_id
+          AND events.seq_nr = max.max_seq_nr
+      """
+  }
+
   private val selectTimestampOfEventSql = sql"""
     SELECT db_timestamp FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
@@ -154,7 +172,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def tagsFromDb(row: Row, columnName: String): Set[String] =
     setFromDb(row.get("tags", classOf[Array[String]]))
 
-  def rowsBySlices(
+  override def rowsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -261,6 +279,39 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
    * Events are append only
    */
   override def countBucketsMayChange: Boolean = false
+
+  /**
+   * Retrieves last seqNr and timestamp for each persistenceId.
+   */
+  def compactionOffsets(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant): Future[Map[String, (Long, Instant)]] = {
+
+    // FIXME we might not need the timestamp in all cases, and then we would not need the subselect
+
+    val result = r2dbcExecutor
+      .select(s"select compaction offsets [$minSlice - $maxSlice]")(
+        connection =>
+          connection
+            .createStatement(selectBucketsSql(minSlice, maxSlice))
+            .bind(0, entityType)
+            .bind(1, fromTimestamp),
+        row => {
+          val persistenceId = row.get("persistence_id", classOf[String])
+          val seqNr = row.get[java.lang.Long]("max_seq_nr", classOf[java.lang.Long]).longValue
+          val dbTimestamp = row.get("db_timestamp", classOf[Instant])
+          persistenceId -> (seqNr -> dbTimestamp)
+        })
+      .map(_.toMap)
+
+    if (log.isDebugEnabled)
+      result.foreach(rows =>
+        log.debugN("Read [{}] compaction offsets from slices [{} - {}]", rows.size, minSlice, maxSlice))
+
+    result
+  }
 
   def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
     r2dbcExecutor.selectOne("select timestampOfEvent")(

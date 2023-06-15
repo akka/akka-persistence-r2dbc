@@ -164,7 +164,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
-    bySlice.liveBySlices("changesBySlices", entityType, minSlice, maxSlice, offset)
+    bySlice.liveBySlices("changesBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
 
   /**
    * Note: If you have configured `custom-table` this query will look in both the default table and the custom tables.

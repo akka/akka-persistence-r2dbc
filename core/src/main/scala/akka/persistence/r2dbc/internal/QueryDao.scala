@@ -23,6 +23,12 @@ private[r2dbc] trait QueryDao extends BySliceQuery.Dao[SerializedJournalRow] {
    */
   override def countBucketsMayChange: Boolean = false
 
+  def compactionOffsets(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant): Future[Map[String, (Long, Instant)]]
+
   def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]]
   def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]]
 

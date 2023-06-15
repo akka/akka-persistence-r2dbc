@@ -13,10 +13,19 @@ CREATE TABLE IF NOT EXISTS event_journal(
   writer VARCHAR(255) NOT NULL,
   adapter_manifest VARCHAR(255),
   tags TEXT ARRAY,
+  compaction BOOLEAN DEFAULT FALSE,
 
   meta_ser_id INTEGER,
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
+
+  PRIMARY KEY(persistence_id, seq_nr)
+);
+
+CREATE TABLE IF NOT EXISTS events(
+  persistence_id VARCHAR(255) NOT NULL,
+  seq_nr BIGINT NOT NULL,
+  db_timestamp timestamp with time zone NOT NULL,
 
   PRIMARY KEY(persistence_id, seq_nr)
 );

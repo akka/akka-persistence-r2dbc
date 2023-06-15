@@ -6,10 +6,12 @@ package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
@@ -38,6 +40,7 @@ import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PubSub
 import JournalDao.SerializedJournalRow
+import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -166,7 +169,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
-    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
     if (settings.journalPublishEvents) {
       val pubSub = PubSub(typedSystem)
       val pubSubSource =
@@ -195,6 +198,66 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         .via(deduplicate(settings.querySettings.deduplicateCapacity))
     } else
       dbSource
+  }
+
+  def eventsBySlicesFromCompactionEvents[Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
+    // FIXME DRY with above eventsBySlices
+
+    Source
+      .futureSource {
+        val timestampOffset = toTimestampOffset(offset)
+        queryDao
+          .compactionOffsets(entityType, minSlice, maxSlice, timestampOffset.timestamp)
+          .map { compactionOffsets =>
+            val initOffset =
+              if (timestampOffset == TimestampOffset.Zero && compactionOffsets.nonEmpty) {
+                val minTimestamp = compactionOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
+                TimestampOffset(minTimestamp, Map.empty)
+              } else
+                offset
+            val dbSource =
+              bySlice[Event].liveBySlices(
+                "eventsBySlices",
+                entityType,
+                minSlice,
+                maxSlice,
+                initOffset,
+                compactionOffsets)
+            if (settings.journalPublishEvents) {
+              // FIXME how do we handle compaction events over pubsub?
+              val pubSub = PubSub(typedSystem)
+              val pubSubSource =
+                Source
+                  .actorRef[EventEnvelope[Event]](
+                    completionMatcher = PartialFunction.empty,
+                    failureMatcher = PartialFunction.empty,
+                    bufferSize = settings.querySettings.bufferSize,
+                    overflowStrategy = OverflowStrategy.dropNew)
+                  .mapMaterializedValue { ref =>
+                    pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
+                      import akka.actor.typed.scaladsl.adapter._
+                      topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
+                    }
+                  }
+                  .filter { env =>
+                    val slice = sliceForPersistenceId(env.persistenceId)
+                    minSlice <= slice && slice <= maxSlice
+                  }
+              dbSource
+                .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
+                .via(skipPubSubTooFarAhead(
+                  settings.querySettings.backtrackingEnabled,
+                  JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+                .via(deduplicate(settings.querySettings.deduplicateCapacity))
+            } else
+              dbSource
+          }
+      }
+      .mapMaterializedValue(_ => NotUsed)
   }
 
   /**
