@@ -154,7 +154,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def tagsFromDb(row: Row, columnName: String): Set[String] =
     setFromDb(row.get("tags", classOf[Array[String]]))
 
-  def rowsBySlices(
+  override def rowsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -262,7 +262,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
    */
   override def countBucketsMayChange: Boolean = false
 
-  def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
+  override def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
     r2dbcExecutor.selectOne("select timestampOfEvent")(
       connection =>
         connection
@@ -272,7 +272,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       row => row.get("db_timestamp", classOf[Instant]))
   }
 
-  def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]] =
+  override def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]] =
     r2dbcExecutor.selectOne("select one event")(
       connection =>
         connection
@@ -294,7 +294,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           tags = tagsFromDb(row, "tags"),
           metadata = readMetadata(row)))
 
-  def eventsByPersistenceId(
+  override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
@@ -328,7 +328,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+  override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
     val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
       connection =>
@@ -353,7 +353,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+  override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val result = r2dbcExecutor.select(s"select persistenceIds")(
       connection =>
         afterId match {

@@ -14,8 +14,11 @@ import com.typesafe.config.Config
 import scala.concurrent.{ ExecutionContext, Future }
 
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
+import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.typed.PersistenceId
 import akka.serialization.Serializers
 
 object R2dbcSnapshotStore {
@@ -45,6 +48,7 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   private implicit val ec: ExecutionContext = context.dispatcher
   private val serialization: Serialization = SerializationExtension(context.system)
   private implicit val system: ActorSystem[_] = context.system.toTyped
+  private val persistenceExt = Persistence(system)
 
   private val dao = {
     val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
@@ -61,6 +65,9 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
       .map(_.map(row => deserializeSnapshotRow(row, serialization)))
 
   def saveAsync(metadata: SnapshotMetadata, snapshot: Any): Future[Unit] = {
+    val entityType = PersistenceId.extractEntityType(metadata.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(metadata.persistenceId)
+
     val snapshotAnyRef = snapshot.asInstanceOf[AnyRef]
     val serializedSnapshot = serialization.serialize(snapshotAnyRef).get
     val snapshotSerializer = serialization.findSerializerFor(snapshotAnyRef)
@@ -75,8 +82,11 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
     }
 
     val serializedRow = SerializedSnapshotRow(
+      slice,
+      entityType,
       metadata.persistenceId,
       metadata.sequenceNr,
+      SnapshotDao.EmptyDbTimestamp,
       metadata.timestamp,
       serializedSnapshot,
       snapshotSerializer.identifier,

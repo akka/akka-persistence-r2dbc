@@ -285,7 +285,8 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[Envelope, NotUsed] = {
+      offset: Offset,
+      snapshotOffsets: Map[String, (Long, Instant)]): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
@@ -430,6 +431,18 @@ import org.slf4j.Logger
             toTimestamp,
             behindCurrentTime,
             backtracking = newState.backtracking)
+          .filter { row =>
+            if (snapshotOffsets.isEmpty)
+              true
+            else
+              snapshotOffsets.get(row.persistenceId) match {
+                case None                     => true
+                case Some((snapshotSeqNr, _)) =>
+                  // FIXME when equal to the snapshotSeqNr we can remove entry from the snapshotOffsets
+                  // Map to release memory, at least when it's from backtracking
+                  row.seqNr > snapshotSeqNr
+              }
+          }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 

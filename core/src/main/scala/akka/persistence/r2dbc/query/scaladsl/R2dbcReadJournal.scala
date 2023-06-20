@@ -6,10 +6,12 @@ package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
@@ -38,6 +40,8 @@ import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PubSub
 import JournalDao.SerializedJournalRow
+import akka.persistence.query.TimestampOffset.toTimestampOffset
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -82,6 +86,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     .connectionFactoryFor(sharedConfigPath + ".connection-factory")
   private val queryDao =
     settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)(typedSystem)
+  private lazy val snapshotDao =
+    settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)(typedSystem)
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
@@ -110,6 +116,34 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
     _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
+
+  private def snapshotsBySlice[Snapshot, Event](
+      transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
+    val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] = (offset, row) => {
+      val snapshot = serialization.deserialize(row.snapshot, row.serializerId, row.serializerManifest).get
+      val event = transformSnapshot(snapshot.asInstanceOf[Snapshot])
+      val metadata = row.metadata.map(meta =>
+        serialization.deserialize(meta.payload, meta.serializerId, meta.serializerManifest).get)
+
+      new EventEnvelope[Event](
+        offset,
+        row.persistenceId,
+        row.seqNr,
+        Option(event),
+        row.dbTimestamp.toEpochMilli,
+        metadata,
+        row.entityType,
+        row.slice,
+        filtered = false,
+        source = "",
+        tags = Set.empty
+      ) // FIXME tags would be needed for filters. We could store same tags as for the corresponding event.
+    }
+
+    val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
+
+    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+  }
 
   private val journalDao =
     settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)(typedSystem)
@@ -166,7 +200,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
-    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
     if (settings.journalPublishEvents) {
       val pubSub = PubSub(typedSystem)
       val pubSubSource =
@@ -195,6 +229,71 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         .via(deduplicate(settings.querySettings.deduplicateCapacity))
     } else
       dbSource
+  }
+
+  /**
+   * Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
+   * events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
+   * offset or if it has been disconnected for a long while and its offset is far behind.
+   *
+   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
+   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+   *
+   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   */
+  def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    // FIXME DRY with above eventsBySlices
+
+    val snapshotSource =
+      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
+
+    val dbSource =
+      bySlice[Event].liveBySlices(
+        "eventsBySlices",
+        entityType,
+        minSlice,
+        maxSlice,
+        offset, // FIXME adjust based on snapshots
+        snapshotOffsets = Map.empty // FIXME collect offsets corresponding to snapshots
+      )
+
+    val primarySource =
+      if (settings.journalPublishEvents) {
+        val pubSub = PubSub(typedSystem)
+        val pubSubSource =
+          Source
+            .actorRef[EventEnvelope[Event]](
+              completionMatcher = PartialFunction.empty,
+              failureMatcher = PartialFunction.empty,
+              bufferSize = settings.querySettings.bufferSize,
+              overflowStrategy = OverflowStrategy.dropNew)
+            .mapMaterializedValue { ref =>
+              pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
+                import akka.actor.typed.scaladsl.adapter._
+                topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
+              }
+            }
+            .filter { env =>
+              val slice = sliceForPersistenceId(env.persistenceId)
+              minSlice <= slice && slice <= maxSlice
+            }
+        dbSource
+          .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
+          .via(
+            skipPubSubTooFarAhead(
+              settings.querySettings.backtrackingEnabled,
+              JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+          .via(deduplicate(settings.querySettings.deduplicateCapacity))
+      } else
+        dbSource
+
+    snapshotSource.concatLazy(Source.lazySource(() => primarySource))
   }
 
   /**

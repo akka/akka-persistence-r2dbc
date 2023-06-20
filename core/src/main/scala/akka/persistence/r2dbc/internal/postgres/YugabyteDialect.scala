@@ -34,7 +34,7 @@ private[r2dbc] object YugabyteDialect extends Dialect {
 
   override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): SnapshotDao =
-    new PostgresSnapshotDao(settings, connectionFactory)(system.executionContext, system)
+    new YugabyteSnapshotDao(settings, connectionFactory)(system.executionContext, system)
 
   override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): QueryDao =
