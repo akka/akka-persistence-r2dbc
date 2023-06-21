@@ -26,6 +26,7 @@ import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
@@ -93,7 +94,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       else ""
 
     sql"""
-      SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
@@ -129,7 +130,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String = {
 
     sql"""
-      SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
@@ -151,10 +152,10 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
-  private def collectSerializedSnapshot(row: Row): SerializedSnapshotRow =
+  private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow =
     SerializedSnapshotRow(
       row.get[Integer]("slice", classOf[Integer]),
-      row.get("entity_type", classOf[String]),
+      entityType,
       row.get("persistence_id", classOf[String]),
       row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
       row.get("db_timestamp", classOf[Instant]),
@@ -175,6 +176,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   override def load(
       persistenceId: String,
       criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     r2dbcExecutor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
         { connection =>
@@ -201,7 +203,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
           }
           statement
         },
-        collectSerializedSnapshot)
+        collectSerializedSnapshot(entityType, _))
       .map(_.headOption)(ExecutionContexts.parasitic)
 
   }
@@ -300,7 +302,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
           .bind(2, settings.querySettings.bufferSize)
         stmt
       },
-      collectSerializedSnapshot)
+      collectSerializedSnapshot(entityType, _))
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debugN("Read [{}] snapshots from slices [{} - {}]", rows.size, minSlice, maxSlice))
