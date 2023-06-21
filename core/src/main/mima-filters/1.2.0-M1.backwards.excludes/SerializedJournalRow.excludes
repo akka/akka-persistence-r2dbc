@@ -1,0 +1,8 @@
+# Unused internal class, leftover from refactoring
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.internal.SnapshotDao#SerializedSnapshotRow.unapply")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.postgres.PostgresJournalDao$SerializedJournalRow")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.postgres.PostgresJournalDao$SerializedJournalRow$")
+
+# internals
+ProblemFilters.exclude[Problem]("akka.persistence.r2dbc.internal.SnapshotDao#SerializedSnapshotRow*")
+ProblemFilters.exclude[MissingTypesProblem]("akka.persistence.r2dbc.internal.SnapshotDao$SerializedSnapshotRow$")
