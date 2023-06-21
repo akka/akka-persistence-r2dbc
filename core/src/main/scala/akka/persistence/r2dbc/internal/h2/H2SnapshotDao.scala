@@ -28,9 +28,9 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
 
   override protected def createUpsertSql: String = sql"""
     MERGE INTO $snapshotTable
-    (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+    (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
     KEY (persistence_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   """
 
 }
