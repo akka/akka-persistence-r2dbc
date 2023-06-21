@@ -17,31 +17,30 @@ import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
-import akka.annotation.{ ApiMayChange, InternalApi }
+import akka.annotation.ApiMayChange
+import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
+import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.{
-  CurrentEventsByPersistenceIdTypedQuery,
-  CurrentEventsBySliceQuery,
-  EventTimestampQuery,
-  EventsByPersistenceIdTypedQuery,
-  EventsBySliceQuery,
-  LoadEventQuery
-}
+import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
-import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
-import JournalDao.SerializedJournalRow
-import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.query.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -202,31 +201,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
     if (settings.journalPublishEvents) {
-      val pubSub = PubSub(typedSystem)
-      val pubSubSource =
-        Source
-          .actorRef[EventEnvelope[Event]](
-            completionMatcher = PartialFunction.empty,
-            failureMatcher = PartialFunction.empty,
-            bufferSize = settings.querySettings.bufferSize,
-            overflowStrategy = OverflowStrategy.dropNew)
-          .mapMaterializedValue { ref =>
-            pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
-              import akka.actor.typed.scaladsl.adapter._
-              topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
-            }
-          }
-          .filter { env =>
-            val slice = sliceForPersistenceId(env.persistenceId)
-            minSlice <= slice && slice <= maxSlice
-          }
-      dbSource
-        .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
-        .via(
-          skipPubSubTooFarAhead(
-            settings.querySettings.backtrackingEnabled,
-            JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
-        .via(deduplicate(settings.querySettings.deduplicateCapacity))
+      val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
+      mergeDbAndPubSubSources(dbSource, pubSubSource)
     } else
       dbSource
   }
@@ -247,53 +223,69 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
-    // FIXME DRY with above eventsBySlices
+    val timestampOffset = toTimestampOffset(offset)
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](transformSnapshot)
         .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
 
-    val dbSource =
-      bySlice[Event].liveBySlices(
-        "eventsBySlices",
-        entityType,
-        minSlice,
-        maxSlice,
-        offset, // FIXME adjust based on snapshots
-        snapshotOffsets = Map.empty // FIXME collect offsets corresponding to snapshots
-      )
+    Source.fromGraph(
+      new StartingFromSnapshotStage[Event](
+        snapshotSource,
+        snapshotOffsets => {
+          val initOffset =
+            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
+              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
+              TimestampOffset(minTimestamp, Map.empty)
+            } else
+              offset // FIXME not sure if we should adjust also for this case
 
-    val primarySource =
-      if (settings.journalPublishEvents) {
-        val pubSub = PubSub(typedSystem)
-        val pubSubSource =
-          Source
-            .actorRef[EventEnvelope[Event]](
-              completionMatcher = PartialFunction.empty,
-              failureMatcher = PartialFunction.empty,
-              bufferSize = settings.querySettings.bufferSize,
-              overflowStrategy = OverflowStrategy.dropNew)
-            .mapMaterializedValue { ref =>
-              pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
-                import akka.actor.typed.scaladsl.adapter._
-                topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
-              }
-            }
-            .filter { env =>
-              val slice = sliceForPersistenceId(env.persistenceId)
-              minSlice <= slice && slice <= maxSlice
-            }
-        dbSource
-          .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
-          .via(
-            skipPubSubTooFarAhead(
-              settings.querySettings.backtrackingEnabled,
-              JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
-          .via(deduplicate(settings.querySettings.deduplicateCapacity))
-      } else
-        dbSource
+          val dbSource =
+            bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, initOffset, snapshotOffsets)
 
-    snapshotSource.concatLazy(Source.lazySource(() => primarySource))
+          if (settings.journalPublishEvents) {
+            val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
+            mergeDbAndPubSubSources(dbSource, pubSubSource)
+          } else
+            dbSource
+        }))
+
+  }
+
+  private def eventsBySlicesPubSubSource[Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int): Source[EventEnvelope[Event], NotUsed] = {
+    val pubSub = PubSub(typedSystem)
+    Source
+      .actorRef[EventEnvelope[Event]](
+        completionMatcher = PartialFunction.empty,
+        failureMatcher = PartialFunction.empty,
+        bufferSize = settings.querySettings.bufferSize,
+        overflowStrategy = OverflowStrategy.dropNew)
+      .mapMaterializedValue { ref =>
+        pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
+          import akka.actor.typed.scaladsl.adapter._
+          topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
+        }
+      }
+      .filter { env =>
+        val slice = sliceForPersistenceId(env.persistenceId)
+        minSlice <= slice && slice <= maxSlice
+      }
+      .mapMaterializedValue(_ => NotUsed)
+  }
+
+  private def mergeDbAndPubSubSources[Event, Snapshot](
+      dbSource: Source[EventEnvelope[Event], NotUsed],
+      pubSubSource: Source[EventEnvelope[Event], NotUsed]) = {
+    dbSource
+      .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
+      .via(
+        skipPubSubTooFarAhead(
+          settings.querySettings.backtrackingEnabled,
+          JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+      .via(deduplicate(settings.querySettings.deduplicateCapacity))
   }
 
   /**
