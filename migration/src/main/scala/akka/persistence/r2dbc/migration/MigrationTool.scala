@@ -308,9 +308,15 @@ class MigrationTool(system: ActorSystem[_]) {
       SerializedSnapshotMetadata(serializedMeta, metaSerializer.identifier, metaManifest)
     }
 
+    val slice = persistenceExt.sliceForPersistenceId(snapshotMetadata.persistenceId)
+    val entityType = PersistenceId.extractEntityType(snapshotMetadata.persistenceId)
+
     val serializedRow = SerializedSnapshotRow(
+      slice,
+      entityType,
       snapshotMetadata.persistenceId,
       snapshotMetadata.sequenceNr,
+      Instant.ofEpochMilli(snapshotMetadata.timestamp),
       snapshotMetadata.timestamp,
       serializedSnapshot,
       snapshotSerializer.identifier,
