@@ -163,7 +163,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     bySlice
-      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
+      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
   }
 
   /**
@@ -207,6 +207,38 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       dbSource
   }
 
+  def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    val timestampOffset = toTimestampOffset(offset)
+
+    val snapshotSource =
+      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+        .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
+
+    Source.fromGraph(
+      new StartingFromSnapshotStage[Event](
+        snapshotSource,
+        snapshotOffsets => {
+          val initOffset =
+            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
+              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
+              TimestampOffset(minTimestamp, Map.empty)
+            } else
+              offset // FIXME not sure if we should adjust also for this case
+
+          log.debug(
+            "currentEventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
+            initOffset,
+            snapshotOffsets.size)
+
+          bySlice.currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, initOffset, snapshotOffsets)
+        }))
+  }
+
   /**
    * Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
    * events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
@@ -227,7 +259,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](transformSnapshot)
-        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
+        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
 
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
@@ -239,6 +271,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               TimestampOffset(minTimestamp, Map.empty)
             } else
               offset // FIXME not sure if we should adjust also for this case
+
+          log.debug(
+            "eventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
+            initOffset,
+            snapshotOffsets.size)
 
           val dbSource =
             bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, initOffset, snapshotOffsets)

@@ -197,7 +197,8 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[Envelope, NotUsed] = {
+      offset: Offset,
+      snapshotOffsets: Map[String, (Long, Instant)]): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState =
@@ -238,6 +239,18 @@ import org.slf4j.Logger
               toTimestamp = Some(toTimestamp),
               behindCurrentTime = Duration.Zero,
               backtracking = false)
+            .filter { row =>
+              if (snapshotOffsets.isEmpty)
+                true
+              else
+                snapshotOffsets.get(row.persistenceId) match {
+                  case None                     => true
+                  case Some((snapshotSeqNr, _)) =>
+                    // FIXME when equal to the snapshotSeqNr we can remove entry from the snapshotOffsets
+                    // Map to release memory
+                    row.seqNr > snapshotSeqNr
+                }
+            }
             .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)

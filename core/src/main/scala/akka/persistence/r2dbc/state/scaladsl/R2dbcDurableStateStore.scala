@@ -157,7 +157,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
-    bySlice.currentBySlices("currentChangesBySlices", entityType, minSlice, maxSlice, offset)
+    bySlice.currentBySlices("currentChangesBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
 
   override def changesBySlices(
       entityType: String,

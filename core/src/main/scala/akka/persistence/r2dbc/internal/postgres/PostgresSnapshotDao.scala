@@ -134,6 +134,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       FROM $snapshotTable
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
+      AND db_timestamp >= ?
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
   }
