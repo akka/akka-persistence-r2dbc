@@ -115,10 +115,11 @@ private[r2dbc] object H2Dialect extends Dialect {
 
     val sliceIndexes = if (createSliceIndexes) {
       val sliceIndexWithSchema = journalTableWithSchema + "_slice_idx"
+      val snapshotSliceIndexWithSchema = snapshotTableWithSchema + "_slice_idx"
       val durableStateSliceIndexWithSchema = durableStateTableWithSchema + "_slice_idx"
       Seq(
-        sql"""
-             CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $journalTableWithSchema(slice, entity_type, db_timestamp, seq_nr)""",
+        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $journalTableWithSchema(slice, entity_type, db_timestamp, seq_nr)""",
+        sql"""CREATE INDEX IF NOT EXISTS $snapshotSliceIndexWithSchema ON $snapshotTableWithSchema(slice, entity_type, db_timestamp)""",
         sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
     } else Seq.empty[String]
 
@@ -151,6 +152,7 @@ private[r2dbc] object H2Dialect extends Dialect {
           entity_type VARCHAR(255) NOT NULL,
           persistence_id VARCHAR(255) NOT NULL,
           seq_nr BIGINT NOT NULL,
+          db_timestamp timestamp with time zone,
           write_timestamp BIGINT NOT NULL,
           ser_id INTEGER NOT NULL,
           ser_manifest VARCHAR(255) NOT NULL,
