@@ -26,6 +26,7 @@ import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao.setFromDb
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
@@ -55,13 +56,12 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
-  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)
 
   protected def createUpsertSql: String =
     sql"""
       INSERT INTO $snapshotTable
-      (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (persistence_id)
       DO UPDATE SET
         seq_nr = excluded.seq_nr,
@@ -69,6 +69,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
         write_timestamp = excluded.write_timestamp,
         snapshot = excluded.snapshot,
         ser_id = excluded.ser_id,
+        tags = excluded.tags,
         ser_manifest = excluded.ser_manifest,
         meta_payload = excluded.meta_payload,
         meta_ser_id = excluded.meta_ser_id,
@@ -94,7 +95,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       else ""
 
     sql"""
-      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
@@ -130,7 +131,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String = {
 
     sql"""
-      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
@@ -153,17 +154,22 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
+  protected def tagsFromDb(row: Row, columnName: String): Set[String] =
+    setFromDb(row.get(columnName, classOf[Array[String]]))
+
   private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow =
     SerializedSnapshotRow(
-      row.get[Integer]("slice", classOf[Integer]),
+      slice = row.get[Integer]("slice", classOf[Integer]),
       entityType,
-      row.get("persistence_id", classOf[String]),
-      row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-      row.get("db_timestamp", classOf[Instant]),
-      row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
-      row.getPayload("snapshot"),
-      row.get[Integer]("ser_id", classOf[Integer]),
-      row.get("ser_manifest", classOf[String]), {
+      persistenceId = row.get("persistence_id", classOf[String]),
+      seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+      dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+      writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
+      snapshot = row.getPayload("snapshot"),
+      serializerId = row.get[Integer]("ser_id", classOf[Integer]),
+      serializerManifest = row.get("ser_manifest", classOf[String]),
+      tags = tagsFromDb(row, "tags"),
+      metadata = {
         val metaSerializerId = row.get("meta_ser_id", classOf[Integer])
         if (metaSerializerId eq null) None
         else
@@ -210,42 +216,39 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   }
 
   def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
-    queryDao.timestampOfEvent(serializedRow.persistenceId, serializedRow.seqNr).flatMap { eventTimestamp =>
-      val timestamp = eventTimestamp.getOrElse(Instant.ofEpochMilli(serializedRow.writeTimestamp))
+    r2dbcExecutor
+      .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
+        connection =>
+          val statement =
+            connection
+              .createStatement(upsertSql)
+              .bind(0, serializedRow.slice)
+              .bind(1, serializedRow.entityType)
+              .bind(2, serializedRow.persistenceId)
+              .bind(3, serializedRow.seqNr)
+              .bind(4, serializedRow.dbTimestamp)
+              .bind(5, serializedRow.writeTimestamp)
+              .bindPayload(6, serializedRow.snapshot)
+              .bind(7, serializedRow.serializerId)
+              .bind(8, serializedRow.serializerManifest)
+              .bind(9, serializedRow.tags.toArray)
 
-      r2dbcExecutor
-        .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
-          connection =>
-            val statement =
-              connection
-                .createStatement(upsertSql)
-                .bind(0, serializedRow.slice)
-                .bind(1, serializedRow.entityType)
-                .bind(2, serializedRow.persistenceId)
-                .bind(3, serializedRow.seqNr)
-                .bind(4, timestamp)
-                .bind(5, serializedRow.writeTimestamp)
-                .bindPayload(6, serializedRow.snapshot)
-                .bind(7, serializedRow.serializerId)
-                .bind(8, serializedRow.serializerManifest)
+          serializedRow.metadata match {
+            case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
+              statement
+                .bind(10, serializedMeta)
+                .bind(11, serializerId)
+                .bind(12, serializerManifest)
+            case None =>
+              statement
+                .bindNull(10, classOf[Array[Byte]])
+                .bindNull(11, classOf[Integer])
+                .bindNull(12, classOf[String])
+          }
 
-            serializedRow.metadata match {
-              case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
-                statement
-                  .bind(9, serializedMeta)
-                  .bind(10, serializerId)
-                  .bind(11, serializerManifest)
-              case None =>
-                statement
-                  .bindNull(9, classOf[Array[Byte]])
-                  .bindNull(10, classOf[Integer])
-                  .bindNull(11, classOf[String])
-            }
-
-            statement
-        }
-        .map(_ => ())(ExecutionContexts.parasitic)
-    }
+          statement
+      }
+      .map(_ => ())(ExecutionContexts.parasitic)
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {

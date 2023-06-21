@@ -283,6 +283,7 @@ class MigrationTool(system: ActorSystem[_]) {
       case Some(selectedSnapshot @ SelectedSnapshot(snapshotMetadata, _)) =>
         for {
           seqNr <- {
+            // TODO we could load the timestamp and tags from corresponding event, see R2dbcSnapshotStore.saveAsync
             val serializedRow = serializedSnapotRow(selectedSnapshot)
             targetSnapshotDao
               .store(serializedRow)
@@ -321,6 +322,7 @@ class MigrationTool(system: ActorSystem[_]) {
       serializedSnapshot,
       snapshotSerializer.identifier,
       snapshotManifest,
+      tags = Set.empty,
       serializedMeta)
     serializedRow
   }

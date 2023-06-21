@@ -27,6 +27,7 @@ private[r2dbc] object SnapshotDao {
       snapshot: Array[Byte],
       serializerId: Int,
       serializerManifest: String,
+      tags: Set[String],
       metadata: Option[SerializedSnapshotMetadata])
       extends BySliceQuery.SerializedRow {
     override def readDbTimestamp: Instant = dbTimestamp

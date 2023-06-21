@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.query.internal
 import java.time.Instant
 
 import akka.NotUsed
+import akka.annotation.InternalApi
 import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.stream.Attributes
@@ -19,7 +20,10 @@ import akka.stream.stage.GraphStageLogic
 import akka.stream.stage.InHandler
 import akka.stream.stage.OutHandler
 
-class StartingFromSnapshotStage[Event](
+/**
+ * INTERNAL API
+ */
+@InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
     snapshotSource: Source[EventEnvelope[Event], NotUsed],
     primarySource: Map[String, (Long, Instant)] => Source[EventEnvelope[Event], NotUsed])
     extends GraphStage[SourceShape[EventEnvelope[Event]]] {

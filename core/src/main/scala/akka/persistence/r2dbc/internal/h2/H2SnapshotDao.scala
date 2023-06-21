@@ -12,8 +12,9 @@ import akka.persistence.r2dbc.internal.postgres.PostgresSnapshotDao
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import scala.concurrent.ExecutionContext
+
+import io.r2dbc.spi.Row
 
 /**
  * INTERNAL API
@@ -28,9 +29,12 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
 
   override protected def createUpsertSql: String = sql"""
     MERGE INTO $snapshotTable
-    (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+    (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest)
     KEY (persistence_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   """
+
+  override protected def tagsFromDb(row: Row, columnName: String): Set[String] =
+    H2Utils.tagsFromDb(row, columnName)
 
 }

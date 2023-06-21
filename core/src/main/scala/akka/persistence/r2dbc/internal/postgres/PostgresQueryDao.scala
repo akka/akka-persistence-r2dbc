@@ -35,9 +35,9 @@ import scala.concurrent.duration.FiniteDuration
  * INTERNAL API
  */
 @InternalApi
-object PostgresQueryDao {
+private[r2dbc] object PostgresQueryDao {
   private val log: Logger = LoggerFactory.getLogger(classOf[PostgresQueryDao])
-  private def setFromDb[T](array: Array[T]): Set[T] = array match {
+  def setFromDb[T](array: Array[T]): Set[T] = array match {
     case null    => Set.empty[T]
     case entries => entries.toSet
   }
@@ -118,6 +118,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     FROM $journalTable
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
 
+  protected val selectOneEventWithoutPayloadSql = sql"""
+    SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+    FROM $journalTable
+    WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
+
   protected val selectEventsSql = sql"""
     SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
     from $journalTable
@@ -152,7 +157,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   }
 
   protected def tagsFromDb(row: Row, columnName: String): Set[String] =
-    setFromDb(row.get("tags", classOf[Array[String]]))
+    setFromDb(row.get(columnName, classOf[Array[String]]))
 
   override def rowsBySlices(
       entityType: String,
@@ -272,14 +277,23 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       row => row.get("db_timestamp", classOf[Instant]))
   }
 
-  override def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]] =
+  override def loadEvent(
+      persistenceId: String,
+      seqNr: Long,
+      includePayload: Boolean): Future[Option[SerializedJournalRow]] =
     r2dbcExecutor.selectOne("select one event")(
-      connection =>
+      connection => {
+        val selectSql = if (includePayload) selectOneEventSql else selectOneEventWithoutPayloadSql
         connection
-          .createStatement(selectOneEventSql)
+          .createStatement(selectSql)
           .bind(0, persistenceId)
-          .bind(1, seqNr),
-      row =>
+          .bind(1, seqNr)
+      },
+      row => {
+        val payload =
+          if (includePayload)
+            Some(row.getPayload("event_payload"))
+          else None
         SerializedJournalRow(
           slice = row.get[Integer]("slice", classOf[Integer]),
           entityType = row.get("entity_type", classOf[String]),
@@ -287,12 +301,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           seqNr,
           dbTimestamp = row.get("db_timestamp", classOf[Instant]),
           readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
-          payload = Some(row.getPayload("event_payload")),
+          payload,
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
           tags = tagsFromDb(row, "tags"),
-          metadata = readMetadata(row)))
+          metadata = readMetadata(row))
+      })
 
   override def eventsByPersistenceId(
       persistenceId: String,

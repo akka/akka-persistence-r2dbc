@@ -135,8 +135,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         row.slice,
         filtered = false,
         source = "",
-        tags = Set.empty
-      ) // FIXME tags would be needed for filters. We could store same tags as for the corresponding event.
+        tags = row.tags)
     }
 
     val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
@@ -496,7 +495,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
     queryDao
-      .loadEvent(persistenceId, sequenceNr)
+      .loadEvent(persistenceId, sequenceNr, includePayload = true)
       .map {
         case Some(row) => deserializeBySliceRow(row)
         case None =>

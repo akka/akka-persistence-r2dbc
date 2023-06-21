@@ -123,7 +123,7 @@ class EventsBySliceStartingFromSnapshotSpec
             snapshotAckProbe.expectMessage(17L)
           } else
             persister ! PersistWithAck(s"e-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
           doQuery(entityType, slice, slice, NoOffset)
@@ -176,7 +176,7 @@ class EventsBySliceStartingFromSnapshotSpec
             snapshotAckProbe.expectMessage(17L)
           } else
             persister ! PersistWithAck(s"e-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
           doQuery(entityType, slice, slice, NoOffset)
@@ -191,22 +191,31 @@ class EventsBySliceStartingFromSnapshotSpec
 
       }
 
-      "includes tags" in new Setup {
-        // FIXME test tags of snapshots
+      "includes tags in snapshot" in new Setup {
         val taggingPersister: ActorRef[Persister.Command] =
           spawn(TestActors.Persister.withSnapshotAck(persistenceId, tags = Set("tag-A"), snapshotAckProbe.ref))
-        for (i <- 1 to 3) {
-          taggingPersister ! PersistWithAck(s"f-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
-        }
+
+        taggingPersister ! PersistWithAck(s"e-1", probe.ref)
+        probe.expectMessage(Done)
+        taggingPersister ! PersistWithAck(s"e-2-snap", probe.ref)
+        snapshotAckProbe.expectMessage(2L)
+        probe.expectMessage(Done)
+        taggingPersister ! PersistWithAck(s"e-3", probe.ref)
+        probe.expectMessage(Done)
 
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
           doQuery(entityType, slice, slice, NoOffset)
             .runWith(TestSink())
+        result.request(2)
 
-        result.request(3)
-        val envelopes = result.expectNextN(3)
-        envelopes.map(_.tags) should ===(Seq(Set("tag-A"), Set("tag-A"), Set("tag-A")))
+        val snapshotEnvelope = result.expectNext()
+        snapshotEnvelope.event shouldBe expectedSnapshotEvent(2)
+        snapshotEnvelope.tags shouldBe Set("tag-A")
+
+        val e3Envelope = result.expectNext()
+        e3Envelope.event shouldBe "e-3"
+        e3Envelope.tags shouldBe Set("tag-A")
+
       }
 
     }

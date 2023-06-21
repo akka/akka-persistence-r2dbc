@@ -157,6 +157,7 @@ private[r2dbc] object H2Dialect extends Dialect {
           ser_id INTEGER NOT NULL,
           ser_manifest VARCHAR(255) NOT NULL,
           snapshot BYTEA NOT NULL,
+          tags TEXT ARRAY,
           meta_ser_id INTEGER,
           meta_ser_manifest VARCHAR(255),
           meta_payload BYTEA,

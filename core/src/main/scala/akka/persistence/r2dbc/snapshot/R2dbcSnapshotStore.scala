@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.snapshot
 
+import java.time.Instant
+
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
@@ -50,14 +52,14 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   private implicit val system: ActorSystem[_] = context.system.toTyped
   private val persistenceExt = Persistence(system)
 
-  private val dao = {
-    val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
-    val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
-    log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
-    settings.connectionFactorySettings.dialect.createSnapshotDao(
-      settings,
-      ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
-  }
+  val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
+  val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
+
+  private val connectionFactory =
+    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
+  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)
+  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)
 
   def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =
     dao
@@ -81,19 +83,30 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
       SerializedSnapshotMetadata(serializedMeta, metaSerializer.identifier, metaManifest)
     }
 
-    val serializedRow = SerializedSnapshotRow(
-      slice,
-      entityType,
-      metadata.persistenceId,
-      metadata.sequenceNr,
-      SnapshotDao.EmptyDbTimestamp,
-      metadata.timestamp,
-      serializedSnapshot,
-      snapshotSerializer.identifier,
-      snapshotManifest,
-      serializedMeta)
+    // use same timestamp and tags as the corresponding event, if it exists
+    queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false).flatMap { eventEnvOpt =>
+      val (timestamp, tags) = eventEnvOpt match {
+        case Some(eventEnv) =>
+          (eventEnv.dbTimestamp, eventEnv.tags)
+        case None =>
+          (Instant.ofEpochMilli(metadata.timestamp), Set.empty[String])
+      }
 
-    dao.store(serializedRow)
+      val serializedRow = SerializedSnapshotRow(
+        slice,
+        entityType,
+        metadata.persistenceId,
+        metadata.sequenceNr,
+        timestamp,
+        metadata.timestamp,
+        serializedSnapshot,
+        snapshotSerializer.identifier,
+        snapshotManifest,
+        tags,
+        serializedMeta)
+
+      dao.store(serializedRow)
+    }
   }
 
   def deleteAsync(metadata: SnapshotMetadata): Future[Unit] = {
