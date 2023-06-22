@@ -241,8 +241,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
               val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
               TimestampOffset(minTimestamp, Map.empty)
-            } else
-              offset // FIXME not sure if we should adjust also for this case
+            } else {
+              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
+              // but there can still be events between the given `offset` parameter and the min timestamp of the
+              // snapshots and those would then be missed
+              offset
+            }
 
           log.debug(
             "currentEventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
@@ -294,8 +298,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
               val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
               TimestampOffset(minTimestamp, Map.empty)
-            } else
-              offset // FIXME not sure if we should adjust also for this case
+            } else {
+              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
+              // but there can still be events between the given `offset` parameter and the min timestamp of the
+              // snapshots and those would then be missed
+              offset
+            }
 
           log.debug(
             "eventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
