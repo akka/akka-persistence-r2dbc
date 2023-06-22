@@ -162,7 +162,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     bySlice
-      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
+      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
 
   /**
@@ -198,7 +198,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
-    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
+    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
     if (settings.journalPublishEvents) {
       val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
       mergeDbAndPubSubSources(dbSource, pubSubSource)
@@ -231,7 +231,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](transformSnapshot)
-        .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
+        .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset)
 
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
@@ -249,7 +249,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             initOffset,
             snapshotOffsets.size)
 
-          bySlice.currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, initOffset, snapshotOffsets)
+          bySlice.currentBySlices(
+            "currentEventsBySlices",
+            entityType,
+            minSlice,
+            maxSlice,
+            initOffset,
+            filterEventsBeforeSnapshots(snapshotOffsets))
         }))
   }
 
@@ -278,7 +284,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](transformSnapshot)
-        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset, Map.empty)
+        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
 
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
@@ -297,14 +303,52 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             snapshotOffsets.size)
 
           val dbSource =
-            bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, initOffset, snapshotOffsets)
+            bySlice[Event].liveBySlices(
+              "eventsBySlices",
+              entityType,
+              minSlice,
+              maxSlice,
+              initOffset,
+              filterEventsBeforeSnapshots(snapshotOffsets))
 
           if (settings.journalPublishEvents) {
+            // Note that events via PubSub are not filtered by snapshotOffsets. It's unlikely that
+            // Those will be earlier than the snapshots and duplicates must be handled downstream in that case.
+            // If we would use the filterEventsBeforeSnapshots function for PubSub it would be difficult to
+            // know when memory of that Map can be released or the filter function would have to be shared
+            // and thread safe, which is not worth it.
             val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
             mergeDbAndPubSubSources(dbSource, pubSubSource)
           } else
             dbSource
         }))
+  }
+
+  /**
+   * Stateful filter function that decides if (persistenceId, seqNr, source) should be emitted by
+   * `eventsBySlicesStartingFromSnapshots` and `currentEventsBySlicesStartingFromSnapshots`.
+   */
+  private def filterEventsBeforeSnapshots(
+      snapshotOffsets: Map[String, (Long, Instant)]): (String, Long, String) => Boolean = {
+    var _snapshotOffsets = snapshotOffsets
+    (persistenceId, seqNr, source) => {
+      if (_snapshotOffsets.isEmpty)
+        true
+      else
+        _snapshotOffsets.get(persistenceId) match {
+          case None                     => true
+          case Some((snapshotSeqNr, _)) =>
+            //  release memory by removing from the _snapshotOffsets Map
+            if (settings.querySettings.backtrackingEnabled) {
+              if (source == EnvelopeOrigin.SourceBacktracking)
+                _snapshotOffsets -= persistenceId
+            } else if (source == EnvelopeOrigin.SourceQuery) {
+              _snapshotOffsets -= persistenceId
+            }
+
+            seqNr > snapshotSeqNr
+        }
+    }
   }
 
   private def checkStartFromSnapshotEnabled(methodName: String): Unit =

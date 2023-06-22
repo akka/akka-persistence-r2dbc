@@ -144,6 +144,7 @@ import org.slf4j.Logger
     def seqNr: Long
     def dbTimestamp: Instant
     def readDbTimestamp: Instant
+    def isPayloadDefined: Boolean
   }
 
   trait Dao[SerializedRow] {
@@ -198,7 +199,7 @@ import org.slf4j.Logger
       minSlice: Int,
       maxSlice: Int,
       offset: Offset,
-      snapshotOffsets: Map[String, (Long, Instant)]): Source[Envelope, NotUsed] = {
+      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState =
@@ -240,16 +241,8 @@ import org.slf4j.Logger
               behindCurrentTime = Duration.Zero,
               backtracking = false)
             .filter { row =>
-              if (snapshotOffsets.isEmpty)
-                true
-              else
-                snapshotOffsets.get(row.persistenceId) match {
-                  case None                     => true
-                  case Some((snapshotSeqNr, _)) =>
-                    // FIXME when equal to the snapshotSeqNr we can remove entry from the snapshotOffsets
-                    // Map to release memory
-                    row.seqNr > snapshotSeqNr
-                }
+              val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+              filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
             }
             .via(deserializeAndAddOffset(state.latest)))
       } else {
@@ -299,7 +292,7 @@ import org.slf4j.Logger
       minSlice: Int,
       maxSlice: Int,
       offset: Offset,
-      snapshotOffsets: Map[String, (Long, Instant)]): Source[Envelope, NotUsed] = {
+      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
@@ -445,16 +438,8 @@ import org.slf4j.Logger
             behindCurrentTime,
             backtracking = newState.backtracking)
           .filter { row =>
-            if (snapshotOffsets.isEmpty)
-              true
-            else
-              snapshotOffsets.get(row.persistenceId) match {
-                case None                     => true
-                case Some((snapshotSeqNr, _)) =>
-                  // FIXME when equal to the snapshotSeqNr we can remove entry from the snapshotOffsets
-                  // Map to release memory, at least when it's from backtracking
-                  row.seqNr > snapshotSeqNr
-              }
+            val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+            filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
           }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }

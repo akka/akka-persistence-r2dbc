@@ -30,6 +30,7 @@ import scala.concurrent.Future
       tags: Set[String])
       extends BySliceQuery.SerializedRow {
     override def seqNr: Long = revision
+    override def isPayloadDefined: Boolean = payload.isDefined
   }
 
 }
