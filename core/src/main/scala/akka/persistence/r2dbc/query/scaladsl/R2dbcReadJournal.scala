@@ -348,10 +348,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           case None                     => true
           case Some((snapshotSeqNr, _)) =>
             //  release memory by removing from the _snapshotOffsets Map
-            if (backtrackingEnabled) {
-              if (source == EnvelopeOrigin.SourceBacktracking)
-                _snapshotOffsets -= persistenceId
-            } else if (source == EnvelopeOrigin.SourceQuery) {
+            if (seqNr == snapshotSeqNr &&
+              ((backtrackingEnabled && source == EnvelopeOrigin.SourceBacktracking) ||
+              (!backtrackingEnabled && source == EnvelopeOrigin.SourceQuery))) {
               _snapshotOffsets -= persistenceId
             }
 
