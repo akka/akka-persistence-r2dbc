@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS snapshot(
   ser_id INTEGER NOT NULL,
   ser_manifest VARCHAR(255) NOT NULL,
   snapshot JSONB NOT NULL,
+  tags TEXT ARRAY,
   meta_ser_id INTEGER,
   meta_ser_manifest VARCHAR(255),
   meta_payload BYTEA,
