@@ -6,3 +6,4 @@ ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.pos
 # internals
 ProblemFilters.exclude[Problem]("akka.persistence.r2dbc.internal.SnapshotDao#SerializedSnapshotRow*")
 ProblemFilters.exclude[MissingTypesProblem]("akka.persistence.r2dbc.internal.SnapshotDao$SerializedSnapshotRow$")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#SerializedRow.isPayloadDefined")
