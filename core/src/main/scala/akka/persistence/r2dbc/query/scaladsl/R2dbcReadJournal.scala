@@ -40,7 +40,7 @@ import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
-import akka.persistence.r2dbc.query.internal.StartingFromSnapshotStage
+import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy

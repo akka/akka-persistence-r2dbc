@@ -2,7 +2,7 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.query.internal
+package akka.persistence.r2dbc.internal
 
 import java.time.Instant
 
