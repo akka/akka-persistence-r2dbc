@@ -27,12 +27,23 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 
-  override protected def createUpsertSql: String = sql"""
-    MERGE INTO $snapshotTable
-    (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest)
-    KEY (persistence_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  """
+  override protected def createUpsertSql: String = {
+    // db_timestamp and tags columns were added in 1.2.0
+    if (settings.querySettings.startFromSnapshotEnabled)
+      sql"""
+      MERGE INTO $snapshotTable
+      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
+      KEY (persistence_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """
+    else
+      sql"""
+      MERGE INTO $snapshotTable
+      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+      KEY (persistence_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """
+  }
 
   override protected def tagsFromDb(row: Row, columnName: String): Set[String] =
     H2Utils.tagsFromDb(row, columnName)

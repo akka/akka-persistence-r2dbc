@@ -44,6 +44,8 @@ object EventsBySliceStartingFromSnapshotSpec {
   def config: Config =
     TestConfig.backtrackingDisabledConfig
       .withFallback(ConfigFactory.parseString(s"""
+    akka.persistence.r2dbc.query.start-from-snapshot.enabled = true
+
     # This test is not using backtracking, so increase behind-current-time to
     # reduce risk of missing events
     akka.persistence.r2dbc.query.behind-current-time = 500 millis

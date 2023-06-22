@@ -17,6 +17,8 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
@@ -83,8 +85,14 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
       SerializedSnapshotMetadata(serializedMeta, metaSerializer.identifier, metaManifest)
     }
 
-    // use same timestamp and tags as the corresponding event, if it exists
-    queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false).flatMap { eventEnvOpt =>
+    val correspondingEvent: Future[Option[JournalDao.SerializedJournalRow]] =
+      if (settings.querySettings.startFromSnapshotEnabled)
+        queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false)
+      else
+        Future.successful(None)
+
+    // use same timestamp and tags as the corresponding event, if startFromSnapshotEnabled and event exists
+    correspondingEvent.flatMap { eventEnvOpt =>
       val (timestamp, tags) = eventEnvOpt match {
         case Some(eventEnv) =>
           (eventEnv.dbTimestamp, eventEnv.tags)

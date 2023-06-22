@@ -57,23 +57,41 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
   private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
 
-  protected def createUpsertSql: String =
-    sql"""
+  protected def createUpsertSql: String = {
+    // db_timestamp and tags columns were added in 1.2.0
+    if (settings.querySettings.startFromSnapshotEnabled)
+      sql"""
+        INSERT INTO $snapshotTable
+        (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (persistence_id)
+        DO UPDATE SET
+          seq_nr = excluded.seq_nr,
+          db_timestamp = excluded.db_timestamp,
+          write_timestamp = excluded.write_timestamp,
+          snapshot = excluded.snapshot,
+          ser_id = excluded.ser_id,
+          tags = excluded.tags,
+          ser_manifest = excluded.ser_manifest,
+          meta_payload = excluded.meta_payload,
+          meta_ser_id = excluded.meta_ser_id,
+          meta_ser_manifest = excluded.meta_ser_manifest"""
+    else
+      sql"""
       INSERT INTO $snapshotTable
-      (slice, entity_type, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (persistence_id)
       DO UPDATE SET
         seq_nr = excluded.seq_nr,
-        db_timestamp = excluded.db_timestamp,
         write_timestamp = excluded.write_timestamp,
         snapshot = excluded.snapshot,
         ser_id = excluded.ser_id,
-        tags = excluded.tags,
         ser_manifest = excluded.ser_manifest,
         meta_payload = excluded.meta_payload,
         meta_ser_id = excluded.meta_ser_id,
         meta_ser_manifest = excluded.meta_ser_manifest"""
+  }
 
   private val upsertSql = createUpsertSql
 
@@ -94,8 +112,17 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       if (criteria.minTimestamp != 0L) " AND write_timestamp >= ?"
       else ""
 
-    sql"""
-      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
+    // db_timestamp and tags columns were added in 1.2.0
+    if (settings.querySettings.startFromSnapshotEnabled)
+      sql"""
+        SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
+        FROM $snapshotTable
+        WHERE persistence_id = ?
+        $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
+        LIMIT 1"""
+    else
+      sql"""
+      SELECT slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
       FROM $snapshotTable
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
@@ -157,18 +184,34 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def tagsFromDb(row: Row, columnName: String): Set[String] =
     setFromDb(row.get(columnName, classOf[Array[String]]))
 
-  private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow =
+  private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow = {
+    val writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long])
+    // db_timestamp and tags columns were added in 1.2.0
+    val dbTimestamp =
+      if (settings.querySettings.startFromSnapshotEnabled)
+        row.get("db_timestamp", classOf[Instant]) match {
+          case null => Instant.ofEpochMilli(writeTimestamp)
+          case t    => t
+        }
+      else
+        Instant.ofEpochMilli(writeTimestamp)
+    val tags =
+      if (settings.querySettings.startFromSnapshotEnabled)
+        tagsFromDb(row, "tags")
+      else
+        Set.empty[String]
+
     SerializedSnapshotRow(
       slice = row.get[Integer]("slice", classOf[Integer]),
       entityType,
       persistenceId = row.get("persistence_id", classOf[String]),
       seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-      dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-      writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long]),
+      dbTimestamp,
+      writeTimestamp,
       snapshot = row.getPayload("snapshot"),
       serializerId = row.get[Integer]("ser_id", classOf[Integer]),
       serializerManifest = row.get("ser_manifest", classOf[String]),
-      tags = tagsFromDb(row, "tags"),
+      tags,
       metadata = {
         val metaSerializerId = row.get("meta_ser_id", classOf[Integer])
         if (metaSerializerId eq null) None
@@ -179,6 +222,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
               metaSerializerId,
               row.get("meta_ser_manifest", classOf[String])))
       })
+  }
 
   override def load(
       persistenceId: String,
@@ -226,24 +270,29 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
               .bind(1, serializedRow.entityType)
               .bind(2, serializedRow.persistenceId)
               .bind(3, serializedRow.seqNr)
-              .bind(4, serializedRow.dbTimestamp)
-              .bind(5, serializedRow.writeTimestamp)
-              .bindPayload(6, serializedRow.snapshot)
-              .bind(7, serializedRow.serializerId)
-              .bind(8, serializedRow.serializerManifest)
-              .bind(9, serializedRow.tags.toArray)
+              .bind(4, serializedRow.writeTimestamp)
+              .bindPayload(5, serializedRow.snapshot)
+              .bind(6, serializedRow.serializerId)
+              .bind(7, serializedRow.serializerManifest)
 
           serializedRow.metadata match {
             case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
               statement
-                .bind(10, serializedMeta)
-                .bind(11, serializerId)
-                .bind(12, serializerManifest)
+                .bind(8, serializedMeta)
+                .bind(9, serializerId)
+                .bind(10, serializerManifest)
             case None =>
               statement
-                .bindNull(10, classOf[Array[Byte]])
-                .bindNull(11, classOf[Integer])
-                .bindNull(12, classOf[String])
+                .bindNull(8, classOf[Array[Byte]])
+                .bindNull(9, classOf[Integer])
+                .bindNull(10, classOf[String])
+          }
+
+          // db_timestamp and tags columns were added in 1.2.0
+          if (settings.querySettings.startFromSnapshotEnabled) {
+            statement
+              .bind(11, serializedRow.dbTimestamp)
+              .bind(12, serializedRow.tags.toArray)
           }
 
           statement
@@ -278,6 +327,9 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     }
   }.map(_ => ())(ExecutionContexts.parasitic)
 
+  /**
+   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
+   */
   override def currentDbTimestamp(): Future[Instant] = {
     r2dbcExecutor
       .selectOne("select current db timestamp")(
@@ -289,6 +341,9 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       }
   }
 
+  /**
+   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
+   */
   override def rowsBySlices(
       entityType: String,
       minSlice: Int,
@@ -315,10 +370,14 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   }
 
   /**
-   * Counts for a bucket may become inaccurate when existing snapshots are updated since the timestamp is changed.
+   * Counts for a bucket may become inaccurate when existing snapshots are updated since the timestamp is changed. This
+   * is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
    */
   override def countBucketsMayChange: Boolean = true
 
+  /**
+   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
+   */
   override def countBuckets(
       entityType: String,
       minSlice: Int,

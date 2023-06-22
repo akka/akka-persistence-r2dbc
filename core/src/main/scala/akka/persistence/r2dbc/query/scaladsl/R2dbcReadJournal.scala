@@ -206,12 +206,27 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       dbSource
   }
 
+  /**
+   * Same as `currentEventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing
+   * number of events that have to be loaded. This can be useful if the consumer start from zero without any previously
+   * processed offset or if it has been disconnected for a long while and its offset is far behind.
+   *
+   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
+   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+   *
+   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   *
+   * To use `currentEventsBySlicesStartingFromSnapshots` you must enable configuration
+   * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots
+   */
   def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
       offset: Offset,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("currentEventsBySlicesStartingFromSnapshots")
     val timestampOffset = toTimestampOffset(offset)
 
     val snapshotSource =
@@ -247,6 +262,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
    *
    * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   *
+   * To use `eventsBySlicesStartingFromSnapshots` you must enable configuration
+   * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots
    */
   def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
@@ -254,6 +273,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("eventsBySlicesStartingFromSnapshots")
     val timestampOffset = toTimestampOffset(offset)
 
     val snapshotSource =
@@ -285,8 +305,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           } else
             dbSource
         }))
-
   }
+
+  private def checkStartFromSnapshotEnabled(methodName: String): Unit =
+    if (!settings.querySettings.startFromSnapshotEnabled)
+      throw new IllegalArgumentException(
+        s"To use $methodName you must enable " +
+        "configuration `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in " +
+        "migration guide https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots")
 
   private def eventsBySlicesPubSubSource[Event](
       entityType: String,

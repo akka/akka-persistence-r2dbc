@@ -66,12 +66,12 @@ object EventsBySliceSpec {
 }
 
 class EventsBySliceSpec
-    extends ScalaTestWithActorTestKit(EventsBySliceStartingFromSnapshotSpec.config)
+    extends ScalaTestWithActorTestKit(EventsBySliceSpec.config)
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
     with LogCapturing {
-  import EventsBySliceStartingFromSnapshotSpec._
+  import EventsBySliceSpec._
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
