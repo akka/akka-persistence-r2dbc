@@ -88,7 +88,25 @@ with the same timestamp are ordered by sequence number.
 `currentEventsBySlices` doesn't perform these backtracking queries and will not emit duplicates and the
 event payload is always full loaded.
 
-## Publish events for lower latency of eventsBySlices
+### eventsBySlicesStartingFromSnapshots
+
+Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
+events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
+offset or if it has been disconnected for a long while and its offset is far behind.
+
+First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
+snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+
+After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+
+To use `eventsBySlicesStartingFromSnapshots` or `currentEventsBySlicesStartingFromSnapshots` you must follow
+instructions in @ref:[migration guide](migration-guide.md#eventsBySlicesStartingFromSnapshots) and enable configuration:
+
+```hcon
+akka.persistence.r2dbc.query.start-from-snapshot.enabled = true
+```
+
+### Publish events for lower latency of eventsBySlices
 
 The `eventsBySlices` query polls the database periodically to find new events. By default, this interval is a
 few seconds, see `akka.persistence.r2dbc.query.refresh-interval` in the @ref:[Configuration](#configuration).

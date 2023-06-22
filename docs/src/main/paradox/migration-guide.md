@@ -11,7 +11,7 @@ Remove `akka.persistence.r2dbc.dialect` from the config if present
 Choose dialect by configuring the `connection-factory` block:
 
 Postgres:
-```hocon
+: ```hocon
 akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.postgres}
 akka.persistence.r2dbc.connection-factory {
   # only overrides from the default values needs to be defined
@@ -21,7 +21,7 @@ akka.persistence.r2dbc.connection-factory {
 ```
 
 Yugabyte:
-```hocon
+: ```hocon
 akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.yugabyte}
 akka.persistence.r2dbc.connection-factory {
   # only overrides from the default values needs to be defined
@@ -37,8 +37,8 @@ Some accessors on the @apidoc[R2dbcSettings] class has been removed, the `Connec
 
 ### Optional changes for eventsBySlicesStartingFromSnapshots
 
-These changes are only needed if you use the new feature of using snapshots as starting points for
-`eventsBySlices` queries. the `snapshot` table.
+These changes are only needed if you use the @ref:[new feature of using snapshots as starting points](query.md#eventsbyslicesstartingfromsnapshots)
+for `eventsBySlices` queries.
 
 The `snapshot` table must be altered to add two new columns:
 
@@ -58,12 +58,12 @@ Populate the two new columns in the `snapshot` table from corresponding events i
 
 Postgres:
 : ```sql
-update snapshot s set db_timestamp = e.db_timestamp, tags = e.tags from event_journal e where s.persistence_id = e.persistence_id and s.seq_nr = e.seq_nr;
+UPDATE snapshot s SET db_timestamp = e.db_timestamp, tags = e.tags FROM event_journal e WHERE s.persistence_id = e.persistence_id and s.seq_nr = e.seq_nr;
 ```
 
 Yugabyte:
 : ```sql
-update snapshot s set db_timestamp = e.db_timestamp, tags = e.tags from event_journal e where s.persistence_id = e.persistence_id and s.seq_nr = e.seq_nr;
+UPDATE snapshot s SET db_timestamp = e.db_timestamp, tags = e.tags FROM event_journal e WHERE s.persistence_id = e.persistence_id and s.seq_nr = e.seq_nr;
 ```
 
 A new index must be added to the `snapshot` table:

@@ -218,7 +218,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * To use `currentEventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
-   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
   def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
@@ -259,7 +259,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             minSlice,
             maxSlice,
             initOffset,
-            filterEventsBeforeSnapshots(snapshotOffsets))
+            filterEventsBeforeSnapshots(snapshotOffsets, backtrackingEnabled = false))
         }))
   }
 
@@ -275,7 +275,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * To use `eventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
-   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
   def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
@@ -317,7 +317,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               minSlice,
               maxSlice,
               initOffset,
-              filterEventsBeforeSnapshots(snapshotOffsets))
+              filterEventsBeforeSnapshots(snapshotOffsets, settings.querySettings.backtrackingEnabled))
 
           if (settings.journalPublishEvents) {
             // Note that events via PubSub are not filtered by snapshotOffsets. It's unlikely that
@@ -337,7 +337,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * `eventsBySlicesStartingFromSnapshots` and `currentEventsBySlicesStartingFromSnapshots`.
    */
   private def filterEventsBeforeSnapshots(
-      snapshotOffsets: Map[String, (Long, Instant)]): (String, Long, String) => Boolean = {
+      snapshotOffsets: Map[String, (Long, Instant)],
+      backtrackingEnabled: Boolean): (String, Long, String) => Boolean = {
     var _snapshotOffsets = snapshotOffsets
     (persistenceId, seqNr, source) => {
       if (_snapshotOffsets.isEmpty)
@@ -347,7 +348,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           case None                     => true
           case Some((snapshotSeqNr, _)) =>
             //  release memory by removing from the _snapshotOffsets Map
-            if (settings.querySettings.backtrackingEnabled) {
+            if (backtrackingEnabled) {
               if (source == EnvelopeOrigin.SourceBacktracking)
                 _snapshotOffsets -= persistenceId
             } else if (source == EnvelopeOrigin.SourceQuery) {
@@ -364,7 +365,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       throw new IllegalArgumentException(
         s"To use $methodName you must enable " +
         "configuration `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in " +
-        "migration guide https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration.html#eventsBySlicesStartingFromSnapshots")
+        "migration guide https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots")
 
   private def eventsBySlicesPubSubSource[Event](
       entityType: String,
