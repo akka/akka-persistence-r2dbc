@@ -8,23 +8,20 @@ import java.time.Instant
 import java.util
 import java.util.Optional
 import java.util.concurrent.CompletionStage
+
 import scala.compat.java8.OptionConverters._
 import scala.compat.java8.FutureConverters._
+
 import akka.NotUsed
 import akka.dispatch.ExecutionContexts
 import akka.japi.Pair
-import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
+import akka.persistence.query.{EventEnvelope => ClassicEventEnvelope}
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl._
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.javadsl.{
-  CurrentEventsByPersistenceIdTypedQuery,
-  CurrentEventsBySliceQuery,
-  EventTimestampQuery,
-  EventsByPersistenceIdTypedQuery,
-  EventsBySliceQuery,
-  LoadEventQuery
-}
+import akka.persistence.query.typed.javadsl.CurrentEventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.javadsl.EventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.javadsl.{CurrentEventsByPersistenceIdTypedQuery, CurrentEventsBySliceQuery, EventTimestampQuery, EventsByPersistenceIdTypedQuery, EventsBySliceQuery, LoadEventQuery}
 import akka.persistence.r2dbc.query.scaladsl
 import akka.stream.javadsl.Source
 
@@ -36,6 +33,8 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
+      with CurrentEventsBySliceStartingFromSnapshotsQuery
+      with EventsBySliceStartingFromSnapshotsQuery
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
@@ -104,7 +103,7 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
    * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
-  def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
+  override def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -128,7 +127,7 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
    * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
-  def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
+  override def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,

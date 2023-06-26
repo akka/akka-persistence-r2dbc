@@ -27,9 +27,11 @@ import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
@@ -61,6 +63,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
+    with CurrentEventsBySliceStartingFromSnapshotsQuery
+    with EventsBySliceStartingFromSnapshotsQuery
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
@@ -220,7 +224,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
    * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
-  def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
+  override def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -277,7 +281,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
    * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
-  def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
+  override def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
