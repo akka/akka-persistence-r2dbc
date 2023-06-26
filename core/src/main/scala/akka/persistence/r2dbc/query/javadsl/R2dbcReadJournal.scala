@@ -15,13 +15,20 @@ import scala.compat.java8.FutureConverters._
 import akka.NotUsed
 import akka.dispatch.ExecutionContexts
 import akka.japi.Pair
-import akka.persistence.query.{EventEnvelope => ClassicEventEnvelope}
+import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl._
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.javadsl.CurrentEventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.javadsl.EventsBySliceStartingFromSnapshotsQuery
-import akka.persistence.query.typed.javadsl.{CurrentEventsByPersistenceIdTypedQuery, CurrentEventsBySliceQuery, EventTimestampQuery, EventsByPersistenceIdTypedQuery, EventsBySliceQuery, LoadEventQuery}
+import akka.persistence.query.typed.javadsl.{
+  CurrentEventsByPersistenceIdTypedQuery,
+  CurrentEventsBySliceQuery,
+  EventTimestampQuery,
+  EventsByPersistenceIdTypedQuery,
+  EventsBySliceQuery,
+  LoadEventQuery
+}
 import akka.persistence.r2dbc.query.scaladsl
 import akka.stream.javadsl.Source
 
@@ -33,8 +40,8 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
-      with CurrentEventsBySliceStartingFromSnapshotsQuery
-      with EventsBySliceStartingFromSnapshotsQuery
+    with CurrentEventsBySliceStartingFromSnapshotsQuery
+    with EventsBySliceStartingFromSnapshotsQuery
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery

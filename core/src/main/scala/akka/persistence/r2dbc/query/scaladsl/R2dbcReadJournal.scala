@@ -240,7 +240,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
         snapshotSource,
-        snapshotOffsets => {
+        { snapshotOffsets =>
           val initOffset =
             if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
               val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
@@ -297,7 +297,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
         snapshotSource,
-        snapshotOffsets => {
+        { snapshotOffsets =>
           val initOffset =
             if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
               val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2

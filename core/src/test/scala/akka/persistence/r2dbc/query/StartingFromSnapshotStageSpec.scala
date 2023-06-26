@@ -69,7 +69,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
         Source.fromGraph(
           new StartingFromSnapshotStage(
             Source(snapshotEnvelopes),
-            snapshotOffsets => {
+            { snapshotOffsets =>
               val moreEnvelopes =
                 snapshotOffsets.iterator
                   .map { case (pid, (seqNr, _)) =>
