@@ -29,6 +29,24 @@ Java
 Scala
 :  @@snip [create](/docs/src/test/scala/docs/home/query/QueryDocCompileOnly.scala) { #currentEventsByPersistenceId }
 
+### eventsByPersistenceIdStartingFromSnapshot
+
+Same as `eventsByPersistenceId` but with the purpose to use snapshot as starting point and thereby reducing number of
+events that have to be loaded.
+
+First it tries to load the snapshot, if any, with sequence number within the given `fromSequenceNr` and
+`toSequenceNr` (inclusive) range. There is at most one snapshot per persistenceId. The snapshot is transformed to
+an event with the given `transformSnapshot` function.
+
+After emitting the snapshot event the ordinary events with sequence numbers after the snapshots are emitted.
+
+To use `eventsByPersistenceIdStartingFromSnapshot` or `currentEventsByPersistenceIdStartingFromSnapshot` you must follow
+instructions in @ref:[migration guide](migration-guide.md#eventsBySlicesStartingFromSnapshots) and enable configuration:
+
+```hcon
+akka.persistence.r2dbc.query.start-from-snapshot.enabled = true
+```
+
 ### eventsBySlices
 
 The `eventsBySlices` and `currentEventsBySlices` queries are useful for retrieving all events for a given entity type.
