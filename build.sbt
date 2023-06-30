@@ -21,6 +21,10 @@ inThisBuild(
       "Contributors",
       "https://gitter.im/akka/dev",
       url("https://github.com/akka/akka-persistence-r2dbc/graphs/contributors")),
+    releaseNotesURL := (
+      if (isSnapshot.value) None
+      else Some(url(s"https://github.com/akka/akka-persistence-r2dbc/releases/tag/v${version.value}"))
+    ),
     licenses := Seq(
       ("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))
     ), // FIXME change s/main/v1.1.0/ before releasing 1.1.0
