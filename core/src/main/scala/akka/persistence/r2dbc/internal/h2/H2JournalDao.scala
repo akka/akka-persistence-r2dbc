@@ -109,7 +109,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
         })
       if (log.isDebugEnabled()) {
         result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
+          log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, events.head.persistenceId)
         }
       }
       result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)

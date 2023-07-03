@@ -229,7 +229,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
         row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
         result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
+          log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, events.head.persistenceId)
         }
       result.map(_.head)(ExecutionContexts.parasitic)
     }
