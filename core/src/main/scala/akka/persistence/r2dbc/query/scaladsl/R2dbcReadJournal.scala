@@ -100,7 +100,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private def deserializePayload[Event](row: SerializedJournalRow): Option[Event] =
     if (row.serId != 34) // Magic number: FilteredPayloadSerializer id from akka-persistence
       row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
-    else None
+    else
+      None
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
@@ -744,7 +745,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       metadata,
       row.entityType,
       row.slice,
-      filtered = false,
+      filtered = event.isEmpty,
       source,
       tags = row.tags)
   }

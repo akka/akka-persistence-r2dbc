@@ -11,6 +11,7 @@ import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.{ ActorRef, ActorSystem }
+import akka.persistence.FilteredPayload
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
@@ -246,6 +247,28 @@ class EventsBySliceSpec
         envelopes.map(_.tags) should ===(Seq(Set("tag-A"), Set("tag-A"), Set("tag-A")))
 
         query.loadEnvelope[String](persistenceId, 1L).futureValue.tags shouldBe Set("tag-A")
+      }
+
+      "mark FilteredEventPayload as filtered with no payload when reading it" in new Setup {
+        persister ! PersistWithAck(FilteredPayload, probe.ref)
+        probe.receiveMessage()
+
+        {
+          val result: TestSubscriber.Probe[EventEnvelope[String]] =
+            doQuery(entityType, slice, slice, NoOffset)
+              .runWith(TestSink())
+
+          result.request(1)
+          val envelope = result.expectNext()
+          envelope.filtered should be(true)
+          envelope.eventOption should be(empty)
+        }
+
+        {
+          val envelope = query.loadEnvelope[String](persistenceId, 1L).futureValue
+          envelope.filtered should ===(true)
+          envelope.eventOption should be(empty)
+        }
       }
 
     }
