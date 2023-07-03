@@ -1,0 +1,6 @@
+# internals
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.JournalDao#SerializedJournalRow.this")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.JournalDao#SerializedJournalRow.copy")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.internal.JournalDao#SerializedJournalRow.unapply")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.JournalDao#SerializedJournalRow.apply")
+ProblemFilters.exclude[MissingTypesProblem]("akka.persistence.r2dbc.internal.JournalDao$SerializedJournalRow$")
