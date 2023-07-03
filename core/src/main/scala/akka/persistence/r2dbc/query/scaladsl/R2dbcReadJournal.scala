@@ -118,7 +118,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         metadata,
         row.entityType,
         row.slice,
-        filtered = event.isEmpty,
+        filtered = event.isEmpty && !row.payloadLazyLoaded,
         source,
         tags = row.tags)
     }
@@ -745,7 +745,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       metadata,
       row.entityType,
       row.slice,
-      filtered = event.isEmpty,
+      filtered = event.isEmpty && !row.payloadLazyLoaded,
       source,
       tags = row.tags)
   }

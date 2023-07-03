@@ -202,7 +202,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             serManifest = "",
             writerUuid = "", // not need in this query
             tags = tagsFromDb(row, "tags"),
-            metadata = None)
+            metadata = None,
+            payloadLazyLoaded = true)
         else
           SerializedJournalRow(
             slice = row.get[Integer]("slice", classOf[Integer]),
