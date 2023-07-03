@@ -198,12 +198,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = None, // lazy loaded for backtracking
-            serId = 0,
+            serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = "",
             writerUuid = "", // not need in this query
             tags = tagsFromDb(row, "tags"),
-            metadata = None,
-            payloadLazyLoaded = true)
+            metadata = None)
         else
           SerializedJournalRow(
             slice = row.get[Integer]("slice", classOf[Integer]),

@@ -19,6 +19,7 @@ import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
+import akka.persistence.FilteredPayload
 import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.query.Offset
@@ -46,6 +47,7 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
+import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal.SomeFilteredPayload
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -60,6 +62,8 @@ object R2dbcReadJournal {
   private final case class ByPersistenceIdState(queryCount: Int, rowCount: Int, latestSeqNr: Long)
 
   private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
+
+  private val SomeFilteredPayload = Some(FilteredPayload)
 }
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
@@ -97,28 +101,28 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private lazy val snapshotDao =
     settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)(typedSystem)
 
+  private val filteredPayloadSerId = SerializationExtension(system).findSerializerFor(FilteredPayload).identifier
+
   private def deserializePayload[Event](row: SerializedJournalRow): Option[Event] =
-    if (row.serId != 34) // Magic number: FilteredPayloadSerializer id from akka-persistence
-      row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
-    else
-      None
+    row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
       val event = deserializePayload(row)
       val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
       val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+      val filtered = row.serId == filteredPayloadSerId
 
       new EventEnvelope(
         offset,
         row.persistenceId,
         row.seqNr,
-        event,
+        if (filtered) None else event,
         row.dbTimestamp.toEpochMilli,
         metadata,
         row.entityType,
         row.slice,
-        filtered = event.isEmpty && !row.payloadLazyLoaded,
+        filtered,
         source,
         tags = row.tags)
     }
@@ -736,26 +740,25 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
     val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+    val filtered = row.serId == filteredPayloadSerId
+
     new EventEnvelope(
       offset,
       row.persistenceId,
       row.seqNr,
-      event,
+      if (filtered) None else event,
       row.dbTimestamp.toEpochMilli,
       metadata,
       row.entityType,
       row.slice,
-      filtered = event.isEmpty && !row.payloadLazyLoaded,
+      filtered,
       source,
       tags = row.tags)
   }
 
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
     val event = deserializePayload(row)
-    if (event.isEmpty)
-      throw new IllegalStateException(
-        "Expected event payload to be loaded."
-      ) // FIXME what to do here for filtered events, classic queries simply not possible?
+    // note that it's not possible to filter out FilteredPayload here
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val envelope = ClassicEventEnvelope(offset, row.persistenceId, row.seqNr, event.get, row.dbTimestamp.toEpochMilli)
     row.metadata match {
