@@ -47,7 +47,6 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
-import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal.SomeFilteredPayload
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -62,8 +61,6 @@ object R2dbcReadJournal {
   private final case class ByPersistenceIdState(queryCount: Int, rowCount: Int, latestSeqNr: Long)
 
   private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
-
-  private val SomeFilteredPayload = Some(FilteredPayload)
 }
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
