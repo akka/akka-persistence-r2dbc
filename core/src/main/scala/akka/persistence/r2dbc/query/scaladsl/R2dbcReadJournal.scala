@@ -97,9 +97,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private lazy val snapshotDao =
     settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)(typedSystem)
 
+  private def deserializePayload[Event](row: SerializedJournalRow): Option[Event] =
+    if (row.serId != 34) // Magic number: FilteredPayloadSerializer id from akka-persistence
+      row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
+    else None
+
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
-      val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
+      val event = deserializePayload(row)
       val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
       val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
 
@@ -112,7 +117,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         metadata,
         row.entityType,
         row.slice,
-        filtered = false,
+        filtered = event.isEmpty,
         source,
         tags = row.tags)
     }
@@ -726,8 +731,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
-    val event =
-      row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
+    val event = deserializePayload[Event](row)
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
     val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
@@ -746,9 +750,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
-    val event = row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get)
+    val event = deserializePayload(row)
     if (event.isEmpty)
-      throw new IllegalStateException("Expected event payload to be loaded.")
+      throw new IllegalStateException(
+        "Expected event payload to be loaded."
+      ) // FIXME what to do here for filtered events, classic queries simply not possible?
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
     val envelope = ClassicEventEnvelope(offset, row.persistenceId, row.seqNr, event.get, row.dbTimestamp.toEpochMilli)
     row.metadata match {
