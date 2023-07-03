@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.query
 
+import java.time.Instant
+
 import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
@@ -11,6 +13,7 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
+import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
@@ -65,7 +68,7 @@ class EventsByPersistenceIdSpec
       }
 
     s"$queryType eventsByPersistenceId" should {
-      "populates timestamp offset" in {
+      "populate timestamp offset" in {
         val pid = nextPid()
         val persister = testKit.spawn(Persister(pid))
         val probe = testKit.createTestProbe[Done]()
@@ -76,14 +79,14 @@ class EventsByPersistenceIdSpec
           .runWith(TestSink())
           .request(1)
 
-        sub.expectNextPF {
-          case ClassicEventEnvelope(TimestampOffset(_, _, seen), `pid`, 1, "e-1") if seen == Map(pid -> 1) =>
-        }
+        val env = sub.expectNext()
+        toTimestampOffset(env.offset).seen shouldBe Map(pid -> 1)
+        toTimestampOffset(env.offset).timestamp should not be Instant.EPOCH
 
         assertFinished(sub)
       }
 
-      "return all events then complete" in {
+      "return all events" in {
         val pid = nextPid()
         val persister = testKit.spawn(Persister(pid))
         val probe = testKit.createTestProbe[Done]()

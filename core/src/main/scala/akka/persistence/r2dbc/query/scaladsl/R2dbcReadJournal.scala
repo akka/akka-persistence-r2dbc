@@ -20,15 +20,18 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceStartingFromSnapshotsQuery
@@ -72,7 +75,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with EventsByPersistenceIdQuery
     with EventsByPersistenceIdTypedQuery
     with CurrentPersistenceIdsQuery
-    with PagedPersistenceIdsQuery {
+    with PagedPersistenceIdsQuery
+    with EventsByPersistenceIdStartingFromSnapshotQuery
+    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery {
   import R2dbcReadJournal.ByPersistenceIdState
   import R2dbcReadJournal.PersistenceIdsQueryState
 
@@ -122,29 +127,35 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private def snapshotsBySlice[Snapshot, Event](
       transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
-    val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] = (offset, row) => {
-      val snapshot = serialization.deserialize(row.snapshot, row.serializerId, row.serializerManifest).get
-      val event = transformSnapshot(snapshot.asInstanceOf[Snapshot])
-      val metadata = row.metadata.map(meta =>
-        serialization.deserialize(meta.payload, meta.serializerId, meta.serializerManifest).get)
-
-      new EventEnvelope[Event](
-        offset,
-        row.persistenceId,
-        row.seqNr,
-        Option(event),
-        row.dbTimestamp.toEpochMilli,
-        metadata,
-        row.entityType,
-        row.slice,
-        filtered = false,
-        source = "",
-        tags = row.tags)
-    }
+    val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] =
+      (offset, row) => createEnvelopeFromSnapshot(row, offset, transformSnapshot)
 
     val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
     new BySliceQuery(snapshotDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+  }
+
+  private def createEnvelopeFromSnapshot[Snapshot, Event](
+      row: SerializedSnapshotRow,
+      offset: TimestampOffset,
+      transformSnapshot: Snapshot => Event): EventEnvelope[Event] = {
+    val snapshot = serialization.deserialize(row.snapshot, row.serializerId, row.serializerManifest).get
+    val event = transformSnapshot(snapshot.asInstanceOf[Snapshot])
+    val metadata =
+      row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serializerId, meta.serializerManifest).get)
+
+    new EventEnvelope[Event](
+      offset,
+      row.persistenceId,
+      row.seqNr,
+      Option(event),
+      row.dbTimestamp.toEpochMilli,
+      metadata,
+      row.entityType,
+      row.slice,
+      filtered = false,
+      source = "",
+      tags = row.tags)
   }
 
   private val journalDao =
@@ -658,6 +669,60 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       updateState = nextOffset,
       delayNextQuery = delayNextQuery,
       nextQuery = nextQuery)
+  }
+
+  override def currentEventsByPersistenceIdStartingFromSnapshot[Snapshot, Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("currentEventsByPersistenceIdStartingFromSnapshot")
+    Source
+      .futureSource(snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest).map {
+        case Some(snapshotRow) =>
+          if (fromSequenceNr <= snapshotRow.seqNr && snapshotRow.seqNr <= toSequenceNr) {
+            val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
+            val snapshotEnv = createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
+            Source
+              .single(snapshotEnv)
+              .concat(internalCurrentEventsByPersistenceId(persistenceId, snapshotEnv.sequenceNr + 1, toSequenceNr)
+                .map(deserializeBySliceRow[Event]))
+          } else
+            internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+              .map(deserializeBySliceRow[Event])
+        case None =>
+          internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+            .map(deserializeBySliceRow[Event])
+
+      })
+      .mapMaterializedValue(_ => NotUsed)
+  }
+
+  override def eventsByPersistenceIdStartingFromSnapshot[Snapshot, Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("eventsByPersistenceIdStartingFromSnapshot")
+    Source
+      .futureSource(snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest).map {
+        case Some(snapshotRow) =>
+          if (fromSequenceNr <= snapshotRow.seqNr && snapshotRow.seqNr <= toSequenceNr) {
+            val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
+            val snapshotEnv = createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
+            Source
+              .single(snapshotEnv)
+              .concat(internalEventsByPersistenceId(persistenceId, snapshotEnv.sequenceNr + 1, toSequenceNr)
+                .map(deserializeBySliceRow[Event]))
+          } else
+            internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+              .map(deserializeBySliceRow[Event])
+        case None =>
+          internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+            .map(deserializeBySliceRow[Event])
+
+      })
+      .mapMaterializedValue(_ => NotUsed)
   }
 
   private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {

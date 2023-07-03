@@ -19,7 +19,9 @@ import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl._
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.query.typed.javadsl.CurrentEventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.javadsl.CurrentEventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.javadsl.EventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.javadsl.EventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.javadsl.{
   CurrentEventsByPersistenceIdTypedQuery,
@@ -49,7 +51,9 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     with EventsByPersistenceIdQuery
     with EventsByPersistenceIdTypedQuery
     with CurrentPersistenceIdsQuery
-    with PagedPersistenceIdsQuery {
+    with PagedPersistenceIdsQuery
+    with EventsByPersistenceIdStartingFromSnapshotQuery
+    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery {
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     delegate.sliceForPersistenceId(persistenceId)
@@ -173,6 +177,28 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
     delegate.eventsByPersistenceIdTyped[Event](persistenceId, fromSequenceNr, toSequenceNr).asJava
+
+  override def currentEventsByPersistenceIdStartingFromSnapshot[Snapshot, Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long,
+      transformSnapshot: java.util.function.Function[Snapshot, Event]): Source[EventEnvelope[Event], NotUsed] =
+    delegate
+      .currentEventsByPersistenceIdStartingFromSnapshot(
+        persistenceId,
+        fromSequenceNr,
+        toSequenceNr,
+        transformSnapshot(_))
+      .asJava
+
+  override def eventsByPersistenceIdStartingFromSnapshot[Snapshot, Event](
+      persistenceId: String,
+      fromSequenceNr: Long,
+      toSequenceNr: Long,
+      transformSnapshot: java.util.function.Function[Snapshot, Event]): Source[EventEnvelope[Event], NotUsed] =
+    delegate
+      .eventsByPersistenceIdStartingFromSnapshot(persistenceId, fromSequenceNr, toSequenceNr, transformSnapshot(_))
+      .asJava
 
   override def currentPersistenceIds(): Source[String, NotUsed] =
     delegate.currentPersistenceIds().asJava
