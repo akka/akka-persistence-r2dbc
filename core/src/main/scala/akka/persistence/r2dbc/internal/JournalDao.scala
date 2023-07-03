@@ -30,7 +30,9 @@ private[r2dbc] object JournalDao {
       writerUuid: String,
       tags: Set[String],
       metadata: Option[SerializedEventMetadata])
-      extends BySliceQuery.SerializedRow
+      extends BySliceQuery.SerializedRow {
+    override def isPayloadDefined: Boolean = payload.isDefined
+  }
 
 }
 

@@ -6,38 +6,43 @@ package akka.persistence.r2dbc.query.scaladsl
 
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
-import akka.annotation.{ ApiMayChange, InternalApi }
+import akka.annotation.ApiMayChange
+import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
+import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.query.typed.scaladsl.{
-  CurrentEventsByPersistenceIdTypedQuery,
-  CurrentEventsBySliceQuery,
-  EventTimestampQuery,
-  EventsByPersistenceIdTypedQuery,
-  EventsBySliceQuery,
-  LoadEventQuery
-}
+import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
+import akka.persistence.query.typed.scaladsl.EventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
-import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
-import JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.OverflowStrategy
@@ -58,6 +63,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     extends ReadJournal
     with CurrentEventsBySliceQuery
     with EventsBySliceQuery
+    with CurrentEventsBySliceStartingFromSnapshotsQuery
+    with EventsBySliceStartingFromSnapshotsQuery
     with EventTimestampQuery
     with LoadEventQuery
     with CurrentEventsByPersistenceIdQuery
@@ -82,6 +89,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     .connectionFactoryFor(sharedConfigPath + ".connection-factory")
   private val queryDao =
     settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)(typedSystem)
+  private lazy val snapshotDao =
+    settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)(typedSystem)
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
@@ -110,6 +119,33 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
     _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
+
+  private def snapshotsBySlice[Snapshot, Event](
+      transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
+    val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] = (offset, row) => {
+      val snapshot = serialization.deserialize(row.snapshot, row.serializerId, row.serializerManifest).get
+      val event = transformSnapshot(snapshot.asInstanceOf[Snapshot])
+      val metadata = row.metadata.map(meta =>
+        serialization.deserialize(meta.payload, meta.serializerId, meta.serializerManifest).get)
+
+      new EventEnvelope[Event](
+        offset,
+        row.persistenceId,
+        row.seqNr,
+        Option(event),
+        row.dbTimestamp.toEpochMilli,
+        metadata,
+        row.entityType,
+        row.slice,
+        filtered = false,
+        source = "",
+        tags = row.tags)
+    }
+
+    val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
+
+    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+  }
 
   private val journalDao =
     settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)(typedSystem)
@@ -168,33 +204,206 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
     if (settings.journalPublishEvents) {
-      val pubSub = PubSub(typedSystem)
-      val pubSubSource =
-        Source
-          .actorRef[EventEnvelope[Event]](
-            completionMatcher = PartialFunction.empty,
-            failureMatcher = PartialFunction.empty,
-            bufferSize = settings.querySettings.bufferSize,
-            overflowStrategy = OverflowStrategy.dropNew)
-          .mapMaterializedValue { ref =>
-            pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
-              import akka.actor.typed.scaladsl.adapter._
-              topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
-            }
-          }
-          .filter { env =>
-            val slice = sliceForPersistenceId(env.persistenceId)
-            minSlice <= slice && slice <= maxSlice
-          }
-      dbSource
-        .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
-        .via(
-          skipPubSubTooFarAhead(
-            settings.querySettings.backtrackingEnabled,
-            JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
-        .via(deduplicate(settings.querySettings.deduplicateCapacity))
+      val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
+      mergeDbAndPubSubSources(dbSource, pubSubSource)
     } else
       dbSource
+  }
+
+  /**
+   * Same as `currentEventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing
+   * number of events that have to be loaded. This can be useful if the consumer start from zero without any previously
+   * processed offset or if it has been disconnected for a long while and its offset is far behind.
+   *
+   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
+   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+   *
+   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   *
+   * To use `currentEventsBySlicesStartingFromSnapshots` you must enable configuration
+   * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
+   */
+  override def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("currentEventsBySlicesStartingFromSnapshots")
+    val timestampOffset = toTimestampOffset(offset)
+
+    val snapshotSource =
+      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+        .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset)
+
+    Source.fromGraph(
+      new StartingFromSnapshotStage[Event](
+        snapshotSource,
+        { snapshotOffsets =>
+          val initOffset =
+            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
+              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
+              TimestampOffset(minTimestamp, Map.empty)
+            } else {
+              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
+              // but there can still be events between the given `offset` parameter and the min timestamp of the
+              // snapshots and those would then be missed
+              offset
+            }
+
+          log.debug(
+            "currentEventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
+            initOffset,
+            snapshotOffsets.size)
+
+          bySlice.currentBySlices(
+            "currentEventsBySlices",
+            entityType,
+            minSlice,
+            maxSlice,
+            initOffset,
+            filterEventsBeforeSnapshots(snapshotOffsets, backtrackingEnabled = false))
+        }))
+  }
+
+  /**
+   * Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
+   * events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
+   * offset or if it has been disconnected for a long while and its offset is far behind.
+   *
+   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
+   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+   *
+   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   *
+   * To use `eventsBySlicesStartingFromSnapshots` you must enable configuration
+   * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
+   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
+   */
+  override def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
+    checkStartFromSnapshotEnabled("eventsBySlicesStartingFromSnapshots")
+    val timestampOffset = toTimestampOffset(offset)
+
+    val snapshotSource =
+      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
+
+    Source.fromGraph(
+      new StartingFromSnapshotStage[Event](
+        snapshotSource,
+        { snapshotOffsets =>
+          val initOffset =
+            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
+              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
+              TimestampOffset(minTimestamp, Map.empty)
+            } else {
+              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
+              // but there can still be events between the given `offset` parameter and the min timestamp of the
+              // snapshots and those would then be missed
+              offset
+            }
+
+          log.debug(
+            "eventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
+            initOffset,
+            snapshotOffsets.size)
+
+          val dbSource =
+            bySlice[Event].liveBySlices(
+              "eventsBySlices",
+              entityType,
+              minSlice,
+              maxSlice,
+              initOffset,
+              filterEventsBeforeSnapshots(snapshotOffsets, settings.querySettings.backtrackingEnabled))
+
+          if (settings.journalPublishEvents) {
+            // Note that events via PubSub are not filtered by snapshotOffsets. It's unlikely that
+            // Those will be earlier than the snapshots and duplicates must be handled downstream in that case.
+            // If we would use the filterEventsBeforeSnapshots function for PubSub it would be difficult to
+            // know when memory of that Map can be released or the filter function would have to be shared
+            // and thread safe, which is not worth it.
+            val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
+            mergeDbAndPubSubSources(dbSource, pubSubSource)
+          } else
+            dbSource
+        }))
+  }
+
+  /**
+   * Stateful filter function that decides if (persistenceId, seqNr, source) should be emitted by
+   * `eventsBySlicesStartingFromSnapshots` and `currentEventsBySlicesStartingFromSnapshots`.
+   */
+  private def filterEventsBeforeSnapshots(
+      snapshotOffsets: Map[String, (Long, Instant)],
+      backtrackingEnabled: Boolean): (String, Long, String) => Boolean = {
+    var _snapshotOffsets = snapshotOffsets
+    (persistenceId, seqNr, source) => {
+      if (_snapshotOffsets.isEmpty)
+        true
+      else
+        _snapshotOffsets.get(persistenceId) match {
+          case None                     => true
+          case Some((snapshotSeqNr, _)) =>
+            //  release memory by removing from the _snapshotOffsets Map
+            if (seqNr == snapshotSeqNr &&
+              ((backtrackingEnabled && source == EnvelopeOrigin.SourceBacktracking) ||
+              (!backtrackingEnabled && source == EnvelopeOrigin.SourceQuery))) {
+              _snapshotOffsets -= persistenceId
+            }
+
+            seqNr > snapshotSeqNr
+        }
+    }
+  }
+
+  private def checkStartFromSnapshotEnabled(methodName: String): Unit =
+    if (!settings.querySettings.startFromSnapshotEnabled)
+      throw new IllegalArgumentException(
+        s"To use $methodName you must enable " +
+        "configuration `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in " +
+        "migration guide https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots")
+
+  private def eventsBySlicesPubSubSource[Event](
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int): Source[EventEnvelope[Event], NotUsed] = {
+    val pubSub = PubSub(typedSystem)
+    Source
+      .actorRef[EventEnvelope[Event]](
+        completionMatcher = PartialFunction.empty,
+        failureMatcher = PartialFunction.empty,
+        bufferSize = settings.querySettings.bufferSize,
+        overflowStrategy = OverflowStrategy.dropNew)
+      .mapMaterializedValue { ref =>
+        pubSub.eventTopics[Event](entityType, minSlice, maxSlice).foreach { topic =>
+          import akka.actor.typed.scaladsl.adapter._
+          topic ! Topic.Subscribe(ref.toTyped[EventEnvelope[Event]])
+        }
+      }
+      .filter { env =>
+        val slice = sliceForPersistenceId(env.persistenceId)
+        minSlice <= slice && slice <= maxSlice
+      }
+      .mapMaterializedValue(_ => NotUsed)
+  }
+
+  private def mergeDbAndPubSubSources[Event, Snapshot](
+      dbSource: Source[EventEnvelope[Event], NotUsed],
+      pubSubSource: Source[EventEnvelope[Event], NotUsed]) = {
+    dbSource
+      .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
+      .via(
+        skipPubSubTooFarAhead(
+          settings.querySettings.backtrackingEnabled,
+          JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+      .via(deduplicate(settings.querySettings.deduplicateCapacity))
   }
 
   /**
@@ -368,7 +577,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
     queryDao
-      .loadEvent(persistenceId, sequenceNr)
+      .loadEvent(persistenceId, sequenceNr, includePayload = true)
       .map {
         case Some(row) => deserializeBySliceRow(row)
         case None =>

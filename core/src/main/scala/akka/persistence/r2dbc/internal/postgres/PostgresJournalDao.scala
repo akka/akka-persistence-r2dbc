@@ -35,22 +35,6 @@ import scala.concurrent.Future
 @InternalApi
 private[r2dbc] object PostgresJournalDao {
   private val log: Logger = LoggerFactory.getLogger(classOf[PostgresJournalDao])
-  val EmptyDbTimestamp: Instant = Instant.EPOCH
-
-  final case class SerializedJournalRow(
-      slice: Int,
-      entityType: String,
-      persistenceId: String,
-      seqNr: Long,
-      dbTimestamp: Instant,
-      readDbTimestamp: Instant,
-      payload: Option[Array[Byte]],
-      serId: Int,
-      serManifest: String,
-      writerUuid: String,
-      tags: Set[String],
-      metadata: Option[SerializedEventMetadata])
-      extends BySliceQuery.SerializedRow
 
   def readMetadata(row: Row): Option[SerializedEventMetadata] = {
     row.get("meta_payload", classOf[Array[Byte]]) match {

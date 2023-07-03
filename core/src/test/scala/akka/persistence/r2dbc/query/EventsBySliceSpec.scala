@@ -114,7 +114,7 @@ class EventsBySliceSpec
       "return all events for NoOffset" in new Setup {
         for (i <- 1 to 20) {
           persister ! PersistWithAck(s"e-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
           doQuery(entityType, slice, slice, NoOffset)
@@ -159,7 +159,7 @@ class EventsBySliceSpec
           persister ! PersistAll(List(s"e-$i-$n", s"e-$i-${n + 1}"))
         }
         persister ! Ping(probe.ref)
-        probe.expectMessage(10.seconds, Done)
+        probe.expectMessage(Done)
         val result: TestSubscriber.Probe[EventEnvelope[String]] =
           doQuery(entityType, slice, slice, NoOffset, queryWithSmallBuffer)
             .runWith(sinkProbe)
@@ -206,7 +206,7 @@ class EventsBySliceSpec
       "support EventTimestampQuery" in new Setup {
         for (i <- 1 to 3) {
           persister ! PersistWithAck(s"e-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
 
         query.isInstanceOf[EventTimestampQuery] shouldBe true
@@ -218,7 +218,7 @@ class EventsBySliceSpec
       "support LoadEventQuery" in new Setup {
         for (i <- 1 to 3) {
           persister ! PersistWithAck(s"e-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
 
         query.isInstanceOf[LoadEventQuery] shouldBe true
@@ -234,7 +234,7 @@ class EventsBySliceSpec
           spawn(TestActors.Persister(PersistenceId.ofUniqueId(persistenceId), tags = Set("tag-A")))
         for (i <- 1 to 3) {
           taggingPersister ! PersistWithAck(s"f-$i", probe.ref)
-          probe.expectMessage(10.seconds, Done)
+          probe.expectMessage(Done)
         }
 
         val result: TestSubscriber.Probe[EventEnvelope[String]] =

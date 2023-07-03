@@ -144,6 +144,7 @@ import org.slf4j.Logger
     def seqNr: Long
     def dbTimestamp: Instant
     def readDbTimestamp: Instant
+    def isPayloadDefined: Boolean
   }
 
   trait Dao[SerializedRow] {
@@ -197,7 +198,8 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[Envelope, NotUsed] = {
+      offset: Offset,
+      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState =
@@ -238,6 +240,10 @@ import org.slf4j.Logger
               toTimestamp = Some(toTimestamp),
               behindCurrentTime = Duration.Zero,
               backtracking = false)
+            .filter { row =>
+              val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+              filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
+            }
             .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
@@ -285,7 +291,8 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset): Source[Envelope, NotUsed] = {
+      offset: Offset,
+      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
@@ -430,6 +437,10 @@ import org.slf4j.Logger
             toTimestamp,
             behindCurrentTime,
             backtracking = newState.backtracking)
+          .filter { row =>
+            val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+            filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
+          }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 

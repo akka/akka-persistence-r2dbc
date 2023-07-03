@@ -24,7 +24,7 @@ private[r2dbc] trait QueryDao extends BySliceQuery.Dao[SerializedJournalRow] {
   override def countBucketsMayChange: Boolean = false
 
   def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]]
-  def loadEvent(persistenceId: String, seqNr: Long): Future[Option[SerializedJournalRow]]
+  def loadEvent(persistenceId: String, seqNr: Long, includePayload: Boolean): Future[Option[SerializedJournalRow]]
 
   def eventsByPersistenceId(
       persistenceId: String,

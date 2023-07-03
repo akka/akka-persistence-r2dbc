@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.snapshot
 
+import java.time.Instant
+
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
@@ -14,8 +16,13 @@ import com.typesafe.config.Config
 import scala.concurrent.{ ExecutionContext, Future }
 
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
+import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.typed.PersistenceId
 import akka.serialization.Serializers
 
 object R2dbcSnapshotStore {
@@ -45,15 +52,16 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   private implicit val ec: ExecutionContext = context.dispatcher
   private val serialization: Serialization = SerializationExtension(context.system)
   private implicit val system: ActorSystem[_] = context.system.toTyped
+  private val persistenceExt = Persistence(system)
 
-  private val dao = {
-    val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
-    val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
-    log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
-    settings.connectionFactorySettings.dialect.createSnapshotDao(
-      settings,
-      ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
-  }
+  val sharedConfigPath = cfgPath.replaceAll("""\.snapshot$""", "")
+  val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
+
+  private val connectionFactory =
+    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
+  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)
+  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)
 
   def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =
     dao
@@ -61,6 +69,9 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
       .map(_.map(row => deserializeSnapshotRow(row, serialization)))
 
   def saveAsync(metadata: SnapshotMetadata, snapshot: Any): Future[Unit] = {
+    val entityType = PersistenceId.extractEntityType(metadata.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(metadata.persistenceId)
+
     val snapshotAnyRef = snapshot.asInstanceOf[AnyRef]
     val serializedSnapshot = serialization.serialize(snapshotAnyRef).get
     val snapshotSerializer = serialization.findSerializerFor(snapshotAnyRef)
@@ -74,16 +85,36 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
       SerializedSnapshotMetadata(serializedMeta, metaSerializer.identifier, metaManifest)
     }
 
-    val serializedRow = SerializedSnapshotRow(
-      metadata.persistenceId,
-      metadata.sequenceNr,
-      metadata.timestamp,
-      serializedSnapshot,
-      snapshotSerializer.identifier,
-      snapshotManifest,
-      serializedMeta)
+    val correspondingEvent: Future[Option[JournalDao.SerializedJournalRow]] =
+      if (settings.querySettings.startFromSnapshotEnabled)
+        queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false)
+      else
+        Future.successful(None)
 
-    dao.store(serializedRow)
+    // use same timestamp and tags as the corresponding event, if startFromSnapshotEnabled and event exists
+    correspondingEvent.flatMap { eventEnvOpt =>
+      val (timestamp, tags) = eventEnvOpt match {
+        case Some(eventEnv) =>
+          (eventEnv.dbTimestamp, eventEnv.tags)
+        case None =>
+          (Instant.ofEpochMilli(metadata.timestamp), Set.empty[String])
+      }
+
+      val serializedRow = SerializedSnapshotRow(
+        slice,
+        entityType,
+        metadata.persistenceId,
+        metadata.sequenceNr,
+        timestamp,
+        metadata.timestamp,
+        serializedSnapshot,
+        snapshotSerializer.identifier,
+        snapshotManifest,
+        tags,
+        serializedMeta)
+
+      dao.store(serializedRow)
+    }
   }
 
   def deleteAsync(metadata: SnapshotMetadata): Future[Unit] = {
