@@ -78,7 +78,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
 
     val selectColumns = {
       if (backtracking)
-        "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags "
+        "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags, event_ser_id "
       else
         "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
@@ -198,7 +198,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             dbTimestamp = row.get("db_timestamp", classOf[Instant]),
             readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
             payload = None, // lazy loaded for backtracking
-            serId = 0,
+            serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = "",
             writerUuid = "", // not need in this query
             tags = tagsFromDb(row, "tags"),

@@ -49,6 +49,7 @@ private[r2dbc] object R2dbcJournal {
   def deserializeRow(serialization: Serialization, row: SerializedJournalRow): PersistentRepr = {
     if (row.payload.isEmpty)
       throw new IllegalStateException("Expected event payload to be loaded.")
+    // note that FilteredPayload is not filtered out here, but that is handled by PersistentActor and EventSourcedBehavior
     val payload = serialization.deserialize(row.payload.get, row.serId, row.serManifest).get
     val repr = PersistentRepr(
       payload,
