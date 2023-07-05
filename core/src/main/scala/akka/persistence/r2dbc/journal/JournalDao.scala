@@ -82,7 +82,12 @@ private[r2dbc] class JournalDao(journalSettings: R2dbcSettings, connectionFactor
 
   private val persistenceExt = Persistence(system)
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
+  private val r2dbcExecutor =
+    new R2dbcExecutor(
+      connectionFactory,
+      log,
+      journalSettings.logDbCallsExceeding,
+      journalSettings.connectionFactorySettings.closeCallsExceeding)(ec, system)
 
   private val journalTable = journalSettings.journalTableWithSchema
   private implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec

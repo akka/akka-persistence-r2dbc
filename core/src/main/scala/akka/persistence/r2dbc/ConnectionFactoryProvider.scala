@@ -82,6 +82,11 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
         Integer.valueOf(settings.statementCacheSize))
 
+    settings.statementTimeout.foreach { timeout =>
+      import akka.util.JavaDurationConverters._
+      builder.option(PostgresqlConnectionFactoryProvider.STATEMENT_TIMEOUT, timeout.asJava)
+    }
+
     if (settings.sslEnabled) {
       builder.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)
 

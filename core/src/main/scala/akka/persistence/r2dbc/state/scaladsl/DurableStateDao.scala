@@ -91,7 +91,11 @@ private[r2dbc] class DurableStateDao(settings: R2dbcSettings, connectionFactory:
   import DurableStateDao._
 
   private val persistenceExt = Persistence(system)
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
+  private val r2dbcExecutor = new R2dbcExecutor(
+    connectionFactory,
+    log,
+    settings.logDbCallsExceeding,
+    settings.connectionFactorySettings.closeCallsExceeding)(ec, system)
 
   private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
 
