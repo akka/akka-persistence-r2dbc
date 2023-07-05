@@ -283,6 +283,12 @@ final class ConnectionPoolSettings(config: Config) {
   val acquireRetry: Int = config.getInt("acquire-retry")
 
   val validationQuery: String = config.getString("validation-query")
+
+  val closeCallsExceeding: Option[FiniteDuration] =
+    config.getString("close-calls-exceeding").toLowerCase(Locale.ROOT) match {
+      case "off" => None
+      case _     => Some(config.getDuration("close-calls-exceeding").asScala)
+    }
 }
 
 /**

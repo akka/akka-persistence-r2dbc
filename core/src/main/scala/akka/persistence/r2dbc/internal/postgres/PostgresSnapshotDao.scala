@@ -55,7 +55,11 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
 
   protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
+  protected val r2dbcExecutor = new R2dbcExecutor(
+    connectionFactory,
+    log,
+    settings.logDbCallsExceeding,
+    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   protected def createUpsertSql: String = {
     // db_timestamp and tags columns were added in 1.2.0

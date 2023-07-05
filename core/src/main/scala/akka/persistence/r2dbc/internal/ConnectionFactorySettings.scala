@@ -6,6 +6,7 @@ package akka.persistence.r2dbc.internal
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.persistence.r2dbc.ConnectionPoolSettings
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
@@ -31,7 +32,11 @@ private[r2dbc] object ConnectionFactorySettings {
           s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
     }
 
-    ConnectionFactorySettings(dialect, config)
+    // pool settings are common to all dialects but defined inline in the connection factory block
+    // for backwards compatibility/convenience
+    val poolSettings = new ConnectionPoolSettings(config)
+
+    ConnectionFactorySettings(dialect, config, poolSettings)
   }
 
 }
@@ -40,4 +45,7 @@ private[r2dbc] object ConnectionFactorySettings {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] case class ConnectionFactorySettings(dialect: Dialect, config: Config)
+private[r2dbc] case class ConnectionFactorySettings(
+    dialect: Dialect,
+    config: Config,
+    poolSettings: ConnectionPoolSettings)

@@ -4,6 +4,11 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import java.time.{ Duration => JDuration }
+import java.util.Locale
+
+import scala.concurrent.duration.FiniteDuration
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
@@ -19,10 +24,6 @@ import io.r2dbc.postgresql.client.SSLMode
 import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
-
-import java.time.{ Duration => JDuration }
-import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.FiniteDuration
 
 /**
  * INTERNAL API
@@ -54,6 +55,12 @@ private[r2dbc] object PostgresDialect extends Dialect {
 
     val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
     val statementCacheSize: Int = config.getInt("statement-cache-size")
+
+    val statementTimeout: Option[FiniteDuration] =
+      config.getString("statement-timeout").toLowerCase(Locale.ROOT) match {
+        case "off" => None
+        case _     => Some(config.getDuration("statement-timeout").asScala)
+      }
   }
 
   override def createConnectionFactory(config: Config): ConnectionFactory = {
@@ -80,6 +87,11 @@ private[r2dbc] object PostgresDialect extends Dialect {
       .option(
         PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
         Integer.valueOf(settings.statementCacheSize))
+
+    settings.statementTimeout.foreach { timeout =>
+      import akka.util.JavaDurationConverters._
+      builder.option(PostgresqlConnectionFactoryProvider.STATEMENT_TIMEOUT, timeout.asJava)
+    }
 
     if (settings.sslEnabled) {
       builder.option(ConnectionFactoryOptions.SSL, java.lang.Boolean.TRUE)

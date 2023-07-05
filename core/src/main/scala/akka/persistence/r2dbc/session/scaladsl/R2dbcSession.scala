@@ -8,9 +8,11 @@ import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
-import akka.persistence.r2dbc.{ ConnectionFactoryProvider, R2dbcSettings }
+import akka.persistence.r2dbc.ConnectionFactoryProvider
+import akka.persistence.r2dbc.ConnectionPoolSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Row
@@ -33,9 +35,17 @@ object R2dbcSession {
 
   def withSession[A](system: ActorSystem[_], connectionFactoryConfigPath: String)(
       fun: R2dbcSession => Future[A]): Future[A] = {
-    val connectionFactory =
-      ConnectionFactoryProvider(system).connectionFactoryFor(connectionFactoryConfigPath)
-    val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsDisabled)(system.executionContext, system)
+    val connectionFactoryProvider = ConnectionFactoryProvider(system)
+    val connectionFactory = connectionFactoryProvider.connectionFactoryFor(connectionFactoryConfigPath)
+    val closeCallsExceeding =
+      connectionFactoryProvider
+        .connectionFactorySettingsFor(connectionFactoryConfigPath)
+        .poolSettings
+        .closeCallsExceeding
+    val r2dbcExecutor =
+      new R2dbcExecutor(connectionFactory, log, logDbCallsDisabled, closeCallsExceeding)(
+        system.executionContext,
+        system)
     r2dbcExecutor.withConnection("R2dbcSession") { connection =>
       val session = new R2dbcSession(connection)(system.executionContext, system)
       fun(session)

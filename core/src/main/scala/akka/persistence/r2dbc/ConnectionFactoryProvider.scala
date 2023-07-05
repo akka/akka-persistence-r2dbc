@@ -14,12 +14,14 @@ import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.pool.ConnectionPool
 import io.r2dbc.pool.ConnectionPoolConfiguration
 import io.r2dbc.spi.ConnectionFactory
-
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
+
 import scala.collection.JavaConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
+
+import akka.annotation.InternalApi
 
 object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] {
   def createExtension(system: ActorSystem[_]): ConnectionFactoryProvider = new ConnectionFactoryProvider(system)
@@ -32,6 +34,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
 
   import R2dbcExecutor.PublisherOps
   private val sessions = new ConcurrentHashMap[String, ConnectionPool]
+  private val connectionFactorySettings = new ConcurrentHashMap[String, ConnectionFactorySettings]
 
   CoordinatedShutdown(system)
     .addTask(CoordinatedShutdown.PhaseBeforeActorSystemTerminate, "close connection pools") { () =>
@@ -46,14 +49,26 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .computeIfAbsent(
         configLocation,
         configLocation => {
-          val config = system.settings.config.getConfig(configLocation)
-          val connectionFactory = ConnectionFactorySettings(config).dialect.createConnectionFactory(config)
-          // pool settings are common to all dialects but defined inline in the connection factory block
-          // for backwards compatibility/convenience
-          val poolSettings = new ConnectionPoolSettings(config)
-          createConnectionPoolFactory(poolSettings, connectionFactory)
+          val settings = connectionFactorySettingsFor(configLocation)
+          val connectionFactory = settings.dialect.createConnectionFactory(settings.config)
+          createConnectionPoolFactory(settings.poolSettings, connectionFactory)
         })
       .asInstanceOf[ConnectionFactory]
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi
+  private[r2dbc] def connectionFactorySettingsFor(configLocation: String): ConnectionFactorySettings = {
+    connectionFactorySettings.get(configLocation) match {
+      case null =>
+        val settings = ConnectionFactorySettings(system.settings.config.getConfig(configLocation))
+        // it's just a cache so no need for guarding concurrent updates
+        connectionFactorySettings.put(configLocation, settings)
+        settings
+      case settings => settings
+    }
   }
 
   private def createConnectionPoolFactory(
