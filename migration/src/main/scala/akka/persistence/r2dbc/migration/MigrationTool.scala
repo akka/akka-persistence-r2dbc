@@ -133,7 +133,10 @@ class MigrationTool(system: ActorSystem[_]) {
     log.error("Migrating to H2 using the migration tool not currently supported")
   }
   private[r2dbc] val migrationDao =
-    new MigrationToolDao(targetConnectionFactory, targetR2dbcSettings.logDbCallsExceeding)
+    new MigrationToolDao(
+      targetConnectionFactory,
+      targetR2dbcSettings.logDbCallsExceeding,
+      targetR2dbcSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)
 
   private lazy val createProgressTable: Future[Done] =
     migrationDao.createProgressTable()

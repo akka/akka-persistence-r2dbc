@@ -76,5 +76,9 @@ object Dependencies {
       r2dbcH2)
 
   val docs =
-    Seq(TestDeps.akkaPersistenceTyped)
+    Seq(
+      // r2dbcPostgres is already a transitive dependency from core, but
+      // sometimes sbt doesn't understand that ¯\_(ツ)_/¯
+      r2dbcPostgres,
+      TestDeps.akkaPersistenceTyped)
 }

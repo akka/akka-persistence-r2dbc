@@ -67,7 +67,11 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   private val persistenceExt = Persistence(system)
 
   protected val r2dbcExecutor =
-    new R2dbcExecutor(connectionFactory, log, journalSettings.logDbCallsExceeding)(ec, system)
+    new R2dbcExecutor(
+      connectionFactory,
+      log,
+      journalSettings.logDbCallsExceeding,
+      journalSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   protected val journalTable = journalSettings.journalTableWithSchema
   protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec

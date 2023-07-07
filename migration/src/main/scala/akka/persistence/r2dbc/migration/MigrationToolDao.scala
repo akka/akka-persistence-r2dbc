@@ -30,9 +30,12 @@ import org.slf4j.LoggerFactory
  */
 @InternalApi private[r2dbc] class MigrationToolDao(
     connectionFactory: ConnectionFactory,
-    logDbCallsExceeding: FiniteDuration)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+    logDbCallsExceeding: FiniteDuration,
+    closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   import MigrationToolDao._
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding)(ec, system)
+
+  private val r2dbcExecutor =
+    new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding)(ec, system)
 
   def createProgressTable(): Future[Done] = {
     r2dbcExecutor.executeDdl("create migration progress table") { connection =>
