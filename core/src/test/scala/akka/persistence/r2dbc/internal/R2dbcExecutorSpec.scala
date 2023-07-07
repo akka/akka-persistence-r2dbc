@@ -13,6 +13,9 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.h2.H2Dialect
+import akka.persistence.r2dbc.internal.postgres.PostgresDialect
+import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import io.r2dbc.spi.Connection
@@ -44,20 +47,36 @@ class R2dbcExecutorSpec
 
   case class Row(col: String)
 
+  // need pg_sleep or similar
+  private def canBeTestedWithDialect: Boolean =
+    r2dbcSettings.connectionFactorySettings.dialect == PostgresDialect ||
+    r2dbcSettings.connectionFactorySettings.dialect == YugabyteDialect
+
+  private def pendingIfCannotBeTestedWithDialect(): Unit = {
+    if (!canBeTestedWithDialect) {
+      info(s"Can't be tested with dialect [${r2dbcSettings.dialectName}]")
+      pending
+    }
+  }
+
   override protected def beforeAll(): Unit = {
     super.beforeAll()
 
-    Await.result(
-      r2dbcExecutor.executeDdl(s"beforeAll create table $table")(
-        _.createStatement(s"create table if not exists $table (col text)")),
-      20.seconds)
+    if (canBeTestedWithDialect) {
+      Await.result(
+        r2dbcExecutor.executeDdl(s"beforeAll create table $table")(
+          _.createStatement(s"create table if not exists $table (col text)")),
+        20.seconds)
 
-    r2dbcExecutor.updateOne("test")(_.createStatement(s"delete from $table")).futureValue
+      r2dbcExecutor.updateOne("test")(_.createStatement(s"delete from $table")).futureValue
+    }
   }
 
   "R2dbcExecutor" should {
 
     "close connection when no response from update" in {
+      pendingIfCannotBeTestedWithDialect()
+
       @volatile var c1: Connection = null
       @volatile var c2: Connection = null
 
@@ -94,6 +113,8 @@ class R2dbcExecutorSpec
     }
 
     "close connection when no response from update with auto-commit" in {
+      pendingIfCannotBeTestedWithDialect()
+
       val result = r2dbcExecutor.updateOne("test")(_.createStatement("select pg_sleep(4)"))
 
       Thread.sleep(r2dbcSettings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
