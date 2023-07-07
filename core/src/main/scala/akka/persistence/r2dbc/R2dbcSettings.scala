@@ -161,6 +161,17 @@ final class QuerySettings(config: Config) {
 /**
  * INTERNAL API
  */
+@InternalApi private[akka] object ConnectionFactorySettings {
+  def closeCallsExceeding(config: Config): Option[FiniteDuration] =
+    config.getString("close-calls-exceeding").toLowerCase(Locale.ROOT) match {
+      case "off" => None
+      case _     => Some(config.getDuration("close-calls-exceeding").asScala)
+    }
+}
+
+/**
+ * INTERNAL API
+ */
 @InternalStableApi
 final class ConnectionFactorySettings(config: Config) {
 
@@ -194,6 +205,14 @@ final class ConnectionFactorySettings(config: Config) {
   val validationQuery: String = config.getString("validation-query")
 
   val statementCacheSize: Int = config.getInt("statement-cache-size")
+
+  val statementTimeout: Option[FiniteDuration] =
+    config.getString("statement-timeout").toLowerCase(Locale.ROOT) match {
+      case "off" => None
+      case _     => Some(config.getDuration("statement-timeout").asScala)
+    }
+
+  val closeCallsExceeding: Option[FiniteDuration] = ConnectionFactorySettings.closeCallsExceeding(config)
 }
 
 /**
