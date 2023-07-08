@@ -143,7 +143,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   private val persistenceIdsForEntityTypeAfterSql =
     sql"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
+  protected val r2dbcExecutor = new R2dbcExecutor(
+    connectionFactory,
+    log,
+    settings.logDbCallsExceeding,
+    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   def currentDbTimestamp(): Future[Instant] = {
     r2dbcExecutor

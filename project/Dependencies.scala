@@ -5,7 +5,7 @@
 import sbt._
 
 object Dependencies {
-  val Scala213 = "2.13.10"
+  val Scala213 = "2.13.11"
   val Scala212 = "2.12.17"
   val Scala3 = "3.2.2"
   val Scala2Versions = Seq(Scala213, Scala212)
@@ -14,7 +14,7 @@ object Dependencies {
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
-  val H2Version = "2.1.210"
+  val H2Version = "2.1.214"
   val R2dbcH2Version = "1.0.0.RELEASE"
 
   object Compile {
@@ -76,5 +76,9 @@ object Dependencies {
       r2dbcH2)
 
   val docs =
-    Seq(TestDeps.akkaPersistenceTyped)
+    Seq(
+      // r2dbcPostgres is already a transitive dependency from core, but
+      // sometimes sbt doesn't understand that ¯\_(ツ)_/¯
+      r2dbcPostgres,
+      TestDeps.akkaPersistenceTyped)
 }

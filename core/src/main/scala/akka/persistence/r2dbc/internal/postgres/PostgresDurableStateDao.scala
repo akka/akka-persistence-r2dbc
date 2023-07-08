@@ -79,7 +79,11 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
   protected def log: Logger = PostgresDurableStateDao.log
 
   private val persistenceExt = Persistence(system)
-  private val r2dbcExecutor = new R2dbcExecutor(connectionFactory, log, settings.logDbCallsExceeding)(ec, system)
+  protected val r2dbcExecutor = new R2dbcExecutor(
+    connectionFactory,
+    log,
+    settings.logDbCallsExceeding,
+    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
 
