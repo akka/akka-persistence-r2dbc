@@ -11,6 +11,16 @@ migrating the remaining data that was written after the previous online migratio
 
 ## Dependencies
 
+The Akka dependencies are available from Akka's library repository. To access them there, you need to configure the URL for this repository.
+
+@@repository [Maven,sbt,Gradle] {
+id="akka-repository"
+name="Akka library repository"
+url="https://repo.akka.io/maven"
+}
+
+Additionally, add the dependency as below.
+
 @@dependency [Maven,sbt,Gradle] {
   group=com.lightbend.akka
   artifact=akka-persistence-r2dbc-migration_$scala.binary.version$
