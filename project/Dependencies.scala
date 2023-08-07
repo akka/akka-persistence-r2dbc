@@ -14,7 +14,7 @@ object Dependencies {
   val AkkaVersionInDocs = AkkaVersion.take(3)
   val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
-  val H2Version = "2.1.214"
+  val H2Version = "2.2.220"
   val R2dbcH2Version = "1.0.0.RELEASE"
 
   object Compile {
