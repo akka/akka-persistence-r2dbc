@@ -7,17 +7,17 @@ The tests expect a locally running database.
 It can be started with the docker-compose file in the docker folder:
 
 ```
-docker-compose -f docker/docker-compose-postgres.yml up
+docker-compose -f docker/docker-compose-postgres.yml up --wait
 ```
 
 ```
-docker exec -i docker_postgres-db_1 psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 ```
 
 ## Some useful debug queries for Postgres
 
 ```
-docker exec -it docker_postgres-db_1 psql -U postgres
+docker exec -it postgres-db psql -U postgres
 ```
 
 ```
