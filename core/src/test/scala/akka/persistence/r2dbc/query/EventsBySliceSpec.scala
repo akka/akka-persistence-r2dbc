@@ -247,6 +247,8 @@ class EventsBySliceSpec
         envelopes.map(_.tags) should ===(Seq(Set("tag-A"), Set("tag-A"), Set("tag-A")))
 
         query.loadEnvelope[String](persistenceId, 1L).futureValue.tags shouldBe Set("tag-A")
+
+        assertFinished(result)
       }
 
       "mark FilteredEventPayload as filtered with no payload when reading it" in new Setup {
@@ -262,6 +264,7 @@ class EventsBySliceSpec
           val envelope = result.expectNext()
           envelope.filtered should be(true)
           envelope.eventOption should be(empty)
+          assertFinished(result)
         }
 
         {
@@ -403,14 +406,10 @@ class EventsBySliceSpec
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister(pid))
         for (i <- 1 to numberOfEvents) {
-          ref ! Persist(s"e-$i")
+          ref ! PersistWithAck(s"e-$i", probe.ref)
+          probe.expectMessage(Done)
         }
         ref
-      }
-
-      persisters.foreach { ref =>
-        ref ! Ping(probe.ref)
-        probe.expectMessage(10.seconds, Done)
       }
 
       allEnvelopes.futureValue.size should be(numberOfPersisters * numberOfEvents)
