@@ -20,6 +20,7 @@ To enable `JSONB` payloads you need the following.
 1. Serialize the event, snapshot and durable state payloads as JSON bytes.
 
 For the serialization you can use:
+
 * @extref:[Akka Serialization with Jackson](akka:serialization-jackson.html) with JSON format.
   * Make sure to disable @extref:[compression](akka:serialization-jackson.html#compression) with `akka.serialization.jackson.jackson-json.compression.algorithm = off`
 * Plain strings in JSON format.
