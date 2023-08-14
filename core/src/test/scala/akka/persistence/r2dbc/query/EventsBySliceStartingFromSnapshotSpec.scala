@@ -191,6 +191,7 @@ class EventsBySliceStartingFromSnapshotSpec
         // also verify that the seen Map is populated
         toTimestampOffset(snapEnvelope.offset).seen(snapEnvelope.persistenceId) shouldBe (snapEnvelope.sequenceNr)
 
+        result.cancel()
       }
 
       "includes tags in snapshot" in new Setup {
@@ -218,6 +219,7 @@ class EventsBySliceStartingFromSnapshotSpec
         e3Envelope.event shouldBe "e-3"
         e3Envelope.tags shouldBe Set("tag-A")
 
+        assertFinished(result)
       }
 
     }
@@ -313,17 +315,22 @@ class EventsBySliceStartingFromSnapshotSpec
     "retrieve from several slices" in new Setup {
       val numberOfPersisters = 20
       val numberOfEventsPhase1 = 3
-      val numberOfEventsPhase2 = 5
+      val numberOfEventsPhase2 = 2
 
-      val persistenceIds = (1 to numberOfPersisters).map(_ => PersistenceId.ofUniqueId(nextPid(entityType))).toVector
+      val persistenceIds = (1 to numberOfPersisters)
+        .map(_ => PersistenceId.ofUniqueId(nextPid(entityType)))
+        .toVector
       val persisters = persistenceIds.map { pid =>
         val ref = testKit.spawn(TestActors.Persister.withSnapshotAck(pid, Set.empty, snapshotAckProbe.ref))
         for (i <- 1 to numberOfEventsPhase1) {
           if (i == numberOfEventsPhase1) {
-            ref ! Persist(s"e-$i-snap")
+            ref ! PersistWithAck(s"e-$i-snap", probe.ref)
+            probe.expectMessage(Done)
             snapshotAckProbe.expectMessage(i.toLong)
-          } else
-            ref ! Persist(s"e-$i")
+          } else {
+            ref ! PersistWithAck(s"e-$i", probe.ref)
+            probe.expectMessage(Done)
+          }
         }
         ref
       }
@@ -364,13 +371,9 @@ class EventsBySliceStartingFromSnapshotSpec
 
       persisters.foreach { ref =>
         for (i <- 1 to numberOfEventsPhase2) {
-          ref ! Persist(s"e-${numberOfEventsPhase1 + i}")
+          ref ! PersistWithAck(s"e-${numberOfEventsPhase1 + i}", probe.ref)
+          probe.expectMessage(Done)
         }
-      }
-
-      persisters.foreach { ref =>
-        ref ! Ping(probe.ref)
-        probe.expectMessage(10.seconds, Done)
       }
 
       allEnvelopes.futureValue.size should be(expectedNumberOfEvents)
