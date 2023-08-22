@@ -197,17 +197,17 @@ class EventsBySlicePubSubSpec
 
     "turn FilteredPayload to filtered events with no payload" in new Setup {
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
-        query.eventsBySlices[String](entityType, 0, 1023, NoOffset).runWith(sinkProbe).request(10)
+        query.eventsBySlices[String](this.entityType, 0, 1023, NoOffset).runWith(sinkProbe).request(10)
 
       // make sure subscription completed
       val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
       eventually {
-        PubSub(typedSystem).eventTopic[String](entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+        PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
         topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
       }
 
       // publish filtered payload
-      PubSub(system).publish(PersistentRepr(FilteredPayload, 0L, PersistenceId(entityType, "1").id), Instant.now())
+      PubSub(system).publish(PersistentRepr(FilteredPayload, 0L, PersistenceId(this.entityType, "1").id), Instant.now())
 
       val envelope: EventEnvelope[String] = result.expectNext()
       envelope.filtered should be(true)
