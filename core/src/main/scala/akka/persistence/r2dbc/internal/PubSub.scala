@@ -9,13 +9,13 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Extension
 import akka.actor.typed.ExtensionId
 import akka.actor.typed.pubsub.Topic
 import akka.annotation.InternalApi
+import akka.persistence.FilteredPayload
 import akka.persistence.Persistence
 import akka.persistence.PersistentRepr
 import akka.persistence.journal.Tagged
@@ -23,6 +23,7 @@ import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.PublishEventsDynamicSettings
 import akka.persistence.typed.PersistenceId
+import akka.serialization.SerializationExtension
 import org.slf4j.LoggerFactory
 
 /**
@@ -121,23 +122,25 @@ import org.slf4j.LoggerFactory
 
       val offset = TimestampOffset(timestamp, timestamp, Map(pid -> pr.sequenceNr))
 
-      val (event, tags) = pr.payload match {
+      val (eventOption, tags, filtered) = pr.payload match {
         case Tagged(payload, tags) =>
-          (payload, tags)
+          (Some(payload), tags, false)
+        case FilteredPayload =>
+          (None, Set.empty[String], true)
         case other =>
-          (other, Set.empty[String])
+          (Some(other), Set.empty[String], false)
       }
 
       val envelope = new EventEnvelope(
         offset,
         pid,
         pr.sequenceNr,
-        Option(event),
+        eventOption,
         timestamp.toEpochMilli,
         pr.metadata,
         entityType,
         slice,
-        filtered = false,
+        filtered,
         source = EnvelopeOrigin.SourcePubSub,
         tags)
       eventTopic(entityType, slice) ! Topic.Publish(envelope)

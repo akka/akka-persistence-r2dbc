@@ -4,21 +4,15 @@
 
 package akka.persistence.r2dbc.query
 
-import java.time.{ Duration => JDuration }
-
-import scala.collection.immutable
-import java.time.Instant
-
-import scala.concurrent.Await
-import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.LoggingTestKit
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.internal.pubsub.TopicImpl
+import akka.persistence.FilteredPayload
 import akka.persistence.Persistence
+import akka.persistence.PersistentRepr
 import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
@@ -31,7 +25,6 @@ import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
-import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
@@ -45,6 +38,12 @@ import akka.stream.typed.scaladsl.ActorFlow
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+
+import java.time.Instant
+import java.time.{ Duration => JDuration }
+import scala.collection.immutable
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 object EventsBySlicePubSubSpec {
   def config: Config = ConfigFactory
@@ -194,6 +193,25 @@ class EventsBySlicePubSubSpec
         .runWith(Sink.seq)
         .futureValue
       out shouldBe List(envA1, envA2, envA3, envB1, envA1, envB2) // envA1 was evicted and therefore duplicate
+    }
+
+    "turn FilteredPayload to filtered events with no payload" in new Setup {
+      val result: TestSubscriber.Probe[EventEnvelope[String]] =
+        query.eventsBySlices[String](this.entityType, 0, 1023, NoOffset).runWith(sinkProbe).request(10)
+
+      // make sure subscription completed
+      val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
+      eventually {
+        PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+        topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
+      }
+
+      // publish filtered payload
+      PubSub(system).publish(PersistentRepr(FilteredPayload, 0L, PersistenceId(this.entityType, "1").id), Instant.now())
+
+      val envelope: EventEnvelope[String] = result.expectNext()
+      envelope.filtered should be(true)
+      envelope.eventOption should be(empty)
     }
 
     "skipPubSubTooFarAhead" in {
