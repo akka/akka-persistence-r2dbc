@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.journal
 
 import scala.concurrent.duration._
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -14,7 +15,6 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.typed.PersistenceId
 import org.scalatest.wordspec.AnyWordSpecLike
 

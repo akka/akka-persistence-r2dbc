@@ -38,12 +38,16 @@ import akka.stream.typed.scaladsl.ActorFlow
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
-
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.collection.immutable
 import scala.concurrent.Await
 import scala.concurrent.duration._
+
+import akka.persistence.SerializedEvent
+import akka.serialization.SerializationExtension
+import akka.serialization.Serializers
 
 object EventsBySlicePubSubSpec {
   def config: Config = ConfigFactory
@@ -345,6 +349,35 @@ class EventsBySlicePubSubSpec
       }
 
       queries.foreach(_.cancel())
+    }
+
+    "publish SerializedEvent" in new Setup {
+
+      val result: TestSubscriber.Probe[EventEnvelope[String]] =
+        query.eventsBySlices[String](this.entityType, slice, slice, NoOffset).runWith(sinkProbe).request(10)
+
+      val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
+      eventually {
+        PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
+        topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
+      }
+
+      val event = "e1"
+      val serializer = SerializationExtension(system).findSerializerFor(event)
+      val serializedEvent =
+        new SerializedEvent(
+          serializer.toBinary(event),
+          serializer.identifier,
+          Serializers.manifestFor(serializer, event))
+
+      persister ! PersistWithAck(serializedEvent, probe.ref)
+      probe.expectMessage(Done)
+
+      val env = result.expectNext()
+      env.event shouldBe event
+      env.source shouldBe EnvelopeOrigin.SourcePubSub
+
+      result.cancel()
     }
 
   }

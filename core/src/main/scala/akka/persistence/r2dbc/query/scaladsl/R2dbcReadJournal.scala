@@ -21,6 +21,7 @@ import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.FilteredPayload
 import akka.persistence.Persistence
+import akka.persistence.SerializedEvent
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
@@ -409,8 +410,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val slice = sliceForPersistenceId(env.persistenceId)
         minSlice <= slice && slice <= maxSlice
       }
+      .map { env =>
+        env.eventOption match {
+          case Some(se: SerializedEvent) =>
+            env.withEvent(deserializeEvent(se))
+          case _ => env
+        }
+      }
       .mapMaterializedValue(_ => NotUsed)
   }
+
+  private def deserializeEvent[Event](se: SerializedEvent): Event =
+    serialization.deserialize(se.bytes, se.serializerId, se.serializerManifest).get.asInstanceOf[Event]
 
   private def mergeDbAndPubSubSources[Event, Snapshot](
       dbSource: Source[EventEnvelope[Event], NotUsed],
