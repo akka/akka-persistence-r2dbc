@@ -22,6 +22,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
 import akka.annotation.InternalApi
+import akka.annotation.InternalStableApi
 
 object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] {
   def createExtension(system: ActorSystem[_]): ConnectionFactoryProvider = new ConnectionFactoryProvider(system)
@@ -70,6 +71,13 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       case settings => settings
     }
   }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalStableApi
+  def connectionPoolSettingsFor(configLocation: String): ConnectionPoolSettings =
+    connectionFactorySettingsFor(configLocation).poolSettings
 
   private def createConnectionPoolFactory(
       settings: ConnectionPoolSettings,
