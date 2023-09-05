@@ -1,0 +1,6 @@
+# changes to internal QueryState for tracking latest seen count for backtracking
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.apply")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.copy")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.this")
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.copy$default$8")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.unapply")
