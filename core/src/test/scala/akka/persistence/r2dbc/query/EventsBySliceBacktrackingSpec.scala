@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.query
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 import scala.concurrent.duration._
 
@@ -15,6 +16,7 @@ import akka.actor.typed.scaladsl.LoggerOps
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.PayloadCodec
@@ -35,9 +37,12 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
 
 object EventsBySliceBacktrackingSpec {
+  private val BufferSize = 10 // small buffer for testing
+
   private val config = ConfigFactory
-    .parseString("""
+    .parseString(s"""
     akka.persistence.r2dbc.journal.publish-events = off
+    akka.persistence.r2dbc.query.buffer-size = $BufferSize
     """)
     .withFallback(TestConfig.config)
 }
@@ -230,6 +235,53 @@ class EventsBySliceBacktrackingSpec
 
       result2.cancel()
     }
+
+    "predict backtracking filtered events based on latest seen counts" in {
+      val entityType = nextEntityType()
+      val pid = nextPid(entityType)
+      val slice = query.sliceForPersistenceId(pid)
+      val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+
+      // use times in the past well outside behind-current-time
+      val timeZero = InstantFactory.now().truncatedTo(ChronoUnit.SECONDS).minusSeconds(10 * 60)
+
+      // events around the buffer size (of 10) will share the same timestamp
+      // to test tracking of seen events that will be filtered on the next cycle
+
+      val numberOfCycles = 5 // loop through the grouped events this many times
+      val maxGroupSize = 7 // max size for groups of events that share the same timestamp
+      val eventsPerCycle = maxGroupSize * (maxGroupSize + 1) / 2 // each cycle has groups of size 1 to maxGroupSize
+      val numberOfEvents = numberOfCycles * eventsPerCycle // total number of events that will be generated
+
+      // generate a timestamp pattern like 1, 2, 2, 4, 4, 4, 7, 7, 7, 7, 11, 11, 11, 11, 11, ...
+      for (cycle <- 1 to numberOfCycles) {
+        for (groupSize <- 1 to maxGroupSize) {
+          for (shift <- 1 to groupSize) {
+            val seqNr = (cycle - 1) * eventsPerCycle + (groupSize - 1) * groupSize / 2 + shift
+            val eventTime = seqNr - shift + 1
+            writeEvent(slice, pid, seqNr, timeZero.plusMillis(eventTime), s"event-$pid-$seqNr")
+          }
+        }
+      }
+
+      // start the query with a latest timestamp ahead of all events, to only run in backtracking mode
+      val latestOffset = TimestampOffset(timeZero.plusMillis(numberOfEvents + 1), Map.empty)
+
+      val result: TestSubscriber.Probe[EventEnvelope[String]] =
+        query
+          .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, latestOffset)
+          .runWith(sinkProbe)
+          .request(numberOfEvents)
+
+      // test that backtracking queries continued through all the written events, catching up with latest offset
+      for (seqNr <- 1 to numberOfEvents) {
+        val envelope = result.expectNext()
+        envelope.persistenceId shouldBe pid
+        envelope.sequenceNr shouldBe seqNr
+        envelope.source shouldBe EnvelopeOrigin.SourceBacktracking
+      }
+    }
+
   }
 
 }
