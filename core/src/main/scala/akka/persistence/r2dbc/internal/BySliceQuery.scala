@@ -305,8 +305,6 @@ import org.slf4j.Logger
           throw new IllegalArgumentException(
             s"Unexpected offset [$offset] before latestBacktracking [${state.latestBacktracking}].")
 
-        // TODO: Could be nicer to track the seen count in TimestampOffset itself, along with the latest seen map.
-        //       Either as a seen count directly, or as a range of seen sequence numbers for each persistence id.
         val newSeenCount =
           if (offset.timestamp == state.latestBacktracking.timestamp) state.latestBacktrackingSeenCount + 1 else 1
 
