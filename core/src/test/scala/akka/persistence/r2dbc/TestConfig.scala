@@ -22,8 +22,8 @@ object TestConfig {
       case "h2" =>
         ConfigFactory.parseString(s"""
           akka.persistence.r2dbc.connection-factory {
-            protocol = "file"
-            database = "./target/h2-test-db"
+            protocol = "mem"
+            database = "h2-test-db"
             trace-logging = on
           }
           """)
