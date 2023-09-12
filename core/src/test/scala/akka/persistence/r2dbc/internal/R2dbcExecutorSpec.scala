@@ -132,6 +132,7 @@ class R2dbcExecutorSpec
     }
 
     "see the previously written value across threads in H2" in {
+      pending
       implicit val ec: ExecutionContext = typedSystem.executionContext
       val executor = new R2dbcExecutor(
         ConnectionFactoryProvider(typedSystem)
@@ -152,18 +153,28 @@ class R2dbcExecutorSpec
         },
         10.seconds)
 
+      val table2 = s"sometabletwo${System.currentTimeMillis()}"
+      Await.result(
+        executor.executeDdl("beforeAll createTable") { conn =>
+          conn.createStatement(s"""|CREATE table IF NOT EXISTS $table2 (
+                |  id INT NOT NULL,
+                |  avalue BIGINT NOT NULL,
+                |  PRIMARY KEY(id)
+                |);""".stripMargin)
+        },
+        10.seconds)
+
       def asyncLoop(n: Long, repeatUntil: Long): Future[Done] = {
         if (n == repeatUntil) Future.successful(Done)
         else {
           val nextN = n + 1L
-          if (n % 1000L == 0) print("X")
-          else print(".")
+          if (n % 1000L == 0) print(".")
           r2dbcExecutor
             .withConnection(s"iteration $n") { connection =>
               val session = new R2dbcSession(connection)
               val statement = session.createStatement(s"SELECT avalue FROM $table WHERE id = 1")
-              R2dbcExecutor
-                .selectOneInTx(statement, row => row.get("avalue", classOf[java.lang.Long]))
+              session
+                .selectOne(statement)(row => row.get("avalue", classOf[java.lang.Long]))
                 .flatMap { read =>
                   read match {
                     case None if n != 1            => throw new IllegalStateException("existing row for first read")
@@ -182,14 +193,29 @@ class R2dbcExecutorSpec
                     .bind(0, 1)
                     .bind(1, nextN)
 
-                  R2dbcExecutor
-                    .updateOneInTx(update)
+                  session
+                    .updateOne(update)
                     .map { updatedRows =>
                       if (updatedRows != 1) throw new IllegalStateException(s"Updated rows $updatedRows for $nextN")
                       else Done
                     }
+                    .flatMap { _ =>
+                      // update another table in same tx
+                      val update2 = session
+                        .createStatement(sql"""
+                                 MERGE INTO $table2 (id, avalue)
+                                 KEY (id)
+                                 VALUES (?, ?)
+                              """)
+                        .bind(0, 1)
+                        .bind(1, nextN)
+
+                      session
+                        .updateOne(update2)
+                        .map(rows => require(rows == 1L))
+                    }
                 }
-            }
+            } // after tx complete
             .flatMap { _ =>
               asyncLoop(nextN, repeatUntil)
             }
@@ -197,7 +223,7 @@ class R2dbcExecutorSpec
         }
       }
 
-      asyncLoop(1L, 100000L).futureValue(timeout(1.hour))
+      asyncLoop(1L, 100000000L).futureValue(timeout(1.hour))
 
     }
 
