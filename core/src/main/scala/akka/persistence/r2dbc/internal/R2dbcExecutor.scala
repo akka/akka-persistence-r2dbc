@@ -25,6 +25,7 @@ import akka.annotation.InternalStableApi
 import akka.dispatch.ExecutionContexts
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.IsolationLevel
 import io.r2dbc.spi.Result
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
@@ -268,7 +269,7 @@ class R2dbcExecutor(
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      connection.beginTransaction().asFutureDone().flatMap { _ =>
+      connection.beginTransaction(IsolationLevel.READ_COMMITTED).asFutureDone().flatMap { _ =>
         val timeoutTask = closeCallsExceeding.map { timeout =>
           system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(connection))
         }
