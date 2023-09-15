@@ -60,6 +60,9 @@ private[r2dbc] object H2Dialect extends Dialect {
         // don't auto close connections
         .property(H2ConnectionOption.DB_CLOSE_DELAY, "-1")
 
+      // workaround for https://github.com/akka/akka-projection/issues/992
+      builder.option("OPTIMIZE_REUSE_RESULTS=FALSE")
+
       if (config.getBoolean("trace-logging"))
         // log to SLF4J instead of print to stdout, logger name will be 'h2database'
         builder.property(H2ConnectionOption.TRACE_LEVEL_FILE, "4")
