@@ -12,7 +12,6 @@ import scala.concurrent.duration._
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
 import akka.persistence.r2dbc.ConnectionFactoryProvider
-import akka.persistence.r2dbc.ConnectionPoolSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Row
