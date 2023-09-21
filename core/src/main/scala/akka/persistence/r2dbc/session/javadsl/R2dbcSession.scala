@@ -7,14 +7,15 @@ package akka.persistence.r2dbc.session.javadsl
 import java.util.Optional
 import java.util.concurrent.CompletionStage
 import java.util.function.{ Function => JFunction }
+
 import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters._
 import scala.compat.java8.OptionConverters._
 import scala.concurrent.ExecutionContext
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
 import akka.dispatch.ExecutionContexts
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.session.scaladsl
 import io.r2dbc.spi.Connection
@@ -59,10 +60,10 @@ final class R2dbcSession(val connection: Connection)(implicit ec: ExecutionConte
       .map(results => results.map(java.lang.Long.valueOf).asJava)
       .toJava
 
-  def selectOne[A](statement: Statement)(mapRow: Row => A): CompletionStage[Optional[A]] =
-    R2dbcExecutor.selectOneInTx(statement, mapRow).map(_.asJava)(ExecutionContexts.parasitic).toJava
+  def selectOne[A](statement: Statement)(mapRow: JFunction[Row, A]): CompletionStage[Optional[A]] =
+    R2dbcExecutor.selectOneInTx(statement, mapRow(_)).map(_.asJava)(ExecutionContexts.parasitic).toJava
 
-  def select[A](statement: Statement)(mapRow: Row => A): CompletionStage[java.util.List[A]] =
-    R2dbcExecutor.selectInTx(statement, mapRow).map(_.asJava).toJava
+  def select[A](statement: Statement)(mapRow: JFunction[Row, A]): CompletionStage[java.util.List[A]] =
+    R2dbcExecutor.selectInTx(statement, mapRow(_)).map(_.asJava).toJava
 
 }
