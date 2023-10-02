@@ -384,7 +384,7 @@ import org.slf4j.Logger
           // switching to backtracking
           val fromOffset =
             if (state.latestBacktracking == TimestampOffset.Zero)
-              TimestampOffset.Zero.copy(timestamp = state.latest.timestamp.minus(firstBacktrackingQueryWindow))
+              TimestampOffset(timestamp = state.latest.timestamp.minus(firstBacktrackingQueryWindow), seen = Map.empty)
             else
               state.latestBacktracking
 
