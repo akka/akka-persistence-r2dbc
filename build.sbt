@@ -43,7 +43,8 @@ def common: Seq[Setting[_]] =
     scalafmtOnCompile := true,
     sonatypeProfileName := "com.lightbend",
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
-    Compile / javacOptions ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
+    Compile / javacOptions ++= Seq("-encoding", "UTF-8", "--release", "11"),
+    Compile / scalacOptions ++= Seq("-release", "11"),
     headerLicense := Some(
       HeaderLicense.Custom("""Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>""")),
     Test / logBuffered := false,
@@ -161,3 +162,10 @@ lazy val docs = project
     resolvers += Resolver.jcenterRepo,
     publishRsyncArtifacts += makeSite.value -> "www/",
     publishRsyncHost := "akkarepo@gustav.akka.io")
+
+val isJdk11orHigher: Boolean = {
+  val result = VersionNumber(sys.props("java.specification.version")).matchesSemVer(SemanticSelector(">=11"))
+  if (!result)
+    throw new IllegalArgumentException("JDK 11 or higher is required")
+  result
+}
