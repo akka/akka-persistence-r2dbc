@@ -31,7 +31,7 @@ private[r2dbc] object SnapshotDao {
       metadata: Option[SerializedSnapshotMetadata])
       extends BySliceQuery.SerializedRow {
     override def readDbTimestamp: Instant = dbTimestamp
-    def isPayloadDefined: Boolean = true
+    override def source: String = EnvelopeOrigin.SourceQuery
   }
 
   final case class SerializedSnapshotMetadata(payload: Array[Byte], serializerId: Int, serializerManifest: String)

@@ -31,7 +31,8 @@ private[r2dbc] object JournalDao {
       tags: Set[String],
       metadata: Option[SerializedEventMetadata])
       extends BySliceQuery.SerializedRow {
-    override def isPayloadDefined: Boolean = payload.isDefined
+    override def source: String =
+      if (payload.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
   }
 
 }

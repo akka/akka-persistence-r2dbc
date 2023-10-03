@@ -1,0 +1,6 @@
+# Internals
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#SerializedRow.isPayloadDefined")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#SerializedRow.source")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.DurableStateDao#SerializedStateRow.isPayloadDefined")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.JournalDao#SerializedJournalRow.isPayloadDefined")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.SnapshotDao#SerializedSnapshotRow.isPayloadDefined")
