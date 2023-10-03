@@ -30,7 +30,9 @@ import scala.concurrent.Future
       tags: Set[String])
       extends BySliceQuery.SerializedRow {
     override def seqNr: Long = revision
-    override def isPayloadDefined: Boolean = payload.isDefined
+    override def source: String =
+      // payload = null => lazy loaded for backtracking (ugly, but not worth changing UpdatedDurableState in Akka)
+      if (payload == null) EnvelopeOrigin.SourceBacktracking else EnvelopeOrigin.SourceQuery
   }
 
 }

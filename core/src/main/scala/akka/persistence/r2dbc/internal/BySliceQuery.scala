@@ -146,7 +146,7 @@ import org.slf4j.Logger
     def seqNr: Long
     def dbTimestamp: Instant
     def readDbTimestamp: Instant
-    def isPayloadDefined: Boolean
+    def source: String
   }
 
   trait Dao[SerializedRow] {
@@ -243,8 +243,7 @@ import org.slf4j.Logger
               behindCurrentTime = Duration.Zero,
               backtracking = false)
             .filter { row =>
-              val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
-              filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
+              filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
             }
             .via(deserializeAndAddOffset(state.latest)))
       } else {
@@ -459,8 +458,7 @@ import org.slf4j.Logger
             behindCurrentTime,
             backtracking = newState.backtracking)
           .filter { row =>
-            val source = if (row.isPayloadDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
-            filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, source)
+            filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
           }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
