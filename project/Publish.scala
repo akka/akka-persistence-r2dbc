@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.language.postfixOps
 
-import sbt.{Def, _}
+import sbt.{ Def, _ }
 import Keys._
 import com.geirsson.CiReleasePlugin
 import com.jsuereth.sbtpgp.PgpKeys.publishSigned
@@ -18,12 +18,8 @@ import xerial.sbt.Sonatype.autoImport.sonatypeProfileName
 object NoPublish extends AutoPlugin {
   override def requires = plugins.JvmPlugin
 
-  override def projectSettings = Seq(
-    publish / skip := true,
-    publishArtifact := false,
-    publish := {},
-    publishLocal := {},
-  )
+  override def projectSettings =
+    Seq(publish / skip := true, publishArtifact := false, publish := {}, publishLocal := {})
 }
 
 object Publish extends AutoPlugin {
@@ -47,11 +43,10 @@ object Publish extends AutoPlugin {
     beforePublishTask := beforePublish(isSnapshot.value),
     publishSigned := publishSigned.dependsOn(beforePublishTask).value,
     publishTo := (if (isSnapshot.value)
-      Some(Resolver.file("file",  target.value / "repository")) // FIXME snapshot repo
-    else
-      Some("Cloudsmith API".at("https://maven.cloudsmith.io/lightbend/akka/"))),
-    credentials ++= (if (isSnapshot.value) Seq[Credentials]() else cloudsmithCredentials(validate = false))
-  )
+                    Some(Resolver.file("file", target.value / "repository")) // FIXME snapshot repo
+                  else
+                    Some("Cloudsmith API".at("https://maven.cloudsmith.io/lightbend/akka/"))),
+    credentials ++= (if (isSnapshot.value) Seq[Credentials]() else cloudsmithCredentials(validate = false)))
 
   def cloudsmithCredentials(validate: Boolean): Seq[Credentials] = {
     (sys.env.get("PUBLISH_USER"), sys.env.get("PUBLISH_PASSWORD")) match {
