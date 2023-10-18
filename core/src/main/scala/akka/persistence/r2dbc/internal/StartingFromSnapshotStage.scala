@@ -82,7 +82,6 @@ import akka.stream.stage.OutHandler
 
       class PrimaryHandler extends OutHandler with InHandler {
         val subSink = new SubSinkInlet[EventEnvelope[Event]]("snapshots")
-        subSink.pull()
         subSink.setHandler(this)
 
         override def onPull(): Unit = {
