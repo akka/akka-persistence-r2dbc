@@ -124,7 +124,9 @@ class EventsByPersistenceIdStartingFromSnapshotSpec
           .runWith(sinkProbe)
           .request(21)
 
-        result.expectNext().event shouldBe expectedSnapshotEvent(17)
+        val evt17 = result.expectNext()
+        evt17.event shouldBe expectedSnapshotEvent(17)
+        evt17.source should ===("SN")
         for (i <- 18 to 20) {
           result.expectNext().event shouldBe s"e-$i"
         }
