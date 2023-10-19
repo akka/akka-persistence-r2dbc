@@ -162,8 +162,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.entityType,
       row.slice,
       filtered = false,
-      // FIXME move constant to Akka/EnvelopeOrigin
-      source = "SN",
+      source = EnvelopeOrigin.SourceSnapshot,
       tags = row.tags)
   }
 
