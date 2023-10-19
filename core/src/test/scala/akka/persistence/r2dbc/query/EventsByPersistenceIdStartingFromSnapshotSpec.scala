@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.query
 
 import java.time.Instant
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
@@ -20,6 +19,7 @@ import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
@@ -124,7 +124,9 @@ class EventsByPersistenceIdStartingFromSnapshotSpec
           .runWith(sinkProbe)
           .request(21)
 
-        result.expectNext().event shouldBe expectedSnapshotEvent(17)
+        val evt17 = result.expectNext()
+        evt17.event shouldBe expectedSnapshotEvent(17)
+        EnvelopeOrigin.fromSnapshot(evt17) shouldBe true
         for (i <- 18 to 20) {
           result.expectNext().event shouldBe s"e-$i"
         }

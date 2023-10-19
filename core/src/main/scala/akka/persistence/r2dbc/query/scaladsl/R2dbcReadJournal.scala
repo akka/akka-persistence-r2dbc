@@ -162,7 +162,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       row.entityType,
       row.slice,
       filtered = false,
-      source = "",
+      source = EnvelopeOrigin.SourceSnapshot,
       tags = row.tags)
   }
 
