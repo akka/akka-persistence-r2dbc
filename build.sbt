@@ -25,15 +25,13 @@ inThisBuild(
       if (isSnapshot.value) None
       else Some(url(s"https://github.com/akka/akka-persistence-r2dbc/releases/tag/v${version.value}"))
     ),
-    licenses := Seq(
-      ("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))
-    ), // FIXME change s/main/v1.1.0/ before releasing 1.1.0
+    licenses := Seq(("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))),
     description := "An Akka Persistence backed by SQL database with R2DBC",
     resolvers += "Akka library repository".at("https://repo.akka.io/maven"),
     // add snapshot repo when Akka version overriden
     resolvers ++=
       (if (System.getProperty("override.akka.version") != null)
-         Seq("Akka Snapshots".at("https://oss.sonatype.org/content/repositories/snapshots/"))
+         Seq("Akka library snapshot repository".at("https://repo.akka.io/snapshots"))
        else Seq.empty)))
 
 def common: Seq[Setting[_]] =
