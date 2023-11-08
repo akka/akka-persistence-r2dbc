@@ -2,6 +2,9 @@ addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.10.0") // for maintenance o
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.2")
 addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.8.0")
 
+// for dependency analysis
+addDependencyTreePlugin
+
 // for releasing
 addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.5.12")
 
