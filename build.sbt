@@ -130,7 +130,7 @@ lazy val docs = project
   .settings(common)
   .settings(dontPublish)
   .settings(
-    name := "Akka Persistence R2DBC",
+    name := "Akka Persistence plugin for R2DBC",
     libraryDependencies ++= Dependencies.docs,
     makeSite := makeSite.dependsOn(LocalRootProject / ScalaUnidoc / doc).value,
     previewPath := (Paradox / siteSubdirName).value,
