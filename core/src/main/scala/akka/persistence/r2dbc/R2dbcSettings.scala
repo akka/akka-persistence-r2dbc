@@ -87,7 +87,6 @@ object R2dbcSettings {
 
     val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
 
-    // FIXME remove when https://github.com/yugabyte/yugabyte-db/issues/10995 has been resolved
     val useAppTimestamp: Boolean = config.getBoolean("use-app-timestamp")
 
     val logDbCallsExceeding: FiniteDuration =
