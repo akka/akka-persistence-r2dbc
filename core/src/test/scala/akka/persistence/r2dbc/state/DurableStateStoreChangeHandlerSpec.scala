@@ -103,12 +103,15 @@ class DurableStateStoreChangeHandlerSpec
   private val unusedTag = "n/a"
 
   private def exists(whereCondition: String): Boolean =
+    count(whereCondition) >= 1
+
+  private def count(whereCondition: String): Long =
     r2dbcExecutor
       .selectOne("count")(
         _.createStatement(s"select count(*) from $anotherTable where $whereCondition"),
         row => row.get(0, classOf[java.lang.Long]).longValue())
       .futureValue
-      .contains(1)
+      .getOrElse(0L)
 
   "The R2DBC durable state store change handler" should {
 
@@ -178,6 +181,23 @@ class DurableStateStoreChangeHandlerSpec
       store.getObject(persistenceId).futureValue should be(GetObjectResult(Some(value), 1L))
 
       exists(s"pid = '$persistenceId' and rev = 2") should be(false)
+    }
+
+    "not be invoked when wrong revision" in {
+      val entityType = "CustomEntity"
+      val persistenceId = nextPid(entityType)
+      val value = "Genuinely Collaborative"
+      store.upsertObject(persistenceId, 1L, value, unusedTag).futureValue
+      count(s"pid = '$persistenceId'") should be(1L)
+
+      store.upsertObject(persistenceId, 1L, value, unusedTag).failed.futureValue
+      count(s"pid = '$persistenceId'") should be(1L) // not called (or rolled back)
+
+      val updatedValue = "Open to Feedback"
+      store.upsertObject(persistenceId, 2L, updatedValue, unusedTag).futureValue
+      count(s"pid = '$persistenceId'") should be(2L)
+      store.upsertObject(persistenceId, 2L, updatedValue, unusedTag).failed.futureValue
+      count(s"pid = '$persistenceId'") should be(2L) // not called (or rolled back)
     }
 
     "support javadsl.ChangeHandler" in {
