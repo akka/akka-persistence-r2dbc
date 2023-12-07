@@ -367,7 +367,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
             r2dbcExecutor.withConnection(s"insert [${state.persistenceId}] with change handler") { connection =>
               for {
                 updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
-                _ <- processChange(handler, connection, change)
+                _ <- if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
               } yield updatedRows
             }
         }
@@ -412,7 +412,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
             r2dbcExecutor.withConnection(s"update [${state.persistenceId}] with change handler") { connection =>
               for {
                 updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-                _ <- processChange(handler, connection, change)
+                _ <- if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
               } yield updatedRows
             }
         }
@@ -492,7 +492,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
                 R2dbcExecutor.updateOneInTx(insertDeleteMarkerStatement(connection)))
               _ <- changeHandler match {
                 case None          => FutureDone
-                case Some(handler) => processChange(handler, connection, change)
+                case Some(handler) => if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
               }
             } yield updatedRows
           }
@@ -539,7 +539,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
               _ <- changeHandler match {
                 case None          => FutureDone
-                case Some(handler) => processChange(handler, connection, change)
+                case Some(handler) => if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
               }
             } yield updatedRows
           }
@@ -575,8 +575,11 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
           _ <- changeHandler match {
             case None => FutureDone
             case Some(handler) =>
-              val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
-              processChange(handler, connection, change)
+              if (updatedRows == 1) {
+                val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
+                processChange(handler, connection, change)
+              } else
+                FutureDone
           }
         } yield updatedRows
       }
