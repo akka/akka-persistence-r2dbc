@@ -8,9 +8,11 @@ import akka.Done
 import akka.NotUsed
 import akka.annotation.InternalApi
 import akka.stream.scaladsl.Source
-
 import java.time.Instant
+
 import scala.concurrent.Future
+
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 
 /**
  * INTERNAL API
@@ -48,7 +50,7 @@ private[r2dbc] trait DurableStateDao extends BySliceQuery.Dao[DurableStateDao.Se
 
   def readState(persistenceId: String): Future[Option[SerializedStateRow]]
 
-  def upsertState(state: SerializedStateRow, value: Any): Future[Done]
+  def upsertState(state: SerializedStateRow, value: Any, changeEvent: Option[SerializedJournalRow]): Future[Done]
 
   def deleteState(persistenceId: String, revision: Long): Future[Done]
 

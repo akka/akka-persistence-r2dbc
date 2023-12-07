@@ -5,9 +5,12 @@
 package akka.persistence.r2dbc.internal
 
 import akka.annotation.InternalApi
-
 import java.time.Instant
+
 import scala.concurrent.Future
+
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
+import io.r2dbc.spi.Connection
 
 /**
  * INTERNAL API
@@ -56,6 +59,9 @@ private[r2dbc] trait JournalDao {
    * a select (in same transaction).
    */
   def writeEvents(events: Seq[JournalDao.SerializedJournalRow]): Future[Instant]
+
+  def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant]
+
   def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long]
 
   def readLowestSequenceNr(persistenceId: String): Future[Long]

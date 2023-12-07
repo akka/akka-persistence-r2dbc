@@ -7,12 +7,14 @@ package akka.persistence.r2dbc.state.scaladsl
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+
 import akka.Done
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.Persistence
+import akka.persistence.SerializedEvent
 import akka.persistence.query.DeletedDurableState
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
@@ -26,8 +28,12 @@ import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
+import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.state.scaladsl.DurableStateUpdateStore
 import akka.persistence.state.scaladsl.GetObjectResult
+import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.serialization.Serializers
 import akka.stream.scaladsl.Source
@@ -53,6 +59,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.state$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
+  private val journalSettings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
   log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
@@ -109,7 +116,26 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
    * the existing stored `revision` + 1 isn't equal to the given `revision`. This optimistic locking check can be
    * disabled with configuration `assert-single-writer`.
    */
-  override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): Future[Done] = {
+  override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): Future[Done] =
+    upsertObject(persistenceId, revision, value, tag, changeEvent = None)
+
+  /**
+   * Insert the value if `revision` is 1, which will fail with `IllegalStateException` if there is already a stored
+   * value for the given `persistenceId`. Otherwise update the value, which will fail with `IllegalStateException` if
+   * the existing stored `revision` + 1 isn't equal to the given `revision`. This optimistic locking check can be
+   * disabled with configuration `assert-single-writer`.
+   *
+   * The `changeEvent`, if defined, is written to the event journal in the same transaction as the DurableState upsert.
+   * Same `persistenceId` is used in the journal and the `revision` is used as `sequenceNr`.
+   */
+  def upsertObject(
+      persistenceId: String,
+      revision: Long,
+      value: A,
+      tag: String,
+      changeEvent: Option[Any]): Future[Done] = {
+    // FIXME add new trait in Akka for this method. Maybe we need it for the deletes too.
+
     val valueAnyRef = value.asInstanceOf[AnyRef]
     val serialized = serialization.serialize(valueAnyRef).get
     val serializer = serialization.findSerializerFor(valueAnyRef)
@@ -125,7 +151,41 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       manifest,
       if (tag.isEmpty) Set.empty else Set(tag))
 
-    stateDao.upsertState(serializedRow, value)
+    val serializedChangedEvent: Option[SerializedJournalRow] = {
+      changeEvent.map { event =>
+        val eventAnyRef = event.asInstanceOf[AnyRef]
+        val serializedEvent = eventAnyRef match {
+          case s: SerializedEvent => s // already serialized
+          case _ =>
+            val bytes = serialization.serialize(eventAnyRef).get
+            val serializer = serialization.findSerializerFor(eventAnyRef)
+            val manifest = Serializers.manifestFor(serializer, eventAnyRef)
+            new SerializedEvent(bytes, serializer.identifier, manifest)
+        }
+
+        val entityType = PersistenceId.extractEntityType(persistenceId)
+        val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+        val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
+
+        SerializedJournalRow(
+          slice,
+          entityType,
+          persistenceId,
+          revision,
+          timestamp,
+          JournalDao.EmptyDbTimestamp,
+          Some(serializedEvent.bytes),
+          serializedEvent.serializerId,
+          serializedEvent.serializerManifest,
+          "", // FIXME writerUuid, or shall we make one?
+          if (tag.isEmpty) Set.empty else Set(tag),
+          metadata = None)
+      }
+    }
+
+    stateDao.upsertState(serializedRow, value, serializedChangedEvent)
+
+    // FIXME PubSub, but not via PersistentRepr
 
   }
 

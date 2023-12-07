@@ -40,16 +40,19 @@ import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import java.lang
 import java.time.Instant
 import java.util
+
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
+
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 
 /**
  * INTERNAL API
@@ -70,9 +73,10 @@ private[r2dbc] object PostgresDurableStateDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
+private[r2dbc] class PostgresDurableStateDao(
+    settings: R2dbcSettings,
+    connectionFactory: ConnectionFactory,
+    journalDao: JournalDao)(implicit ec: ExecutionContext, system: ActorSystem[_])
     extends DurableStateDao {
   import DurableStateDao._
   import PostgresDurableStateDao._
@@ -264,7 +268,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
       LIMIT ?"""
   }
 
-  def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
+  override def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
     r2dbcExecutor.selectOne(s"select [$persistenceId]")(
       connection =>
@@ -293,7 +297,25 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
       Option(rowPayload)
   }
 
-  def upsertState(state: SerializedStateRow, value: Any): Future[Done] = {
+  private def writeChangeEventAndCallChangeHander(
+      connection: Connection,
+      updatedRows: Long,
+      entityType: String,
+      change: DurableStateChange[Any],
+      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
+    if (updatedRows == 1)
+      for {
+        _ <- changeEvent.map(journalDao.writeEventInTx(_, connection)).getOrElse(FutureDone)
+        _ <- changeHandlers.get(entityType).map(processChange(_, connection, change)).getOrElse(FutureDone)
+      } yield Done
+    else
+      FutureDone
+  }
+
+  override def upsertState(
+      state: SerializedStateRow,
+      value: Any,
+      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
     require(state.revision > 0)
 
     def bindTags(stmt: Statement, i: Int): Statement = {
@@ -360,17 +382,15 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
                 s"Insert failed: durable state for persistence id [${state.persistenceId}] already exists"))
           }
 
-        changeHandlers.get(entityType) match {
-          case None =>
-            recoverDataIntegrityViolation(r2dbcExecutor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
-          case Some(handler) =>
-            r2dbcExecutor.withConnection(s"insert [${state.persistenceId}] with change handler") { connection =>
-              for {
-                updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
-                _ <- if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
-              } yield updatedRows
-            }
-        }
+        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty)
+          recoverDataIntegrityViolation(r2dbcExecutor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
+        else
+          r2dbcExecutor.withConnection(s"insert [${state.persistenceId}]") { connection =>
+            for {
+              updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
+            } yield updatedRows
+          }
       } else {
         val previousRevision = state.revision - 1
 
@@ -405,17 +425,15 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
           }
         }
 
-        changeHandlers.get(entityType) match {
-          case None =>
-            r2dbcExecutor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
-          case Some(handler) =>
-            r2dbcExecutor.withConnection(s"update [${state.persistenceId}] with change handler") { connection =>
-              for {
-                updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-                _ <- if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
-              } yield updatedRows
-            }
-        }
+        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty)
+          r2dbcExecutor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
+        else
+          r2dbcExecutor.withConnection(s"update [${state.persistenceId}]") { connection =>
+            for {
+              updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
+            } yield updatedRows
+          }
       }
     }
 
@@ -451,7 +469,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
     }
   }
 
-  def deleteState(persistenceId: String, revision: Long): Future[Done] = {
+  override def deleteState(persistenceId: String, revision: Long): Future[Done] = {
     if (revision == 0) {
       hardDeleteState(persistenceId)
     } else {
@@ -490,10 +508,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
             for {
               updatedRows <- recoverDataIntegrityViolation(
                 R2dbcExecutor.updateOneInTx(insertDeleteMarkerStatement(connection)))
-              _ <- changeHandler match {
-                case None          => FutureDone
-                case Some(handler) => if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
-              }
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
             } yield updatedRows
           }
 
@@ -537,10 +552,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
           r2dbcExecutor.withConnection(s"delete [$persistenceId]$changeHandlerHint") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-              _ <- changeHandler match {
-                case None          => FutureDone
-                case Some(handler) => if (updatedRows == 1) processChange(handler, connection, change) else FutureDone
-              }
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
             } yield updatedRows
           }
         }
@@ -572,14 +584,9 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
             connection
               .createStatement(hardDeleteStateSql(entityType))
               .bind(0, persistenceId))
-          _ <- changeHandler match {
-            case None => FutureDone
-            case Some(handler) =>
-              if (updatedRows == 1) {
-                val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
-                processChange(handler, connection, change)
-              } else
-                FutureDone
+          _ <- {
+            val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
+            writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
           }
         } yield updatedRows
       }
@@ -669,7 +676,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+  override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     if (settings.durableStateTableByEntityTypeWithSchema.isEmpty)
       persistenceIds(afterId, limit, settings.durableStateTableWithSchema)
     else {
@@ -699,7 +706,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
     }
   }
 
-  def persistenceIds(afterId: Option[String], limit: Long, table: String): Source[String, NotUsed] = {
+  override def persistenceIds(afterId: Option[String], limit: Long, table: String): Source[String, NotUsed] = {
     val result = readPersistenceIds(afterId, limit, table)
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
@@ -729,7 +736,7 @@ private[r2dbc] class PostgresDurableStateDao(settings: R2dbcSettings, connection
     result
   }
 
-  def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+  override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val table = settings.getDurableStateTableWithSchema(entityType)
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
     val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(

@@ -129,5 +129,7 @@ private[r2dbc] object PostgresDialect extends Dialect {
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new PostgresDurableStateDao(settings, connectionFactory)(system.executionContext, system)
+    new PostgresDurableStateDao(settings, connectionFactory, createJournalDao(settings, connectionFactory))(
+      system.executionContext,
+      system)
 }

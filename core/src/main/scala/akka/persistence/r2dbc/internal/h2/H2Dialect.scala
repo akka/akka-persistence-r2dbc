@@ -94,7 +94,9 @@ private[r2dbc] object H2Dialect extends Dialect {
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new H2DurableStateDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2DurableStateDao(settings, connectionFactory, createJournalDao(settings, connectionFactory))(
+      ecForDaos(system, settings),
+      system)
 
   private def ecForDaos(system: ActorSystem[_], settings: R2dbcSettings): ExecutionContext = {
     // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
