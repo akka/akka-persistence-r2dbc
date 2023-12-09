@@ -27,7 +27,7 @@ object Dependencies {
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.2.RELEASE" // ApacheV2
 
     // Override reactor-netty-core from r2dbc-postgresql to include Netty 4.1.100, fixing CVE-2023-4586
-    val reactorNetty = "io.projectreactor.netty" % "reactor-netty-core" % "1.1.12"
+    val reactorNetty = "io.projectreactor.netty" % "reactor-netty-core" % "1.1.13"
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
