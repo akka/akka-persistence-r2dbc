@@ -469,7 +469,10 @@ private[r2dbc] class PostgresDurableStateDao(
     }
   }
 
-  override def deleteState(persistenceId: String, revision: Long): Future[Done] = {
+  override def deleteState(
+      persistenceId: String,
+      revision: Long,
+      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
     if (revision == 0) {
       hardDeleteState(persistenceId)
     } else {
@@ -501,14 +504,11 @@ private[r2dbc] class PostgresDurableStateDao(
                 s"Insert delete marker with revision 1 failed: durable state for persistence id [$persistenceId] already exists"))
             }
 
-          val changeHandler = changeHandlers.get(entityType)
-          val changeHandlerHint = changeHandler.map(_ => " with change handler").getOrElse("")
-
-          r2dbcExecutor.withConnection(s"insert delete marker [$persistenceId]$changeHandlerHint") { connection =>
+          r2dbcExecutor.withConnection(s"insert delete marker [$persistenceId]") { connection =>
             for {
               updatedRows <- recoverDataIntegrityViolation(
                 R2dbcExecutor.updateOneInTx(insertDeleteMarkerStatement(connection)))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent)
             } yield updatedRows
           }
 
@@ -546,13 +546,10 @@ private[r2dbc] class PostgresDurableStateDao(
             }
           }
 
-          val changeHandler = changeHandlers.get(entityType)
-          val changeHandlerHint = changeHandler.map(_ => " with change handler").getOrElse("")
-
-          r2dbcExecutor.withConnection(s"delete [$persistenceId]$changeHandlerHint") { connection =>
+          r2dbcExecutor.withConnection(s"delete [$persistenceId]") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
+              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent)
             } yield updatedRows
           }
         }

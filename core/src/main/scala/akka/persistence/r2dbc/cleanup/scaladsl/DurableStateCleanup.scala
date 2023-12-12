@@ -65,11 +65,11 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
    */
   def deleteState(persistenceId: String, resetRevisionNumber: Boolean): Future[Done] = {
     if (resetRevisionNumber)
-      stateDao.deleteState(persistenceId, revision = 0L) // hard delete without revision check
+      stateDao.deleteState(persistenceId, revision = 0L, changeEvent = None) // hard delete without revision check
     else {
       stateDao.readState(persistenceId).flatMap {
         case None    => Future.successful(Done) // already deleted
-        case Some(s) => stateDao.deleteState(persistenceId, s.revision + 1)
+        case Some(s) => stateDao.deleteState(persistenceId, s.revision + 1, changeEvent = None)
       }
     }
   }

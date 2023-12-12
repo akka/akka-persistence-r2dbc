@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.state.scaladsl
 
+import java.util.UUID
+
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -31,7 +33,7 @@ import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
-import akka.persistence.state.scaladsl.DurableStateUpdateStore
+import akka.persistence.state.scaladsl.DurableStateUpdateWithChangeEventStore
 import akka.persistence.state.scaladsl.GetObjectResult
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -51,7 +53,7 @@ object R2dbcDurableStateStore {
 }
 
 class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfgPath: String)
-    extends DurableStateUpdateStore[A]
+    extends DurableStateUpdateWithChangeEventStore[A]
     with DurableStateStoreBySliceQuery[A]
     with DurableStateStorePagedPersistenceIdsQuery[A] {
   import R2dbcDurableStateStore.PersistenceIdsQueryState
@@ -69,6 +71,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     settings,
     ConnectionFactoryProvider(typedSystem)
       .connectionFactoryFor(sharedConfigPath + ".connection-factory"))(typedSystem)
+  private val changeEventWriterUuid = UUID.randomUUID().toString
 
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {
@@ -117,7 +120,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
    * disabled with configuration `assert-single-writer`.
    */
   override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): Future[Done] =
-    upsertObject(persistenceId, revision, value, tag, changeEvent = None)
+    internalUpsertObject(persistenceId, revision, value, tag, changeEvent = None)
 
   /**
    * Insert the value if `revision` is 1, which will fail with `IllegalStateException` if there is already a stored
@@ -125,16 +128,23 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
    * the existing stored `revision` + 1 isn't equal to the given `revision`. This optimistic locking check can be
    * disabled with configuration `assert-single-writer`.
    *
-   * The `changeEvent`, if defined, is written to the event journal in the same transaction as the DurableState upsert.
-   * Same `persistenceId` is used in the journal and the `revision` is used as `sequenceNr`.
+   * The `changeEvent` is written to the event journal in the same transaction as the DurableState upsert. Same
+   * `persistenceId` is used in the journal and the `revision` is used as `sequenceNr`.
    */
-  def upsertObject(
+  override def upsertObject(
+      persistenceId: String,
+      revision: Long,
+      value: A,
+      tag: String,
+      changeEvent: Any): Future[Done] =
+    internalUpsertObject(persistenceId, revision, value, tag, changeEvent = Some(changeEvent))
+
+  private def internalUpsertObject(
       persistenceId: String,
       revision: Long,
       value: A,
       tag: String,
       changeEvent: Option[Any]): Future[Done] = {
-    // FIXME add new trait in Akka for this method. Maybe we need it for the deletes too.
 
     val valueAnyRef = value.asInstanceOf[AnyRef]
     val serialized = serialization.serialize(valueAnyRef).get
@@ -151,42 +161,42 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       manifest,
       if (tag.isEmpty) Set.empty else Set(tag))
 
-    val serializedChangedEvent: Option[SerializedJournalRow] = {
-      changeEvent.map { event =>
-        val eventAnyRef = event.asInstanceOf[AnyRef]
-        val serializedEvent = eventAnyRef match {
-          case s: SerializedEvent => s // already serialized
-          case _ =>
-            val bytes = serialization.serialize(eventAnyRef).get
-            val serializer = serialization.findSerializerFor(eventAnyRef)
-            val manifest = Serializers.manifestFor(serializer, eventAnyRef)
-            new SerializedEvent(bytes, serializer.identifier, manifest)
-        }
-
-        val entityType = PersistenceId.extractEntityType(persistenceId)
-        val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-        val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
-
-        SerializedJournalRow(
-          slice,
-          entityType,
-          persistenceId,
-          revision,
-          timestamp,
-          JournalDao.EmptyDbTimestamp,
-          Some(serializedEvent.bytes),
-          serializedEvent.serializerId,
-          serializedEvent.serializerManifest,
-          "", // FIXME writerUuid, or shall we make one?
-          if (tag.isEmpty) Set.empty else Set(tag),
-          metadata = None)
-      }
-    }
-
-    stateDao.upsertState(serializedRow, value, serializedChangedEvent)
+    stateDao.upsertState(serializedRow, value, serializedChangeEvent(persistenceId, revision, tag, changeEvent))
 
     // FIXME PubSub, but not via PersistentRepr
 
+  }
+
+  private def serializedChangeEvent(persistenceId: String, revision: Long, tag: String, changeEvent: Option[Any]) = {
+    changeEvent.map { event =>
+      val eventAnyRef = event.asInstanceOf[AnyRef]
+      val serializedEvent = eventAnyRef match {
+        case s: SerializedEvent => s // already serialized
+        case _ =>
+          val bytes = serialization.serialize(eventAnyRef).get
+          val serializer = serialization.findSerializerFor(eventAnyRef)
+          val manifest = Serializers.manifestFor(serializer, eventAnyRef)
+          new SerializedEvent(bytes, serializer.identifier, manifest)
+      }
+
+      val entityType = PersistenceId.extractEntityType(persistenceId)
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+      val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
+
+      SerializedJournalRow(
+        slice,
+        entityType,
+        persistenceId,
+        revision,
+        timestamp,
+        JournalDao.EmptyDbTimestamp,
+        Some(serializedEvent.bytes),
+        serializedEvent.serializerId,
+        serializedEvent.serializerManifest,
+        changeEventWriterUuid,
+        if (tag.isEmpty) Set.empty else Set(tag),
+        metadata = None)
+    }
   }
 
   @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
@@ -202,9 +212,26 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
    * If the given revision is `0` it will fully delete the value and revision from the database without any optimistic
    * locking check. Next call to [[getObject]] will then return revision 0 and no value.
    */
-  override def deleteObject(persistenceId: String, revision: Long): Future[Done] = {
-    stateDao.deleteState(persistenceId, revision)
-  }
+  override def deleteObject(persistenceId: String, revision: Long): Future[Done] =
+    internalDeleteObject(persistenceId, revision, changeEvent = None)
+
+  /**
+   * Delete the value, which will fail with `IllegalStateException` if the existing stored `revision` + 1 isn't equal to
+   * the given `revision`. This optimistic locking check can be disabled with configuration `assert-single-writer`. The
+   * stored revision for the persistenceId is updated and next call to [[getObject]] will return the revision, but with
+   * no value.
+   *
+   * If the given revision is `0` it will fully delete the value and revision from the database without any optimistic
+   * locking check. Next call to [[getObject]] will then return revision 0 and no value.
+   *
+   * The `changeEvent` is written to the event journal in the same transaction as the DurableState upsert. Same
+   * `persistenceId` is used in the journal and the `revision` is used as `sequenceNr`.
+   */
+  override def deleteObject(persistenceId: String, revision: Long, changeEvent: Any): Future[Done] =
+    internalDeleteObject(persistenceId, revision, changeEvent = Some(changeEvent))
+
+  private def internalDeleteObject(persistenceId: String, revision: Long, changeEvent: Option[Any]): Future[Done] =
+    stateDao.deleteState(persistenceId, revision, serializedChangeEvent(persistenceId, revision, tag = "", changeEvent))
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     persistenceExt.sliceForPersistenceId(persistenceId)
