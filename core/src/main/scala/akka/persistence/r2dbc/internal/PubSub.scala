@@ -91,29 +91,7 @@ import org.slf4j.LoggerFactory
   }
 
   def publish(pr: PersistentRepr, timestamp: Instant): Unit = {
-
-    val n = throughputCounter.incrementAndGet()
-    if (n % throughputSampler == 0) {
-      val ewma = throughput
-      val durationMillis = (System.nanoTime() - ewma.nanoTime) / 1000 / 1000
-      if (durationMillis >= throughputCollectIntervalMillis) {
-        // doesn't have to be exact so "missed" or duplicate concurrent calls don't matter
-        throughputCounter.set(0L)
-        val rps = n * 1000.0 / durationMillis
-        val newEwma = ewma :+ rps
-        throughput = newEwma
-        if (ewma.value < throughputThreshold && newEwma.value >= throughputThreshold) {
-          log.info("Disabled publishing of events. Throughput greater than [{}] events/s", throughputThreshold)
-        } else if (ewma.value >= throughputThreshold && newEwma.value < throughputThreshold) {
-          log.info("Enabled publishing of events. Throughput less than [{}] events/s", throughputThreshold)
-        } else {
-          log.debug(
-            "Publishing of events is {}. Throughput is [{}] events/s",
-            if (newEwma.value < throughputThreshold) "enabled" else "disabled",
-            newEwma.value)
-        }
-      }
-    }
+    updateThroughput()
 
     if (throughput.value < throughputThreshold) {
       val pid = pr.persistenceId
@@ -143,7 +121,47 @@ import org.slf4j.LoggerFactory
         filtered,
         source = EnvelopeOrigin.SourcePubSub,
         tags)
-      eventTopic(entityType, slice) ! Topic.Publish(envelope)
+
+      publishToTopic(envelope)
+    }
+  }
+
+  def publish(envelope: EventEnvelope[Any]): Unit = {
+    updateThroughput()
+
+    if (throughput.value < throughputThreshold)
+      publishToTopic(envelope)
+  }
+
+  private def publishToTopic(envelope: EventEnvelope[Any]): Unit = {
+    val entityType = PersistenceId.extractEntityType(envelope.persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(envelope.persistenceId)
+
+    eventTopic(entityType, slice) ! Topic.Publish(envelope)
+  }
+
+  private def updateThroughput(): Unit = {
+    val n = throughputCounter.incrementAndGet()
+    if (n % throughputSampler == 0) {
+      val ewma = throughput
+      val durationMillis = (System.nanoTime() - ewma.nanoTime) / 1000 / 1000
+      if (durationMillis >= throughputCollectIntervalMillis) {
+        // doesn't have to be exact so "missed" or duplicate concurrent calls don't matter
+        throughputCounter.set(0L)
+        val rps = n * 1000.0 / durationMillis
+        val newEwma = ewma :+ rps
+        throughput = newEwma
+        if (ewma.value < throughputThreshold && newEwma.value >= throughputThreshold) {
+          log.info("Disabled publishing of events. Throughput greater than [{}] events/s", throughputThreshold)
+        } else if (ewma.value >= throughputThreshold && newEwma.value < throughputThreshold) {
+          log.info("Enabled publishing of events. Throughput less than [{}] events/s", throughputThreshold)
+        } else {
+          log.debug(
+            "Publishing of events is {}. Throughput is [{}] events/s",
+            if (newEwma.value < throughputThreshold) "enabled" else "disabled",
+            newEwma.value)
+        }
+      }
     }
   }
 }

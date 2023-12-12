@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.state.scaladsl
 
+import java.time.Instant
 import java.util.UUID
 
 import scala.collection.immutable
@@ -23,6 +24,7 @@ import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.DurableStateStorePagedPersistenceIdsQuery
+import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
@@ -30,9 +32,11 @@ import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
+import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.state.scaladsl.DurableStateUpdateWithChangeEventStore
 import akka.persistence.state.scaladsl.GetObjectResult
 import akka.persistence.typed.PersistenceId
@@ -72,6 +76,10 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     ConnectionFactoryProvider(typedSystem)
       .connectionFactoryFor(sharedConfigPath + ".connection-factory"))(typedSystem)
   private val changeEventWriterUuid = UUID.randomUUID().toString
+
+  private val pubSub: Option[PubSub] =
+    if (journalSettings.journalPublishEvents) Some(PubSub(typedSystem))
+    else None
 
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {
@@ -151,6 +159,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     val serializer = serialization.findSerializerFor(valueAnyRef)
     val manifest = Serializers.manifestFor(serializer, valueAnyRef)
 
+    val tags = if (tag.isEmpty) Set.empty[String] else Set(tag)
     val serializedRow = SerializedStateRow(
       persistenceId,
       revision,
@@ -159,12 +168,47 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       Some(serialized),
       serializer.identifier,
       manifest,
-      if (tag.isEmpty) Set.empty else Set(tag))
+      tags)
 
-    stateDao.upsertState(serializedRow, value, serializedChangeEvent(persistenceId, revision, tag, changeEvent))
+    val changeEventTimestamp =
+      stateDao.upsertState(serializedRow, value, serializedChangeEvent(persistenceId, revision, tag, changeEvent))
 
-    // FIXME PubSub, but not via PersistentRepr
+    import typedSystem.executionContext
+    changeEventTimestamp.map { timestampOption =>
+      publish(persistenceId, revision, changeEvent, timestampOption, tags)
+      Done
+    }
+  }
 
+  private def publish(
+      persistenceId: String,
+      revision: Long,
+      changeEvent: Option[Any],
+      changeEventTimestamp: Option[Instant],
+      tags: Set[String]): Unit = {
+    for {
+      timestamp <- changeEventTimestamp
+      event <- changeEvent
+      p <- pubSub
+    } yield {
+      val entityType = PersistenceId.extractEntityType(persistenceId)
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+
+      val offset = TimestampOffset(timestamp, timestamp, Map(persistenceId -> revision))
+
+      val envelope = EventEnvelope(
+        offset,
+        persistenceId,
+        revision,
+        event,
+        timestamp.toEpochMilli,
+        entityType,
+        slice,
+        filtered = false,
+        source = EnvelopeOrigin.SourcePubSub,
+        tags)
+      p.publish(envelope)
+    }
   }
 
   private def serializedChangeEvent(persistenceId: String, revision: Long, tag: String, changeEvent: Option[Any]) = {
@@ -230,8 +274,18 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   override def deleteObject(persistenceId: String, revision: Long, changeEvent: Any): Future[Done] =
     internalDeleteObject(persistenceId, revision, changeEvent = Some(changeEvent))
 
-  private def internalDeleteObject(persistenceId: String, revision: Long, changeEvent: Option[Any]): Future[Done] =
-    stateDao.deleteState(persistenceId, revision, serializedChangeEvent(persistenceId, revision, tag = "", changeEvent))
+  private def internalDeleteObject(persistenceId: String, revision: Long, changeEvent: Option[Any]): Future[Done] = {
+    val changeEventTimestamp = stateDao.deleteState(
+      persistenceId,
+      revision,
+      serializedChangeEvent(persistenceId, revision, tag = "", changeEvent))
+
+    import typedSystem.executionContext
+    changeEventTimestamp.map { timestampOption =>
+      publish(persistenceId, revision, changeEvent, timestampOption, tags = Set.empty)
+      Done
+    }
+  }
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     persistenceExt.sliceForPersistenceId(persistenceId)

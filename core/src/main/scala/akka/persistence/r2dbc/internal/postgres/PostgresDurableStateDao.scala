@@ -67,6 +67,7 @@ private[r2dbc] object PostgresDurableStateDao {
       binding: AdditionalColumn.Binding[_])
 
   val FutureDone: Future[Done] = Future.successful(Done)
+  val FutureInstantNone: Future[Option[Instant]] = Future.successful(None)
 }
 
 /**
@@ -302,20 +303,22 @@ private[r2dbc] class PostgresDurableStateDao(
       updatedRows: Long,
       entityType: String,
       change: DurableStateChange[Any],
-      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
+      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     if (updatedRows == 1)
       for {
-        _ <- changeEvent.map(journalDao.writeEventInTx(_, connection)).getOrElse(FutureDone)
+        changeEventTimestamp <- changeEvent
+          .map(journalDao.writeEventInTx(_, connection).map(Some(_)))
+          .getOrElse(FutureInstantNone)
         _ <- changeHandlers.get(entityType).map(processChange(_, connection, change)).getOrElse(FutureDone)
-      } yield Done
+      } yield changeEventTimestamp
     else
-      FutureDone
+      FutureInstantNone
   }
 
   override def upsertState(
       state: SerializedStateRow,
       value: Any,
-      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
+      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     require(state.revision > 0)
 
     def bindTags(stmt: Statement, i: Int): Statement = {
@@ -349,7 +352,7 @@ private[r2dbc] class PostgresDurableStateDao(
 
     val entityType = PersistenceId.extractEntityType(state.persistenceId)
 
-    val result = {
+    val result: Future[(Long, Option[Instant])] = {
       val additionalBindings = additionalColumns.get(entityType) match {
         case None => Vector.empty[EvaluatedAdditionalColumnBindings]
         case Some(columns) =>
@@ -382,14 +385,21 @@ private[r2dbc] class PostgresDurableStateDao(
                 s"Insert failed: durable state for persistence id [${state.persistenceId}] already exists"))
           }
 
-        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty)
-          recoverDataIntegrityViolation(r2dbcExecutor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
-        else
+        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
+          val updatedRows = recoverDataIntegrityViolation(
+            r2dbcExecutor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
+          updatedRows.map(_ -> None)
+        } else
           r2dbcExecutor.withConnection(s"insert [${state.persistenceId}]") { connection =>
             for {
               updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
-            } yield updatedRows
+              changeEventTimestamp <- writeChangeEventAndCallChangeHander(
+                connection,
+                updatedRows,
+                entityType,
+                change,
+                changeEvent)
+            } yield (updatedRows, changeEventTimestamp)
           }
       } else {
         val previousRevision = state.revision - 1
@@ -425,25 +435,31 @@ private[r2dbc] class PostgresDurableStateDao(
           }
         }
 
-        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty)
-          r2dbcExecutor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
-        else
+        if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
+          val updatedRows = r2dbcExecutor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
+          updatedRows.map(_ -> None)
+        } else
           r2dbcExecutor.withConnection(s"update [${state.persistenceId}]") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
-            } yield updatedRows
+              changeEventTimestamp <- writeChangeEventAndCallChangeHander(
+                connection,
+                updatedRows,
+                entityType,
+                change,
+                changeEvent)
+            } yield (updatedRows, changeEventTimestamp)
           }
       }
     }
 
-    result.map { updatedRows =>
+    result.map { case (updatedRows, changeEventTimestamp) =>
       if (updatedRows != 1)
         throw new IllegalStateException(
           s"Update failed: durable state for persistence id [${state.persistenceId}] could not be updated to revision [${state.revision}]")
       else {
         log.debug("Updated durable state for persistenceId [{}] to revision [{}]", state.persistenceId, state.revision)
-        Done
+        changeEventTimestamp
       }
     }
   }
@@ -472,11 +488,12 @@ private[r2dbc] class PostgresDurableStateDao(
   override def deleteState(
       persistenceId: String,
       revision: Long,
-      changeEvent: Option[SerializedJournalRow]): Future[Done] = {
+      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     if (revision == 0) {
       hardDeleteState(persistenceId)
+        .map(_ => None)(ExecutionContexts.parasitic)
     } else {
-      val result = {
+      val result: Future[(Long, Option[Instant])] = {
         val entityType = PersistenceId.extractEntityType(persistenceId)
         def change =
           new DeletedDurableState[Any](persistenceId, revision, NoOffset, EmptyDbTimestamp.toEpochMilli)
@@ -508,8 +525,13 @@ private[r2dbc] class PostgresDurableStateDao(
             for {
               updatedRows <- recoverDataIntegrityViolation(
                 R2dbcExecutor.updateOneInTx(insertDeleteMarkerStatement(connection)))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent)
-            } yield updatedRows
+              changeEventTimestamp <- writeChangeEventAndCallChangeHander(
+                connection,
+                updatedRows,
+                entityType,
+                change,
+                changeEvent)
+            } yield (updatedRows, changeEventTimestamp)
           }
 
         } else {
@@ -549,19 +571,24 @@ private[r2dbc] class PostgresDurableStateDao(
           r2dbcExecutor.withConnection(s"delete [$persistenceId]") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
-              _ <- writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent)
-            } yield updatedRows
+              changeEventTimestamp <- writeChangeEventAndCallChangeHander(
+                connection,
+                updatedRows,
+                entityType,
+                change,
+                changeEvent)
+            } yield (updatedRows, changeEventTimestamp)
           }
         }
       }
 
-      result.map { updatedRows =>
+      result.map { case (updatedRows, changeEventTimestamp) =>
         if (updatedRows != 1)
           throw new IllegalStateException(
             s"Delete failed: durable state for persistence id [$persistenceId] could not be updated to revision [$revision]")
         else {
           log.debug("Deleted durable state for persistenceId [{}] to revision [{}]", persistenceId, revision)
-          Done
+          changeEventTimestamp
         }
       }
 
