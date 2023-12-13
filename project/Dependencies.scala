@@ -24,10 +24,7 @@ object Dependencies {
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.1.RELEASE" // ApacheV2
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.2.RELEASE" // ApacheV2
-
-    // Override reactor-netty-core from r2dbc-postgresql to include Netty 4.1.100, fixing CVE-2023-4586
-    val reactorNetty = "io.projectreactor.netty" % "reactor-netty-core" % "1.1.12"
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.3.RELEASE" // ApacheV2
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
@@ -58,7 +55,6 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
-    reactorNetty,
     h2,
     r2dbcH2,
     TestDeps.akkaPersistenceTck,
