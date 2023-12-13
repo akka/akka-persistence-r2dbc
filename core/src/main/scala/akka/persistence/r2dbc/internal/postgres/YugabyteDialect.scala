@@ -42,7 +42,5 @@ private[r2dbc] object YugabyteDialect extends Dialect {
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new YugabyteDurableStateDao(settings, connectionFactory, createJournalDao(settings, connectionFactory))(
-      system.executionContext,
-      system)
+    new YugabyteDurableStateDao(settings, connectionFactory, this)(system.executionContext, system)
 }

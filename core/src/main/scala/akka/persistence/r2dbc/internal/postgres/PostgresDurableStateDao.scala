@@ -4,6 +4,25 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import java.lang
+import java.time.Instant
+import java.util
+
+import scala.collection.immutable
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
+import scala.util.control.NonFatal
+
+import io.r2dbc.spi.Connection
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.R2dbcDataIntegrityViolationException
+import io.r2dbc.spi.Row
+import io.r2dbc.spi.Statement
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
 import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
@@ -20,8 +39,11 @@ import akka.persistence.r2dbc.internal.AdditionalColumnFactory
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.ChangeHandlerFactory
+import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.JournalDao
+import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
@@ -33,26 +55,6 @@ import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.Connection
-import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.R2dbcDataIntegrityViolationException
-import io.r2dbc.spi.Row
-import io.r2dbc.spi.Statement
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.lang
-import java.time.Instant
-import java.util
-
-import scala.collection.immutable
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.concurrent.duration.Duration
-import scala.concurrent.duration.FiniteDuration
-import scala.util.control.NonFatal
-
-import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 
 /**
  * INTERNAL API
@@ -77,7 +79,7 @@ private[r2dbc] object PostgresDurableStateDao {
 private[r2dbc] class PostgresDurableStateDao(
     settings: R2dbcSettings,
     connectionFactory: ConnectionFactory,
-    journalDao: JournalDao)(implicit ec: ExecutionContext, system: ActorSystem[_])
+    dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
     extends DurableStateDao {
   import DurableStateDao._
   import PostgresDurableStateDao._
@@ -91,6 +93,9 @@ private[r2dbc] class PostgresDurableStateDao(
     settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
+
+  // used for change events
+  private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, connectionFactory)
 
   private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
