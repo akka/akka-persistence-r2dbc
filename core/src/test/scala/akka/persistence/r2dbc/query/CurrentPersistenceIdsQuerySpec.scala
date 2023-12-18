@@ -40,7 +40,7 @@ class CurrentPersistenceIdsQuerySpec
 
   private val zeros = "0000"
   private val numberOfEntityTypes = 5
-  private val entityTypes = (1 to numberOfEntityTypes).map(_ => nextEntityType())
+  private val entityTypes = (1 to numberOfEntityTypes).map(n => "Entity" + zeros.drop(n.toString.length) + n)
   private val numberOfPids = 100
   private val pids = {
     (1 to numberOfEntityTypes).flatMap(entityTypeId =>
@@ -65,7 +65,7 @@ class CurrentPersistenceIdsQuerySpec
   "Event Sourced currentPersistenceIds" should {
     "retrieve all ids" in {
       val result = query.currentPersistenceIds().runWith(Sink.seq).futureValue
-      result shouldBe pids.map(_.id).sorted
+      result shouldBe pids.map(_.id)
     }
 
     "retrieve ids after id" in {
