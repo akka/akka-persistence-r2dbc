@@ -40,7 +40,7 @@ class CurrentPersistenceIdsQuerySpec
 
   private val zeros = "0000"
   private val numberOfEntityTypes = 5
-  private val entityTypes = (1 to numberOfEntityTypes).map(_ => nextEntityType())
+  private val entityTypes = (1 to numberOfEntityTypes).map(n => "Entity" + zeros.drop(n.toString.length) + n)
   private val numberOfPids = 100
   private val pids = {
     (1 to numberOfEntityTypes).flatMap(entityTypeId =>
