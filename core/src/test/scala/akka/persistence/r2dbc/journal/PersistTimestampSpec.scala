@@ -80,7 +80,11 @@ class PersistTimestampSpec
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                dbTimestamp = row.get("db_timestamp", classOf[LocalDateTime]).atZone(ZoneId.systemDefault()).toInstant,
+                dbTimestamp = if (settings.dialectName == "sqlserver") {
+                  row.get("db_timestamp", classOf[LocalDateTime]).atZone(ZoneId.systemDefault()).toInstant
+                } else {
+                  row.get("db_timestamp", classOf[Instant])
+                },
                 event)
             })
           .futureValue
