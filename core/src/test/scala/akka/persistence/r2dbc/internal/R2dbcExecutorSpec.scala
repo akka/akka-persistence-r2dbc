@@ -48,6 +48,7 @@ class R2dbcExecutorSpec
   case class Row(col: String)
 
   // need pg_sleep or similar
+  // should we add sqlserver here?
   private def canBeTestedWithDialect: Boolean =
     r2dbcSettings.connectionFactorySettings.dialect == PostgresDialect ||
     r2dbcSettings.connectionFactorySettings.dialect == YugabyteDialect

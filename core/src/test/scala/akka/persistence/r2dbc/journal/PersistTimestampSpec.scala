@@ -5,9 +5,9 @@
 package akka.persistence.r2dbc.journal
 
 import java.time.Instant
-
+import java.time.LocalDateTime
+import java.time.ZoneId
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -80,7 +80,7 @@ class PersistTimestampSpec
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+                dbTimestamp = row.get("db_timestamp", classOf[LocalDateTime]).atZone(ZoneId.systemDefault()).toInstant,
                 event)
             })
           .futureValue

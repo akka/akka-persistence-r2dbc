@@ -5,10 +5,9 @@
 package akka.persistence.r2dbc.query
 
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-
 import scala.concurrent.duration._
-
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -27,6 +26,7 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.query.EventsBySliceBacktrackingSpec.config
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -35,6 +35,8 @@ import akka.stream.testkit.scaladsl.TestSink
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
+
+import java.util.TimeZone
 
 object EventsBySliceBacktrackingSpec {
   private val BufferSize = 10 // small buffer for testing
@@ -66,22 +68,45 @@ class EventsBySliceBacktrackingSpec
   // to be able to store events with specific timestamps
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
     log.debugN("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
-    val insertEventSql = sql"""
-      INSERT INTO ${settings.journalTableWithSchema}
-      (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
-      VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
+    val insertEventSql =
+      if (settings.dialectName == "sqlserver") {
+        sql"""
+          INSERT INTO ${settings.journalTableWithSchema}
+          (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
+          VALUES (@slice, @entityType, @persistenceId, @seqNr, @dbTimestamp, '', '', @eventSerId, '', @eventPayload)"""
+      } else {
+        sql"""
+          INSERT INTO ${settings.journalTableWithSchema}
+          (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
+          VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
+      }
+
     val entityType = PersistenceId.extractEntityType(persistenceId)
 
-    val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
-      connection
-        .createStatement(insertEventSql)
-        .bind(0, slice)
-        .bind(1, entityType)
-        .bind(2, persistenceId)
-        .bind(3, seqNr)
-        .bind(4, timestamp)
-        .bind(5, stringSerializer.identifier)
-        .bindPayload(6, stringSerializer.toBinary(event))
+    val result = if (settings.dialectName == "sqlserver") {
+      r2dbcExecutor.updateOne("test writeEvent") { connection =>
+        connection
+          .createStatement(insertEventSql)
+          .bind("@slice", slice)
+          .bind("@entityType", entityType)
+          .bind("@persistenceId", persistenceId)
+          .bind("@seqNr", seqNr)
+          .bind("@dbTimestamp", LocalDateTime.ofInstant(timestamp, TimeZone.getTimeZone("UTC").toZoneId))
+          .bind("@eventSerId", stringSerializer.identifier)
+          .bindPayload("@eventPayload", stringSerializer.toBinary(event))
+      }
+    } else {
+      r2dbcExecutor.updateOne("test writeEvent") { connection =>
+        connection
+          .createStatement(insertEventSql)
+          .bind(0, slice)
+          .bind(1, entityType)
+          .bind(2, persistenceId)
+          .bind(3, seqNr)
+          .bind(4, timestamp)
+          .bind(5, stringSerializer.identifier)
+          .bindPayload(6, stringSerializer.toBinary(event))
+      }
     }
     result.futureValue shouldBe 1
   }

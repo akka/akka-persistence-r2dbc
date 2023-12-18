@@ -68,26 +68,37 @@ class DurableStateStoreAdditionalColumnSpec
 
   private val customTable = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity")
 
+  val (createCustomTable, alterCustomTable) = if (r2dbcSettings.dialectName == "sqlserver") {
+    val create =
+      s"IF object_id('$customTable') is null SELECT * into $customTable from durable_state where persistence_id = ''"
+    val alter = (col: String, colType: String) => {
+      s"IF COL_LENGTH('$customTable', '$col') IS NULL Alter Table $customTable Add $col $colType"
+    }
+    (create, alter)
+  } else {
+    val create = s"create table if not exists $customTable as select * from durable_state where persistence_id = ''"
+    val alter = (col: String, colType: String) => s"alter table $customTable add if not exists $col $colType"
+    (create, alter)
+  }
+
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
     super.beforeAll()
     Await.result(
-      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
-        _.createStatement(
-          s"create table if not exists $customTable as select * from durable_state where persistence_id = ''")),
+      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createCustomTable)),
       20.seconds)
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll alter durable_state_test")(
-        _.createStatement(s"alter table $customTable add if not exists col1 varchar(256)")),
+        _.createStatement(alterCustomTable("col1", "varchar(256)"))),
       20.seconds)
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll alter durable_state_test")(
-        _.createStatement(s"alter table $customTable add if not exists col2 int")),
+        _.createStatement(alterCustomTable("col2", "int"))),
       20.seconds)
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll alter durable_state_test")(
-        _.createStatement(s"alter table $customTable add if not exists col3 int")),
+        _.createStatement(alterCustomTable("col3", "int"))),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $customTable")),

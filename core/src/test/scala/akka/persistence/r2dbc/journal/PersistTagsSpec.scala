@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.journal
 
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -15,6 +14,7 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.sqlserver.SqlServerDialectHelper
 import akka.persistence.typed.PersistenceId
 import org.scalatest.wordspec.AnyWordSpecLike
 
@@ -63,6 +63,8 @@ class PersistTagsSpec
                     case null           => Set.empty[String]
                     case tags: Array[_] => tags.toSet.asInstanceOf[Set[String]]
                   }
+                } else if (settings.dialectName == "sqlserver") {
+                  SqlServerDialectHelper(settings.connectionFactorySettings.config).tagsFromDb(row)
                 } else {
                   row.get("tags", classOf[Array[String]]) match {
                     case null      => Set.empty[String]

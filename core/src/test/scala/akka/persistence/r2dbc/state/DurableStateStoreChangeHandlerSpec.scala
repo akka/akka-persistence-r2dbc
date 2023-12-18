@@ -8,7 +8,6 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -21,25 +20,66 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
+import akka.persistence.r2dbc.state.DurableStateStoreChangeHandlerSpec.config
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
 import akka.persistence.r2dbc.state.scaladsl.R2dbcDurableStateStore
 import akka.persistence.state.DurableStateStoreRegistry
 import akka.persistence.state.scaladsl.GetObjectResult
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
+import io.r2dbc.spi.Statement
 import org.scalatest.wordspec.AnyWordSpecLike
 
 object DurableStateStoreChangeHandlerSpec {
+  val fallback = TestConfig.config
+
+  val dialect = fallback.getString("akka.persistence.r2dbc.connection-factory.dialect")
+  val (javaDslcustomEntity, insertStatement, deleteStatement) = if (dialect == "sqlserver") {
+    val changeHandler = classOf[JavadslChangeHandlerSqlServer].getName
+    val build = (session: R2dbcSession, upd: UpdatedDurableState[String]) => {
+      session
+        .createStatement(sql"insert into changes_test (pid, rev, the_value) values (@pid, @rev, @theValue)")
+        .bind("@pid", upd.persistenceId)
+        .bind("@rev", upd.revision)
+        .bind("@theValue", upd.value)
+    }
+    val delete = (session: R2dbcSession, upd: DeletedDurableState[String]) => {
+      session
+        .createStatement(sql"insert into changes_test (pid, rev, the_value) values (@pid, @rev, @theValue)")
+        .bind("@pid", upd.persistenceId)
+        .bind("@rev", upd.revision)
+        .bindNull("@theValue", classOf[String])
+    }
+    (changeHandler, build, delete)
+  } else {
+    val changeHandler = classOf[JavadslChangeHandler].getName
+    val build = (session: R2dbcSession, upd: UpdatedDurableState[String]) => {
+      session
+        .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
+        .bind(0, upd.persistenceId)
+        .bind(1, upd.revision)
+        .bind(2, upd.value)
+    }
+    val delete = (session: R2dbcSession, upd: DeletedDurableState[String]) => {
+      session
+        .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
+        .bind(0, upd.persistenceId)
+        .bind(1, upd.revision)
+        .bindNull(2, classOf[String])
+    }
+    (changeHandler, build, delete)
+  }
+
   val config: Config = ConfigFactory
     .parseString(s"""
     akka.persistence.r2dbc.state {
       change-handler {
         "CustomEntity" = "${classOf[Handler].getName}"
-        "JavadslCustomEntity" = "${classOf[JavadslChangeHandler].getName}"
+        "JavadslCustomEntity" = "$javaDslcustomEntity"
       }
     }
     """)
-    .withFallback(TestConfig.config)
+    .withFallback(fallback)
 
   class Handler(system: ActorSystem[_]) extends ChangeHandler[String] {
     private implicit val ec: ExecutionContext = system.executionContext
@@ -51,22 +91,12 @@ object DurableStateStoreChangeHandlerSpec {
             Future.failed(new RuntimeException("BOOM"))
           else
             session
-              .updateOne(
-                session
-                  .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
-                  .bind(0, upd.persistenceId)
-                  .bind(1, upd.revision)
-                  .bind(2, upd.value))
+              .updateOne(insertStatement(session, upd))
               .map(_ => Done)
 
         case del: DeletedDurableState[String] =>
           session
-            .updateOne(
-              session
-                .createStatement(sql"insert into changes_test (pid, rev, the_value) values (?, ?, ?)")
-                .bind(0, del.persistenceId)
-                .bind(1, del.revision)
-                .bindNull(2, classOf[String]))
+            .updateOne(deleteStatement(session, del))
             .map(_ => Done)
       }
     }
@@ -81,16 +111,21 @@ class DurableStateStoreChangeHandlerSpec
     with TestData
     with LogCapturing {
 
+  val dialect = config.getString("akka.persistence.r2dbc.connection-factory.dialect")
   private val anotherTable = "changes_test"
+
+  val createTableSql = if (dialect == "sqlserver") {
+    s"IF object_id('$anotherTable') is null create table $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
+  } else {
+    s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
+  }
 
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
     super.beforeAll()
     Await.result(
-      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
-        _.createStatement(
-          s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))")),
+      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTableSql)),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $anotherTable")),

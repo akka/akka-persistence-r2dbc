@@ -24,6 +24,7 @@ object R2dbcJournalSpec {
   def testConfig(): Config = {
     ConfigFactory
       .parseString(s"""
+      akka.loglevel=DEBUG
       # allow java serialization when testing
       akka.actor.allow-java-serialization = on
       akka.actor.warn-about-java-serializer-usage = off

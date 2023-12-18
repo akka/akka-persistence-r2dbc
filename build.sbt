@@ -139,7 +139,9 @@ lazy val docs = project
     Preprocess / siteSubdirName := s"api/akka-persistence-r2dbc/${projectInfoVersion.value}",
     Preprocess / sourceDirectory := (LocalRootProject / ScalaUnidoc / unidoc / target).value,
     Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
-    paradoxGroups := Map("Language" -> Seq("Java", "Scala"), "Dialect" -> Seq("Postgres", "Yugabyte", "H2")),
+    paradoxGroups := Map(
+      "Language" -> Seq("Java", "Scala"),
+      "Dialect" -> Seq("SQL Server", "Postgres", "Yugabyte", "H2")),
     Compile / paradoxProperties ++= Map(
       "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
       "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
