@@ -10,7 +10,6 @@ import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
@@ -185,10 +184,8 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       if (useTimestampFromDb) insertEventWithTransactionTimestampSql
       else insertEventWithParameterTimestampSql
 
-    val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
-      connection =>
-        bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr),
-      row => row.get(0, classOf[Instant]))
+    val stmt = bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr)
+    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.get(0, classOf[Instant]))
     if (log.isDebugEnabled())
       result.foreach { _ =>
         log.debug("Wrote [{}] event for persistenceId [{}]", 1, persistenceId)

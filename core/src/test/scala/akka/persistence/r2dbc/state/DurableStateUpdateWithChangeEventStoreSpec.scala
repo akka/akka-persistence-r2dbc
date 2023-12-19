@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.state
 
+import org.scalatest.concurrent.ScalaFutures.convertScalaFuture
+
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -23,6 +25,10 @@ import akka.persistence.state.scaladsl.DurableStateUpdateWithChangeEventStore
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Sink
 import org.scalatest.wordspec.AnyWordSpecLike
+
+import akka.Done
+import akka.persistence.r2dbc.TestActors.Persister
+import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 
 class DurableStateUpdateWithChangeEventStoreSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)
@@ -68,6 +74,24 @@ class DurableStateUpdateWithChangeEventStoreSpec
       val env3 = envelopes(2)
       env3.event shouldBe s"Deleted"
       env3.sequenceNr shouldBe 3L
+    }
+
+    "save additional change event in same transaction" in {
+      // test rollback (same tx) if the journal insert fails via simulated unique constraint violation in event_journal
+      val entityType = nextEntityType()
+      val persistenceId = PersistenceId(entityType, "my-persistenceId").id
+
+      val probe = testKit.createTestProbe[Done]()
+      val persister = testKit.spawn(Persister(persistenceId))
+      persister ! PersistWithAck("a", probe.ref)
+      probe.expectMessage(Done)
+      testKit.stop(persister)
+
+      val value1 = "Genuinely Collaborative"
+
+      store.upsertObject(persistenceId, 1L, value1, tag, s"Changed to $value1").failed.futureValue
+
+      store.getObject(persistenceId).futureValue.value shouldBe None
     }
 
     "detect and reject concurrent inserts, and not store change event" in {
