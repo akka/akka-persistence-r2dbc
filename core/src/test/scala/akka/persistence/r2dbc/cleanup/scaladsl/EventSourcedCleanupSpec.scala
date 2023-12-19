@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.cleanup.scaladsl
 
+import scala.concurrent.duration._
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -16,8 +18,17 @@ import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.typed.PersistenceId
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.actor.testkit.typed.scaladsl.LoggingTestKit
 import org.slf4j.event.Level
+
+import akka.persistence.query.Offset
+import akka.persistence.query.PersistenceQuery
+import akka.persistence.query.TimestampOffset
+import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
+import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
+import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
+import akka.stream.scaladsl.Sink
 
 object EventSourcedCleanupSpec {
   val config = ConfigFactory
@@ -332,6 +343,82 @@ class EventSourcedCleanupSpec
         // from replaying remaining events
         stateProbe.expectMessage("4|5|6|7|8|9|10")
       }
+    }
+
+    "delete events for one persistenceId before timestamp" in {
+      val ackProbe = createTestProbe[Done]()
+      val pid = nextPid()
+      val p = spawn(Persister(pid))
+
+      (1 to 10).foreach { n =>
+        p ! Persister.PersistWithAck(n, ackProbe.ref)
+        ackProbe.expectMessage(Done)
+        ackProbe.expectNoMessage(1.millis) // just to be sure that events have different timestamps
+      }
+
+      testKit.stop(p)
+
+      val journalQuery =
+        PersistenceQuery(system).readJournalFor[CurrentEventsByPersistenceIdTypedQuery](R2dbcReadJournal.Identifier)
+      val eventsBefore =
+        journalQuery.currentEventsByPersistenceIdTyped[Any](pid, 1L, Long.MaxValue).runWith(Sink.seq).futureValue
+      eventsBefore.size shouldBe 10
+
+      val cleanup = new EventSourcedCleanup(system)
+      val timestamp = eventsBefore.last.offset.asInstanceOf[TimestampOffset].timestamp
+      cleanup.deleteEventsBefore(pid, timestamp).futureValue
+
+      val eventsAfter =
+        journalQuery.currentEventsByPersistenceIdTyped[Any](pid, 1L, Long.MaxValue).runWith(Sink.seq).futureValue
+      eventsAfter.size shouldBe 1
+      eventsAfter.head.sequenceNr shouldBe eventsBefore.last.sequenceNr
+    }
+
+    "delete events for slice before timestamp" in {
+      val ackProbe = createTestProbe[Done]()
+      val entityType = nextEntityType()
+      val pid1 = PersistenceId(entityType, "a")
+      val pid2 = PersistenceId(entityType, "b")
+      persistenceExt.sliceForPersistenceId(pid1.id) should not be persistenceExt.sliceForPersistenceId(pid2.id)
+
+      val p1 = spawn(Persister(pid1))
+      val p2 = spawn(Persister(pid2))
+
+      (1 to 10).foreach { n =>
+        val p = if (n % 2 == 0) p2 else p1
+        p ! Persister.PersistWithAck(n, ackProbe.ref)
+        ackProbe.expectMessage(Done)
+        ackProbe.expectNoMessage(1.millis) // just to be sure that events have different timestamps
+      }
+
+      testKit.stop(p1)
+      testKit.stop(p2)
+
+      val journalQuery =
+        PersistenceQuery(system).readJournalFor[CurrentEventsBySliceQuery](R2dbcReadJournal.Identifier)
+      val eventsBefore =
+        journalQuery
+          .currentEventsBySlices[Any](entityType, 0, persistenceExt.numberOfSlices - 1, Offset.noOffset)
+          .runWith(Sink.seq)
+          .futureValue
+      eventsBefore.size shouldBe 10
+      eventsBefore.last.persistenceId shouldBe pid2.id
+
+      // we remove all except last for p2, and p1 should remain untouched
+      val cleanup = new EventSourcedCleanup(system)
+      val timestamp = eventsBefore.last.offset.asInstanceOf[TimestampOffset].timestamp
+      val slice = persistenceExt.sliceForPersistenceId(eventsBefore.last.persistenceId)
+      cleanup.deleteEventsBefore(entityType, slice, timestamp).futureValue
+
+      val eventsAfter =
+        journalQuery
+          .currentEventsBySlices[Any](entityType, 0, persistenceExt.numberOfSlices - 1, Offset.noOffset)
+          .runWith(Sink.seq)
+          .futureValue
+      eventsAfter.count(_.persistenceId == pid1.id) shouldBe 5
+      eventsAfter.count(_.persistenceId == pid2.id) shouldBe 1
+      eventsAfter.size shouldBe 5 + 1
+      eventsAfter.filter(_.persistenceId == pid2.id).last.sequenceNr shouldBe eventsBefore.last.sequenceNr
     }
   }
 

@@ -30,6 +30,7 @@ not emit further events after that and typically stop itself if it receives more
 * Delete all events for one or many persistence ids
 * Delete all snapshots for one or many persistence ids
 * Delete events before snapshot for one or many persistence ids
+* Delete events before a timestamp
 
 The cleanup tool can be combined with the @ref[query plugin](./query.md) which has a query to get all persistence ids.
 

@@ -122,6 +122,14 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)"""
 
+  private val deleteEventsByPersistenceIdBeforeTimestampSql = sql"""
+    DELETE FROM $journalTable
+    WHERE persistence_id = ? AND db_timestamp < ?"""
+
+  private val deleteEventsBySliceBeforeTimestampSql = sql"""
+    DELETE FROM $journalTable
+    WHERE slice = ? AND entity_type = ? AND db_timestamp < ?"""
+
   /**
    * All events must be for the same persistenceId.
    *
@@ -361,6 +369,37 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       fromSeqNr <- lowestSequenceNrForDelete(persistenceId, toSeqNr, batchSize)
       _ <- deleteInBatches(fromSeqNr, toSeqNr)
     } yield ()
+  }
+
+  override def deleteEventsBefore(persistenceId: String, timestamp: Instant): Future[Unit] = {
+    r2dbcExecutor
+      .updateOne(s"delete [$persistenceId]") { connection =>
+        connection
+          .createStatement(deleteEventsByPersistenceIdBeforeTimestampSql)
+          .bind(0, persistenceId)
+          .bind(1, timestamp)
+      }
+      .map(deletedRows =>
+        log.debugN("Deleted [{}] events for persistenceId [{}], before [{}]", deletedRows, persistenceId, timestamp))(
+        ExecutionContexts.parasitic)
+  }
+
+  override def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): Future[Unit] = {
+    r2dbcExecutor
+      .updateOne(s"delete [$entityType]") { connection =>
+        connection
+          .createStatement(deleteEventsBySliceBeforeTimestampSql)
+          .bind(0, slice)
+          .bind(1, entityType)
+          .bind(2, timestamp)
+      }
+      .map(deletedRows =>
+        log.debugN(
+          "Deleted [{}] events for entityType [{}], slice [{}], before [{}]",
+          deletedRows,
+          entityType,
+          slice,
+          timestamp))(ExecutionContexts.parasitic)
   }
 
 }
