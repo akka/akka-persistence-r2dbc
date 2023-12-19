@@ -10,7 +10,6 @@ import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
@@ -24,8 +23,8 @@ import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
@@ -133,7 +132,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
    * it can return `JournalDao.EmptyDbTimestamp` when the pub-sub feature is disabled. When enabled it would have to use
    * a select (in same transaction).
    */
-  def writeEvents(events: Seq[SerializedJournalRow]): Future[Instant] = {
+  override def writeEvents(events: Seq[SerializedJournalRow]): Future[Instant] = {
     require(events.nonEmpty)
 
     // it's always the same persistenceId for all events
@@ -143,56 +142,6 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
     val useTimestampFromDb = events.head.dbTimestamp == Instant.EPOCH
 
-    def bind(stmt: Statement, write: SerializedJournalRow): Statement = {
-      stmt
-        .bind(0, write.slice)
-        .bind(1, write.entityType)
-        .bind(2, write.persistenceId)
-        .bind(3, write.seqNr)
-        .bind(4, write.writerUuid)
-        .bind(5, "") // FIXME event adapter
-        .bind(6, write.serId)
-        .bind(7, write.serManifest)
-        .bindPayload(8, write.payload.get)
-
-      if (write.tags.isEmpty)
-        stmt.bindNull(9, classOf[Array[String]])
-      else
-        stmt.bind(9, write.tags.toArray)
-
-      // optional metadata
-      write.metadata match {
-        case Some(m) =>
-          stmt
-            .bind(10, m.serId)
-            .bind(11, m.serManifest)
-            .bind(12, m.payload)
-        case None =>
-          stmt
-            .bindNull(10, classOf[Integer])
-            .bindNull(11, classOf[String])
-            .bindNull(12, classOf[Array[Byte]])
-      }
-
-      if (useTimestampFromDb) {
-        if (!journalSettings.dbTimestampMonotonicIncreasing)
-          stmt
-            .bind(13, write.persistenceId)
-            .bind(14, previousSeqNr)
-      } else {
-        if (journalSettings.dbTimestampMonotonicIncreasing)
-          stmt
-            .bind(13, write.dbTimestamp)
-        else
-          stmt
-            .bind(13, write.dbTimestamp)
-            .bind(14, write.persistenceId)
-            .bind(15, previousSeqNr)
-      }
-
-      stmt
-    }
-
     val insertSql =
       if (useTimestampFromDb) insertEventWithTransactionTimestampSql
       else insertEventWithParameterTimestampSql
@@ -200,11 +149,12 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     val totalEvents = events.size
     if (totalEvents == 1) {
       val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
-        connection => bind(connection.createStatement(insertSql), events.head),
+        connection =>
+          bindInsertStatement(connection.createStatement(insertSql), events.head, useTimestampFromDb, previousSeqNr),
         row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
         result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
+          log.debug("Wrote [{}] events for persistenceId [{}]", 1, persistenceId)
         }
       result
     } else {
@@ -212,18 +162,92 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
         connection =>
           events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
             stmt.add()
-            bind(stmt, write)
+            bindInsertStatement(stmt, write, useTimestampFromDb, previousSeqNr)
           },
         row => row.get(0, classOf[Instant]))
       if (log.isDebugEnabled())
         result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, events.head.persistenceId)
+          log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
         }
       result.map(_.head)(ExecutionContexts.parasitic)
     }
   }
 
-  def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
+  override def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant] = {
+    val persistenceId = event.persistenceId
+    val previousSeqNr = event.seqNr - 1
+
+    // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
+    val useTimestampFromDb = event.dbTimestamp == Instant.EPOCH
+
+    val insertSql =
+      if (useTimestampFromDb) insertEventWithTransactionTimestampSql
+      else insertEventWithParameterTimestampSql
+
+    val stmt = bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr)
+    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.get(0, classOf[Instant]))
+    if (log.isDebugEnabled())
+      result.foreach { _ =>
+        log.debug("Wrote [{}] event for persistenceId [{}]", 1, persistenceId)
+      }
+    result
+  }
+
+  private def bindInsertStatement(
+      stmt: Statement,
+      write: SerializedJournalRow,
+      useTimestampFromDb: Boolean,
+      previousSeqNr: Long): Statement = {
+    stmt
+      .bind(0, write.slice)
+      .bind(1, write.entityType)
+      .bind(2, write.persistenceId)
+      .bind(3, write.seqNr)
+      .bind(4, write.writerUuid)
+      .bind(5, "") // FIXME event adapter
+      .bind(6, write.serId)
+      .bind(7, write.serManifest)
+      .bindPayload(8, write.payload.get)
+
+    if (write.tags.isEmpty)
+      stmt.bindNull(9, classOf[Array[String]])
+    else
+      stmt.bind(9, write.tags.toArray)
+
+    // optional metadata
+    write.metadata match {
+      case Some(m) =>
+        stmt
+          .bind(10, m.serId)
+          .bind(11, m.serManifest)
+          .bind(12, m.payload)
+      case None =>
+        stmt
+          .bindNull(10, classOf[Integer])
+          .bindNull(11, classOf[String])
+          .bindNull(12, classOf[Array[Byte]])
+    }
+
+    if (useTimestampFromDb) {
+      if (!journalSettings.dbTimestampMonotonicIncreasing)
+        stmt
+          .bind(13, write.persistenceId)
+          .bind(14, previousSeqNr)
+    } else {
+      if (journalSettings.dbTimestampMonotonicIncreasing)
+        stmt
+          .bind(13, write.dbTimestamp)
+      else
+        stmt
+          .bind(13, write.dbTimestamp)
+          .bind(14, write.persistenceId)
+          .bind(15, previousSeqNr)
+    }
+
+    stmt
+  }
+
+  override def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
     val result = r2dbcExecutor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
@@ -243,7 +267,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     result
   }
 
-  def readLowestSequenceNr(persistenceId: String): Future[Long] = {
+  override def readLowestSequenceNr(persistenceId: String): Future[Long] = {
     val result = r2dbcExecutor
       .select(s"select lowest seqNr [$persistenceId]")(
         connection =>
@@ -277,7 +301,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     }
   }
 
-  def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
+  override def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
       val entityType = PersistenceId.extractEntityType(persistenceId)

@@ -7,7 +7,9 @@ package akka.persistence.r2dbc.state.javadsl
 import java.util
 import java.util.Optional
 import java.util.concurrent.CompletionStage
+
 import scala.concurrent.ExecutionContext
+
 import akka.Done
 import akka.NotUsed
 import akka.japi.Pair
@@ -16,18 +18,18 @@ import akka.persistence.query.Offset
 import akka.persistence.query.javadsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.query.typed.javadsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.state.scaladsl.{ R2dbcDurableStateStore => ScalaR2dbcDurableStateStore }
-import akka.persistence.state.javadsl.DurableStateUpdateStore
 import akka.persistence.state.javadsl.GetObjectResult
 import akka.stream.javadsl.Source
-
 import scala.compat.java8.FutureConverters.FutureOps
+
+import akka.persistence.state.javadsl.DurableStateUpdateWithChangeEventStore
 
 object R2dbcDurableStateStore {
   val Identifier: String = ScalaR2dbcDurableStateStore.Identifier
 }
 
 class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(implicit ec: ExecutionContext)
-    extends DurableStateUpdateStore[A]
+    extends DurableStateUpdateWithChangeEventStore[A]
     with DurableStateStoreBySliceQuery[A]
     with DurableStateStorePagedPersistenceIdsQuery[A] {
 
@@ -40,12 +42,23 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
   override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): CompletionStage[Done] =
     scalaStore.upsertObject(persistenceId, revision, value, tag).toJava
 
+  override def upsertObject(
+      persistenceId: String,
+      revision: Long,
+      value: A,
+      tag: String,
+      changeEvent: Any): CompletionStage[Done] =
+    scalaStore.upsertObject(persistenceId, revision, value, tag, changeEvent).toJava
+
   @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
   override def deleteObject(persistenceId: String): CompletionStage[Done] =
     deleteObject(persistenceId, revision = 0)
 
   override def deleteObject(persistenceId: String, revision: Long): CompletionStage[Done] =
     scalaStore.deleteObject(persistenceId, revision).toJava
+
+  override def deleteObject(persistenceId: String, revision: Long, changeEvent: Any): CompletionStage[Done] =
+    scalaStore.deleteObject(persistenceId, revision, changeEvent).toJava
 
   override def currentChangesBySlices(
       entityType: String,

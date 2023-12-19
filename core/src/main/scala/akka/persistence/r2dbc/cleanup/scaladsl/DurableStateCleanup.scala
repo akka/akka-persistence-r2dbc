@@ -15,6 +15,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.DurableStateDao
@@ -65,11 +66,17 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
    */
   def deleteState(persistenceId: String, resetRevisionNumber: Boolean): Future[Done] = {
     if (resetRevisionNumber)
-      stateDao.deleteState(persistenceId, revision = 0L) // hard delete without revision check
+      stateDao
+        .deleteState(persistenceId, revision = 0L, changeEvent = None) // hard delete without revision check
+        .map(_ => Done)(ExecutionContexts.parasitic)
     else {
       stateDao.readState(persistenceId).flatMap {
-        case None    => Future.successful(Done) // already deleted
-        case Some(s) => stateDao.deleteState(persistenceId, s.revision + 1)
+        case None =>
+          Future.successful(Done) // already deleted
+        case Some(s) =>
+          stateDao
+            .deleteState(persistenceId, s.revision + 1, changeEvent = None)
+            .map(_ => Done)(ExecutionContexts.parasitic)
       }
     }
   }

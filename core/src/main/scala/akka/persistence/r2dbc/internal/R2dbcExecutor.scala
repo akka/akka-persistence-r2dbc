@@ -53,6 +53,13 @@ import reactor.core.publisher.Mono
       result.getRowsUpdated.asFuture().map(_.longValue())(ExecutionContexts.parasitic)
     }
 
+  def updateOneReturningInTx[A](stmt: Statement, mapRow: Row => A)(implicit ec: ExecutionContext): Future[A] =
+    stmt.execute().asFuture().flatMap { result =>
+      Mono
+        .from[A](result.map((row, _) => mapRow(row)))
+        .asFuture()
+    }
+
   def updateBatchInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Long] = {
     val consumer: BiConsumer[Long, java.lang.Long] = (acc, elem) => acc + elem.longValue()
     Flux
@@ -195,12 +202,7 @@ class R2dbcExecutor(
   def updateOneReturning[A](
       logPrefix: String)(statementFactory: Connection => Statement, mapRow: Row => A): Future[A] = {
     withAutoCommitConnection(logPrefix) { connection =>
-      val stmt = statementFactory(connection)
-      stmt.execute().asFuture().flatMap { result =>
-        Mono
-          .from[A](result.map((row, _) => mapRow(row)))
-          .asFuture()
-      }
+      updateOneReturningInTx(statementFactory(connection), mapRow)
     }
   }
 
