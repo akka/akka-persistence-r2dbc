@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.cleanup.javadsl
 
+import java.time.Instant
 import java.util.concurrent.CompletionStage
 import java.util.{ List => JList }
 
@@ -63,6 +64,44 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
    */
   def deleteAllEvents(persistenceIds: JList[String], resetSequenceNumber: Boolean): CompletionStage[Done] =
     delegate.deleteAllEvents(persistenceIds.asScala.toVector, resetSequenceNumber).toJava
+
+  /**
+   * Delete events before a timestamp for the given persistence id. Snapshots are not deleted.
+   *
+   * This can be useful for `DurableStateBehavior` with change events, where the events are only used for the
+   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the the
+   * offset timestamp of the Projections, if events are not needed after all Projections have processed them.
+   *
+   * Be aware of that if all events of a persistenceId are removed the sequence number will start from 1 again if an
+   * `EventSourcedBehavior` with the same persistenceId is used again.
+   *
+   * @param persistenceId
+   *   the persistence id to delete for
+   * @param timestamp
+   *   timestamp (exclusive) to delete up to
+   */
+  def deleteEventsBefore(persistenceId: String, timestamp: Instant): CompletionStage[Done] =
+    delegate.deleteEventsBefore(persistenceId, timestamp).toJava
+
+  /**
+   * Delete events before a timestamp for the given entityType and slice. Snapshots are not deleted.
+   *
+   * This can be useful for `DurableStateBehavior` with change events, where the events are only used for the
+   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the the
+   * offset timestamp of the Projections, if events are not needed after all Projections have processed them.
+   *
+   * Be aware of that if all events of a persistenceId are removed the sequence number will start from 1 again if an
+   * `EventSourcedBehavior` with the same persistenceId is used again.
+   *
+   * @param entityType
+   *   the entity type to delete for
+   * @param slice
+   *   the slice to delete for
+   * @param timestamp
+   *   timestamp (exclusive) to delete up to
+   */
+  def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): CompletionStage[Done] =
+    delegate.deleteEventsBefore(entityType, slice, timestamp).toJava
 
   /**
    * Delete snapshots related to one single `persistenceId`. Events are not deleted.

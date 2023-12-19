@@ -62,4 +62,8 @@ private[r2dbc] trait JournalDao {
 
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit]
 
+  def deleteEventsBefore(persistenceId: String, timestamp: Instant): Future[Unit]
+
+  def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): Future[Unit]
+
 }
