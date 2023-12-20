@@ -98,7 +98,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete events before a timestamp for the given persistence id. Snapshots are not deleted.
    *
    * This can be useful for `DurableStateBehavior` with change events, where the events are only used for the
-   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the the
+   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the
    * offset timestamp of the Projections, if events are not needed after all Projections have processed them.
    *
    * Be aware of that if all events of a persistenceId are removed the sequence number will start from 1 again if an
@@ -118,7 +118,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
    * Delete events before a timestamp for the given entityType and slice. Snapshots are not deleted.
    *
    * This can be useful for `DurableStateBehavior` with change events, where the events are only used for the
-   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the the
+   * Projections and not for the recovery of the `DurableStateBehavior` state. The timestamp may correspond to the
    * offset timestamp of the Projections, if events are not needed after all Projections have processed them.
    *
    * Be aware of that if all events of a persistenceId are removed the sequence number will start from 1 again if an
