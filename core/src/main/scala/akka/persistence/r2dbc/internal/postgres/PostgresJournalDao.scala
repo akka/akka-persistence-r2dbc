@@ -294,14 +294,14 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     result
   }
 
-  private def highestSeqNrForDelete(persistenceId: String, toSequenceNr: Long): Future[Long] = {
+  protected def highestSeqNrForDelete(persistenceId: String, toSequenceNr: Long): Future[Long] = {
     if (toSequenceNr == Long.MaxValue)
       readHighestSequenceNr(persistenceId, 0L)
     else
       Future.successful(toSequenceNr)
   }
 
-  private def lowestSequenceNrForDelete(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
+  protected def lowestSequenceNrForDelete(persistenceId: String, toSeqNr: Long, batchSize: Int): Future[Long] = {
     if (toSeqNr <= batchSize) {
       Future.successful(1L)
     } else {
