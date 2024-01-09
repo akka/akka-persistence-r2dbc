@@ -6,8 +6,7 @@ package akka.persistence.r2dbc
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
-import akka.persistence.r2dbc.internal.ConnectionFactorySettings
-import akka.persistence.r2dbc.internal.PayloadCodec
+import akka.persistence.r2dbc.internal.{ ConnectionFactorySettings, PayloadCodec, TimestampCodec }
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 
@@ -83,6 +82,13 @@ object R2dbcSettings {
 
     val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
 
+    val timestampCodec: TimestampCodec = {
+      connectionFactorySettings.dialect.name match {
+        case "sqlserver" => TimestampCodec.SqlServerCodec
+        case _           => TimestampCodec.PostgresTimestampCodec
+      }
+    }
+
     val querySettings = new QuerySettings(config.getConfig("query"))
 
     val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
@@ -105,6 +111,7 @@ object R2dbcSettings {
       snapshotPayloadCodec,
       durableStateTable,
       durableStatePayloadCodec,
+      timestampCodec,
       durableStateAssertSingleWriter,
       logDbCallsExceeding,
       querySettings,
@@ -139,6 +146,7 @@ final class R2dbcSettings private (
     val snapshotPayloadCodec: PayloadCodec,
     val durableStateTable: String,
     val durableStatePayloadCodec: PayloadCodec,
+    val timestampCodec: TimestampCodec,
     val durableStateAssertSingleWriter: Boolean,
     val logDbCallsExceeding: FiniteDuration,
     val querySettings: QuerySettings,
@@ -155,7 +163,7 @@ final class R2dbcSettings private (
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
 
   /**
-   * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
+   * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
    */
   def dialectName: String = _connectionFactorySettings.dialect.name
 
@@ -217,6 +225,7 @@ final class R2dbcSettings private (
       snapshotPayloadCodec: PayloadCodec = snapshotPayloadCodec,
       durableStateTable: String = durableStateTable,
       durableStatePayloadCodec: PayloadCodec = durableStatePayloadCodec,
+      timestampCodec: TimestampCodec = timestampCodec,
       durableStateAssertSingleWriter: Boolean = durableStateAssertSingleWriter,
       logDbCallsExceeding: FiniteDuration = logDbCallsExceeding,
       querySettings: QuerySettings = querySettings,
@@ -237,6 +246,7 @@ final class R2dbcSettings private (
       snapshotPayloadCodec,
       durableStateTable,
       durableStatePayloadCodec,
+      timestampCodec,
       durableStateAssertSingleWriter,
       logDbCallsExceeding,
       querySettings,

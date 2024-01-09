@@ -27,6 +27,11 @@ private[r2dbc] object SqlServerDialectHelper {
 @InternalApi
 private[r2dbc] class SqlServerDialectHelper(config: Config) {
 
+  /**
+   * @todo
+   *   This helper should be converted into a implicit codec
+   */
+
   private val tagSeparator = config.getString("tag-separator")
 
   require(tagSeparator.length == 1, s"Tag separator '$tagSeparator' must be a single character.")
@@ -43,18 +48,5 @@ private[r2dbc] class SqlServerDialectHelper(config: Config) {
     case null    => Set.empty[String]
     case entries => entries.split(tagSeparator).toSet
   }
-
-  private val zone = TimeZone.getTimeZone("UTC").toZoneId
-
-  def nowInstant(): Instant = InstantFactory.now()
-
-  def nowLocalDateTime(): LocalDateTime = LocalDateTime.ofInstant(nowInstant(), zone)
-
-  def toDbTimestamp(timestamp: Instant): LocalDateTime =
-    LocalDateTime.ofInstant(timestamp, zone)
-
-  def fromDbTimestamp(time: LocalDateTime): Instant = time
-    .atZone(zone)
-    .toInstant
 
 }

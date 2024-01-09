@@ -13,11 +13,15 @@ import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.QueryDao
-import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SerializedEventMetadata
+import akka.persistence.r2dbc.internal.TimestampCodec.{ RichRow => TimstampRichRow, RichStatement }
+import akka.persistence.r2dbc.internal.{
+  InstantFactory,
+  PayloadCodec,
+  QueryDao,
+  R2dbcExecutor,
+  SerializedEventMetadata,
+  TimestampCodec
+}
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
@@ -74,7 +78,9 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
 
   protected def log: Logger = SqlServerQueryDao.log
   protected val journalTable = settings.journalTableWithSchema
+
   protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
+  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
 
   protected def eventsBySlicesRangeSql(
       toDbTimestampParam: Boolean,
@@ -86,7 +92,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= @until" else ""
 
-    def localNow = toDbTimestamp(nowInstant())
+    def localNow = timestampCodec.encode(InstantFactory.now()).asInstanceOf[LocalDateTime]
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
@@ -165,7 +171,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     settings.logDbCallsExceeding,
     settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(nowInstant())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.now())
 
   override def rowsBySlices(
       entityType: String,
@@ -186,8 +192,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
               minSlice,
               maxSlice))
           .bind("@entityType", entityType)
-          .bind("@from", toDbTimestamp(fromTimestamp))
-        toTimestamp.foreach(t => stmt.bind("@until", toDbTimestamp(t)))
+          .bindTimestamp("@from", fromTimestamp)
+        toTimestamp.foreach(t => stmt.bindTimestamp("@until", t))
         stmt.bind("@limit", settings.querySettings.bufferSize)
       },
       row =>
@@ -197,8 +203,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-            dbTimestamp = fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])),
-            readDbTimestamp = fromDbTimestamp(row.get("read_db_timestamp", classOf[LocalDateTime])),
+            dbTimestamp = row.getTimestamp(),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = None, // lazy loaded for backtracking
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = "",
@@ -211,8 +217,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-            dbTimestamp = fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])),
-            readDbTimestamp = fromDbTimestamp(row.get("read_db_timestamp", classOf[LocalDateTime])),
+            dbTimestamp = row.getTimestamp(),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = Some(row.getPayload("event_payload")),
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
@@ -249,8 +255,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
         connection
           .createStatement(selectBucketsSql(minSlice, maxSlice))
           .bind("@entityType", entityType)
-          .bind("@fromTimestamp", toDbTimestamp(fromTimestamp))
-          .bind("@toTimestamp", toDbTimestamp(toTimestamp))
+          .bindTimestamp("@fromTimestamp", fromTimestamp)
+          .bindTimestamp("@toTimestamp", toTimestamp)
           .bind("@limit", limit),
       row => {
         val bucketStartEpochSeconds = row.get[java.lang.Long]("bucket", classOf[java.lang.Long]).toLong * 10
@@ -276,7 +282,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
           .createStatement(selectTimestampOfEventSql)
           .bind("@persistenceId", persistenceId)
           .bind("@seqNr", seqNr),
-      row => fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])))
+      row => row.getTimestamp())
   }
 
   override def loadEvent(
@@ -301,8 +307,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
           entityType = row.get("entity_type", classOf[String]),
           persistenceId,
           seqNr,
-          dbTimestamp = fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])),
-          readDbTimestamp = fromDbTimestamp(row.get("read_db_timestamp", classOf[LocalDateTime])),
+          dbTimestamp = row.getTimestamp(),
+          readDbTimestamp = row.getTimestamp("read_db_timestamp"),
           payload,
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
@@ -330,8 +336,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
           entityType = row.get("entity_type", classOf[String]),
           persistenceId = row.get("persistence_id", classOf[String]),
           seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-          dbTimestamp = fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])),
-          readDbTimestamp = fromDbTimestamp(row.get("read_db_timestamp", classOf[LocalDateTime])),
+          dbTimestamp = row.getTimestamp(),
+          readDbTimestamp = row.getTimestamp("read_db_timestamp"),
           payload = Some(row.getPayload("event_payload")),
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),

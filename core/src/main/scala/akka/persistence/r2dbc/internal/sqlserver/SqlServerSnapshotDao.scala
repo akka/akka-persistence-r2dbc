@@ -14,11 +14,12 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.TimestampCodec.{
+  RichRow => TimstampRichRow,
+  RichStatement => TimestampRichStatement
+}
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.SnapshotDao
+import akka.persistence.r2dbc.internal.{ InstantFactory, PayloadCodec, R2dbcExecutor, SnapshotDao, TimestampCodec }
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
@@ -57,6 +58,7 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
 
   protected val snapshotTable = settings.snapshotsTableWithSchema
   private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
+  private implicit val timestampCodec: TimestampCodec = settings.timestampCodec
   protected val r2dbcExecutor = new R2dbcExecutor(
     connectionFactory,
     log,
@@ -192,12 +194,12 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
   private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow = {
     val writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long])
     val dbTimestamp =
-      if (settings.querySettings.startFromSnapshotEnabled)
-        fromDbTimestamp(row.get("db_timestamp", classOf[LocalDateTime])) match {
+      if (settings.querySettings.startFromSnapshotEnabled) {
+        row.getTimestamp() match {
           case null => Instant.ofEpochMilli(writeTimestamp)
           case t    => t
         }
-      else
+      } else
         Instant.ofEpochMilli(writeTimestamp)
     val tags =
       if (settings.querySettings.startFromSnapshotEnabled)
@@ -284,7 +286,7 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
 
           if (settings.querySettings.startFromSnapshotEnabled) {
             statement
-              .bind("@dbTimestamp", toDbTimestamp(serializedRow.dbTimestamp))
+              .bindTimestamp("@dbTimestamp", serializedRow.dbTimestamp)
               .bind("@tags", tagsToDb(serializedRow.tags))
           }
 
@@ -318,7 +320,7 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
   /**
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
    */
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(nowInstant())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.now())
 
   /**
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
@@ -336,7 +338,7 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
         val stmt = connection
           .createStatement(snapshotsBySlicesRangeSql(minSlice, maxSlice))
           .bind("@entityType", entityType)
-          .bind("@fromTimestamp", toDbTimestamp(fromTimestamp))
+          .bindTimestamp("@fromTimestamp", fromTimestamp)
           .bind("@bufferSize", settings.querySettings.bufferSize)
         stmt
       },
@@ -380,8 +382,8 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
         connection
           .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
           .bind("@entityType", entityType)
-          .bind("@fromTimestamp", toDbTimestamp(fromTimestamp))
-          .bind("@toTimestamp", toDbTimestamp(toTimestamp))
+          .bindTimestamp("@fromTimestamp", fromTimestamp)
+          .bindTimestamp("@toTimestamp", toTimestamp)
           .bind("@limit", limit),
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
