@@ -86,5 +86,5 @@ private[r2dbc] object SqlServerDialect extends Dialect {
 
   override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new SqlServerDurableStateDao(settings, connectionFactory)(system.executionContext, system)
+    new SqlServerDurableStateDao(settings, connectionFactory, this)(system.executionContext, system)
 }

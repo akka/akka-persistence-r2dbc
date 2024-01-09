@@ -7,14 +7,12 @@ package akka.persistence.r2dbc.internal.postgres
 import java.lang
 import java.time.Instant
 import java.util
-
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
-
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
@@ -22,7 +20,6 @@ import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
@@ -35,20 +32,27 @@ import akka.persistence.query.DurableStateChange
 import akka.persistence.query.NoOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.AdditionalColumnFactory
+import akka.persistence.r2dbc.internal.{
+  AdditionalColumnFactory,
+  ChangeHandlerFactory,
+  Dialect,
+  DurableStateDao,
+  InstantFactory,
+  JournalDao,
+  PayloadCodec,
+  R2dbcExecutor,
+  TimestampCodec
+}
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
-import akka.persistence.r2dbc.internal.ChangeHandlerFactory
-import akka.persistence.r2dbc.internal.Dialect
-import akka.persistence.r2dbc.internal.DurableStateDao
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.TimestampCodec.{
+  RichRow => TimestampRichRow,
+  RichStatement => TimestampRichStatement
+}
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.postgres.sql.{ BaseDurableStateSql, PostgresDurableStateSql }
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
 import akka.persistence.r2dbc.state.ChangeHandlerException
 import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
@@ -64,7 +68,8 @@ private[r2dbc] object PostgresDurableStateDao {
 
   private val log: Logger = LoggerFactory.getLogger(classOf[PostgresDurableStateDao])
 
-  private final case class EvaluatedAdditionalColumnBindings(
+  // move this to a dialect independent place?
+  final case class EvaluatedAdditionalColumnBindings(
       additionalColumn: AdditionalColumn[_, _],
       binding: AdditionalColumn.Binding[_])
 
@@ -92,7 +97,10 @@ private[r2dbc] class PostgresDurableStateDao(
     settings.logDbCallsExceeding,
     settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
-  private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
+  protected implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
+  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
+
+  val durableStateSql: BaseDurableStateSql = new PostgresDurableStateSql(settings)
 
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, connectionFactory)
@@ -111,181 +119,25 @@ private[r2dbc] class PostgresDurableStateDao(
     }
   }
 
-  private def selectStateSql(entityType: String): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-    sql"""
-    SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
-    FROM $stateTable WHERE persistence_id = ?"""
-  }
-
-  private def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-    sql"""
-     SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-     FROM $stateTable
-     WHERE entity_type = ?
-     AND ${sliceCondition(minSlice, maxSlice)}
-     AND db_timestamp >= ? AND db_timestamp <= ?
-     GROUP BY bucket ORDER BY bucket LIMIT ?
-     """
-  }
+  private val currentDbTimestampSql =
+    sql"SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
-  private def insertStateSql(
-      entityType: String,
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-    val additionalCols = additionalInsertColumns(additionalBindings)
-    val additionalParams = additionalInsertParameters(additionalBindings)
-    sql"""
-    INSERT INTO $stateTable
-    (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags$additionalCols, db_timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?$additionalParams, CURRENT_TIMESTAMP)"""
-  }
-
-  private def additionalInsertColumns(
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    if (additionalBindings.isEmpty) ""
-    else {
-      val strB = new lang.StringBuilder()
-      additionalBindings.foreach {
-        case EvaluatedAdditionalColumnBindings(c, _: AdditionalColumn.BindValue[_]) =>
-          strB.append(", ").append(c.columnName)
-        case EvaluatedAdditionalColumnBindings(c, AdditionalColumn.BindNull) =>
-          strB.append(", ").append(c.columnName)
-        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
-      }
-      strB.toString
-    }
-  }
-
-  private def additionalInsertParameters(
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    if (additionalBindings.isEmpty) ""
-    else {
-      val strB = new lang.StringBuilder()
-      additionalBindings.foreach {
-        case EvaluatedAdditionalColumnBindings(_, _: AdditionalColumn.BindValue[_]) |
-            EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindNull) =>
-          strB.append(", ?")
-        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
-      }
-      strB.toString
-    }
-  }
-
-  private def updateStateSql(
-      entityType: String,
-      updateTags: Boolean,
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-
-    val timestamp =
-      if (settings.dbTimestampMonotonicIncreasing)
-        "CURRENT_TIMESTAMP"
-      else
-        "GREATEST(CURRENT_TIMESTAMP, " +
-        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
-
-    val revisionCondition =
-      if (settings.durableStateAssertSingleWriter) " AND revision = ?"
-      else ""
-
-    val tags = if (updateTags) ", tags = ?" else ""
-
-    val additionalParams = additionalUpdateParameters(additionalBindings)
-    sql"""
-      UPDATE $stateTable
-      SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?$tags$additionalParams, db_timestamp = $timestamp
-      WHERE persistence_id = ?
-      $revisionCondition"""
-  }
-
-  private def additionalUpdateParameters(
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    if (additionalBindings.isEmpty) ""
-    else {
-      val strB = new lang.StringBuilder()
-      additionalBindings.foreach {
-        case EvaluatedAdditionalColumnBindings(col, _: AdditionalColumn.BindValue[_]) =>
-          strB.append(", ").append(col.columnName).append(" = ?")
-        case EvaluatedAdditionalColumnBindings(col, AdditionalColumn.BindNull) =>
-          strB.append(", ").append(col.columnName).append(" = ?")
-        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
-      }
-      strB.toString
-    }
-  }
-
-  private def hardDeleteStateSql(entityType: String): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-    sql"DELETE from $stateTable WHERE persistence_id = ?"
-  }
-
-  private val currentDbTimestampSql =
-    sql"SELECT CURRENT_TIMESTAMP AS db_timestamp"
-
-  private def allPersistenceIdsSql(table: String): String =
-    sql"SELECT persistence_id from $table ORDER BY persistence_id LIMIT ?"
-
-  private def persistenceIdsForEntityTypeSql(table: String): String =
-    sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
-
-  private def allPersistenceIdsAfterSql(table: String): String =
-    sql"SELECT persistence_id from $table WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
-
-  private def persistenceIdsForEntityTypeAfterSql(table: String): String =
-    sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
-
-  protected def behindCurrentTimeIntervalConditionFor(behindCurrentTime: FiniteDuration): String =
-    if (behindCurrentTime > Duration.Zero)
-      s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis} milliseconds'"
-    else ""
-
-  protected def stateBySlicesRangeSql(
-      entityType: String,
-      maxDbTimestampParam: Boolean,
-      behindCurrentTime: FiniteDuration,
-      backtracking: Boolean,
-      minSlice: Int,
-      maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
-
-    def maxDbTimestampParamCondition =
-      if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""
-
-    val behindCurrentTimeIntervalCondition = behindCurrentTimeIntervalConditionFor(behindCurrentTime)
-
-    val selectColumns =
-      if (backtracking)
-        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id "
-      else
-        "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
-
-    sql"""
-      $selectColumns
-      FROM $stateTable
-      WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
-      AND db_timestamp >= ? $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
-      ORDER BY db_timestamp, revision
-      LIMIT ?"""
-  }
-
   override def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
     r2dbcExecutor.selectOne(s"select [$persistenceId]")(
-      connection =>
-        connection
-          .createStatement(selectStateSql(entityType))
-          .bind(0, persistenceId),
-      row =>
+      { connection =>
+        val stmt = connection.createStatement(durableStateSql.selectStateSql(entityType))
+        durableStateSql.bindForSelectStateSql(stmt, persistenceId)
+
+      },
+      (row: Row) =>
         SerializedStateRow(
           persistenceId = persistenceId,
           revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-          dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+          dbTimestamp = row.getTimestamp(),
           readDbTimestamp = Instant.EPOCH, // not needed here
           payload = getPayload(row),
           serId = row.get[Integer]("state_ser_id", classOf[Integer]),
@@ -371,16 +223,14 @@ private[r2dbc] class PostgresDurableStateDao(
 
         def insertStatement(connection: Connection): Statement = {
           val stmt = connection
-            .createStatement(insertStateSql(entityType, additionalBindings))
-            .bind(getAndIncIndex(), slice)
-            .bind(getAndIncIndex(), entityType)
-            .bind(getAndIncIndex(), state.persistenceId)
-            .bind(getAndIncIndex(), state.revision)
-            .bind(getAndIncIndex(), state.serId)
-            .bind(getAndIncIndex(), state.serManifest)
-            .bindPayloadOption(getAndIncIndex(), state.payload)
-          bindTags(stmt, getAndIncIndex())
-          bindAdditionalColumns(stmt, additionalBindings)
+            .createStatement(durableStateSql.insertStateSql(entityType, additionalBindings))
+          durableStateSql.bindInsertStateForUpsertState(
+            stmt,
+            getAndIncIndex,
+            slice,
+            entityType,
+            state,
+            additionalBindings)
         }
 
         def recoverDataIntegrityViolation[A](f: Future[A]): Future[A] =
@@ -411,33 +261,13 @@ private[r2dbc] class PostgresDurableStateDao(
 
         def updateStatement(connection: Connection): Statement = {
           val stmt = connection
-            .createStatement(updateStateSql(entityType, updateTags = true, additionalBindings))
-            .bind(getAndIncIndex(), state.revision)
-            .bind(getAndIncIndex(), state.serId)
-            .bind(getAndIncIndex(), state.serManifest)
-            .bindPayloadOption(getAndIncIndex(), state.payload)
-          bindTags(stmt, getAndIncIndex())
-          bindAdditionalColumns(stmt, additionalBindings)
-
-          if (settings.dbTimestampMonotonicIncreasing) {
-            if (settings.durableStateAssertSingleWriter)
-              stmt
-                .bind(getAndIncIndex(), state.persistenceId)
-                .bind(getAndIncIndex(), previousRevision)
-            else
-              stmt
-                .bind(getAndIncIndex(), state.persistenceId)
-          } else {
-            stmt
-              .bind(getAndIncIndex(), state.persistenceId)
-              .bind(getAndIncIndex(), previousRevision)
-              .bind(getAndIncIndex(), state.persistenceId)
-
-            if (settings.durableStateAssertSingleWriter)
-              stmt.bind(getAndIncIndex(), previousRevision)
-            else
-              stmt
-          }
+            .createStatement(durableStateSql.updateStateSql(entityType, updateTags = true, additionalBindings))
+          durableStateSql.binUpdateStateSqlForUpsertState(
+            stmt,
+            getAndIncIndex,
+            state,
+            additionalBindings,
+            previousRevision)
         }
 
         if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
@@ -506,18 +336,13 @@ private[r2dbc] class PostgresDurableStateDao(
           val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
           def insertDeleteMarkerStatement(connection: Connection): Statement = {
-            connection
+
+            val stmt = connection
               .createStatement(
-                insertStateSql(entityType, Vector.empty)
+                durableStateSql.insertStateSql(entityType, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
-              .bind(0, slice)
-              .bind(1, entityType)
-              .bind(2, persistenceId)
-              .bind(3, revision)
-              .bind(4, 0)
-              .bind(5, "")
-              .bindPayloadOption(6, None)
-              .bindNull(7, classOf[Array[String]])
+
+            durableStateSql.bindDeleteStateForInsertState(stmt, slice, entityType, persistenceId, revision)
           }
 
           def recoverDataIntegrityViolation[A](f: Future[A]): Future[A] =
@@ -545,32 +370,9 @@ private[r2dbc] class PostgresDurableStateDao(
           def updateStatement(connection: Connection): Statement = {
             val stmt = connection
               .createStatement(
-                updateStateSql(entityType, updateTags = false, Vector.empty)
+                durableStateSql.updateStateSql(entityType, updateTags = false, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
-              .bind(0, revision)
-              .bind(1, 0)
-              .bind(2, "")
-              .bindPayloadOption(3, None)
-
-            if (settings.dbTimestampMonotonicIncreasing) {
-              if (settings.durableStateAssertSingleWriter)
-                stmt
-                  .bind(4, persistenceId)
-                  .bind(5, previousRevision)
-              else
-                stmt
-                  .bind(4, persistenceId)
-            } else {
-              stmt
-                .bind(4, persistenceId)
-                .bind(5, previousRevision)
-                .bind(6, persistenceId)
-
-              if (settings.durableStateAssertSingleWriter)
-                stmt.bind(7, previousRevision)
-              else
-                stmt
-            }
+            durableStateSql.bindUpdateStateSqlForDeleteState(stmt, revision, persistenceId, previousRevision)
           }
 
           r2dbcExecutor.withConnection(s"delete [$persistenceId]") { connection =>
@@ -609,10 +411,10 @@ private[r2dbc] class PostgresDurableStateDao(
     val result =
       r2dbcExecutor.withConnection(s"hard delete [$persistenceId]$changeHandlerHint") { connection =>
         for {
-          updatedRows <- R2dbcExecutor.updateOneInTx(
-            connection
-              .createStatement(hardDeleteStateSql(entityType))
-              .bind(0, persistenceId))
+          updatedRows <- R2dbcExecutor.updateOneInTx {
+            val stmt = connection.createStatement(durableStateSql.hardDeleteStateSql(entityType))
+            durableStateSql.bindForHardDeleteState(stmt, persistenceId)
+          }
           _ <- {
             val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
             writeChangeEventAndCallChangeHander(connection, updatedRows, entityType, change, changeEvent = None)
@@ -649,23 +451,14 @@ private[r2dbc] class PostgresDurableStateDao(
       connection => {
         val stmt = connection
           .createStatement(
-            stateBySlicesRangeSql(
+            durableStateSql.stateBySlicesRangeSql(
               entityType,
               maxDbTimestampParam = toTimestamp.isDefined,
               behindCurrentTime,
               backtracking,
               minSlice,
               maxSlice))
-          .bind(0, entityType)
-          .bind(1, fromTimestamp)
-        toTimestamp match {
-          case Some(until) =>
-            stmt.bind(2, until)
-            stmt.bind(3, settings.querySettings.bufferSize)
-          case None =>
-            stmt.bind(2, settings.querySettings.bufferSize)
-        }
-        stmt
+        durableStateSql.bindForStateBySlicesRangeSql(stmt, entityType, fromTimestamp, toTimestamp, behindCurrentTime)
       },
       row =>
         if (backtracking) {
@@ -677,8 +470,8 @@ private[r2dbc] class PostgresDurableStateDao(
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             // payload = null => lazy loaded for backtracking (ugly, but not worth changing UpdatedDurableState in Akka)
             // payload = None => DeletedDurableState (no lazy loading)
             payload = if (isDeleted) None else null,
@@ -690,8 +483,8 @@ private[r2dbc] class PostgresDurableStateDao(
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-            dbTimestamp = row.get("db_timestamp", classOf[Instant]),
-            readDbTimestamp = row.get("read_db_timestamp", classOf[Instant]),
+            dbTimestamp = row.getTimestamp(),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = getPayload(row),
             serId = row.get[Integer]("state_ser_id", classOf[Integer]),
             serManifest = row.get("state_ser_manifest", classOf[String]),
@@ -741,22 +534,18 @@ private[r2dbc] class PostgresDurableStateDao(
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  private def readPersistenceIds(
-      afterId: Option[String],
-      limit: Long,
-      table: String): Future[immutable.IndexedSeq[String]] = {
+  def readPersistenceIds(afterId: Option[String], limit: Long, table: String): Future[immutable.IndexedSeq[String]] = {
     val result = r2dbcExecutor.select(s"select persistenceIds")(
       connection =>
         afterId match {
           case Some(after) =>
-            connection
-              .createStatement(allPersistenceIdsAfterSql(table))
-              .bind(0, after)
-              .bind(1, limit)
+            val stmt = connection.createStatement(durableStateSql.allPersistenceIdsAfterSql(table))
+            durableStateSql.bindForAllPersistenceIdsAfter(stmt, after, limit)
+
           case None =>
-            connection
-              .createStatement(allPersistenceIdsSql(table))
-              .bind(0, limit)
+            val stmt = connection.createStatement(durableStateSql.allPersistenceIdsSql(table))
+            durableStateSql.bindForAllPersistenceIdsSql(stmt, limit)
+
         },
       row => row.get("persistence_id", classOf[String]))
 
@@ -772,16 +561,13 @@ private[r2dbc] class PostgresDurableStateDao(
       connection =>
         afterId match {
           case Some(after) =>
-            connection
-              .createStatement(persistenceIdsForEntityTypeAfterSql(table))
-              .bind(0, entityType + likeStmtPostfix)
-              .bind(1, after)
-              .bind(2, limit)
+            val stmt = connection.createStatement(durableStateSql.persistenceIdsForEntityTypeAfterSql(table))
+            durableStateSql.bindPersistenceIdsForEntityTypeAfter(stmt, entityType + likeStmtPostfix, after, limit)
+
           case None =>
-            connection
-              .createStatement(persistenceIdsForEntityTypeSql(table))
-              .bind(0, entityType + likeStmtPostfix)
-              .bind(1, limit)
+            val stmt = connection.createStatement(durableStateSql.persistenceIdsForEntityTypeSql(table))
+            durableStateSql.bindPersistenceIdsForEntityType(stmt, entityType + likeStmtPostfix, limit)
+
         },
       row => row.get("persistence_id", classOf[String]))
 
@@ -805,7 +591,7 @@ private[r2dbc] class PostgresDurableStateDao(
       limit: Int): Future[Seq[Bucket]] = {
 
     val toTimestamp = {
-      val now = InstantFactory.now() // not important to use database time
+      val now = timestampCodec.now() // not important to use database time
       if (fromTimestamp == Instant.EPOCH)
         now
       else {
@@ -816,13 +602,10 @@ private[r2dbc] class PostgresDurableStateDao(
     }
 
     val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
-      connection =>
-        connection
-          .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
-          .bind(0, entityType)
-          .bind(1, fromTimestamp)
-          .bind(2, toTimestamp)
-          .bind(3, limit),
+      connection => {
+        val stmt = connection.createStatement(durableStateSql.selectBucketsSql(entityType, minSlice, maxSlice))
+        durableStateSql.bindSelectBucketsForCoundBuckets(stmt, entityType, fromTimestamp, toTimestamp, limit)
+      },
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong
