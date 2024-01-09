@@ -21,7 +21,7 @@ import java.util.TimeZone
   def encode(timestamp: Instant): Any
   def decode(row: Row, name: String): Instant
 
-  protected def instantNow() = InstantFactory.now()
+  protected def instantNow(): Instant = InstantFactory.now()
 
   def now[T](): T
 }
