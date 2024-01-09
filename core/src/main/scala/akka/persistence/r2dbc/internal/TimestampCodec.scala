@@ -55,7 +55,6 @@ import java.util.TimeZone
     override def now[T](): T = LocalDateTime.ofInstant(instantNow(), zone).asInstanceOf[T]
   }
 
-
   implicit class RichStatement[T](val statement: Statement)(implicit codec: TimestampCodec) extends AnyRef {
     def bindTimestamp(name: String, timestamp: Instant): Statement = statement.bind(name, codec.encode(timestamp))
     def bindTimestamp(index: Int, timestamp: Instant): Statement = statement.bind(index, codec.encode(timestamp))
