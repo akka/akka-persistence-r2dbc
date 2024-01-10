@@ -21,7 +21,7 @@ jobs:
           # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
-          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '' }
+          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
     steps:
       - name: Checkout
         uses: actions/checkout@v3.1.0
@@ -44,8 +44,8 @@ jobs:
       - name: sbt ${{ matrix.testCmd }}
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt ++${{ matrix.scalaVersion }} \
-            ${{ matrix.testCmd }} ${{ matrix.extraOpts }}
+          sbt ${{ matrix.extraOpts }} \
+            ++${{ matrix.scalaVersion }} ${{ matrix.testCmd }}
 
       - name: Email on failure
         if: ${{ failure() }}
@@ -98,8 +98,8 @@ jobs:
       - name: sbt ${{ matrix.testCmd }}
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt ++${{ matrix.scalaVersion }} \
-            -Dakka.persistence.r2dbc.dialect=yugabyte ${{ matrix.extraOpts }} ${{ matrix.extraOpts }}
+          sbt ${{ matrix.extraOpts }} -Dconfig.resource=application-yugabyte.conf \
+             ++${{ matrix.scalaVersion }} ${{ matrix.testCmd }}
 
       - name: Email on failure
         if: ${{ failure() }}
