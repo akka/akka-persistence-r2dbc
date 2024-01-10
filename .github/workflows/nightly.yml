@@ -115,3 +115,50 @@ jobs:
           body: |
             Job ${{ github.job }} in workflow ${{ github.workflow }} of ${{github.repository}} failed!
             https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+
+  test-h2:
+    name: Run tests with H2
+    runs-on: ubuntu-22.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
+          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
+          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
+          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK ${{ matrix.jdkVersion }}
+        uses: coursier/setup-action@v1.3.4
+        with:
+          jvm: ${{ matrix.jvmName }}
+
+      - name: sbt ${{ matrix.testCmd }}
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt ${{ matrix.extraOpts }} -Dconfig.resource=application-h2.conf \
+             ++${{ matrix.scalaVersion }} ${{ matrix.testCmd }}
+
+      - name: Email on failure
+        if: ${{ failure() }}
+        uses: dawidd6/action-send-mail@6063705cefe50cb915fc53bb06d4049cae2953b2
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{secrets.MAIL_USERNAME}}
+          password: ${{secrets.MAIL_PASSWORD}}
+          subject: "Failed: ${{ github.workflow }} / ${{ github.job }}"
+          to: ${{secrets.MAIL_SEND_TO}}
+          from: AP R2DBC CI
+          body: |
+            Job ${{ github.job }} in workflow ${{ github.workflow }} of ${{github.repository}} failed!
+            https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
