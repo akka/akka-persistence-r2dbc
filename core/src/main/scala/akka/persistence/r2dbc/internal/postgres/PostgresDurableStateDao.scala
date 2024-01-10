@@ -591,7 +591,7 @@ private[r2dbc] class PostgresDurableStateDao(
       limit: Int): Future[Seq[Bucket]] = {
 
     val toTimestamp = {
-      val now = timestampCodec.now[Instant]() // not important to use database time
+      val now = timestampCodec.instantNow() // not important to use database time
       if (fromTimestamp == Instant.EPOCH)
         now
       else {
