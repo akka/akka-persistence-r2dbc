@@ -22,7 +22,11 @@ import org.slf4j.LoggerFactory
 @InternalApi private[r2dbc] object MigrationToolDao {
   private val log = LoggerFactory.getLogger(classOf[MigrationToolDao])
 
-  final case class CurrentProgress(persistenceId: String, eventSeqNr: Long, snapshotSeqNr: Long)
+  final case class CurrentProgress(
+      persistenceId: String,
+      eventSeqNr: Long,
+      snapshotSeqNr: Long,
+      durableStateRevision: Long)
 }
 
 /**
@@ -44,6 +48,7 @@ import org.slf4j.LoggerFactory
           persistence_id VARCHAR(255) NOT NULL,
           event_seq_nr BIGINT,
           snapshot_seq_nr BIGINT,
+          state_revision  BIGINT,
           PRIMARY KEY(persistence_id)
         )""")
     }
@@ -83,6 +88,23 @@ import org.slf4j.LoggerFactory
       .map(_ => Done)(ExecutionContexts.parasitic)
   }
 
+  def updateDurableStateProgress(persistenceId: String, revision: Long): Future[Done] = {
+    r2dbcExecutor
+      .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
+        connection
+          .createStatement(sql"""
+              INSERT INTO migration_progress
+              (persistence_id, state_revision)
+              VALUES (?, ?)
+              ON CONFLICT (persistence_id)
+              DO UPDATE SET
+              state_revision = excluded.state_revision""")
+          .bind(0, persistenceId)
+          .bind(1, revision)
+      }
+      .map(_ => Done)(ExecutionContexts.parasitic)
+  }
+
   def currentProgress(persistenceId: String): Future[Option[CurrentProgress]] = {
     r2dbcExecutor.selectOne(s"read migration progress [$persistenceId]")(
       _.createStatement(sql"SELECT * FROM migration_progress WHERE persistence_id = ?")
@@ -91,7 +113,8 @@ import org.slf4j.LoggerFactory
         CurrentProgress(
           persistenceId,
           eventSeqNr = zeroIfNull(row.get("event_seq_nr", classOf[java.lang.Long])),
-          snapshotSeqNr = zeroIfNull(row.get("snapshot_seq_nr", classOf[java.lang.Long]))))
+          snapshotSeqNr = zeroIfNull(row.get("snapshot_seq_nr", classOf[java.lang.Long])),
+          durableStateRevision = zeroIfNull(row.get("state_revision", classOf[java.lang.Long]))))
   }
 
   private def zeroIfNull(n: java.lang.Long): Long =

@@ -20,6 +20,8 @@ import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 
+import akka.persistence.r2dbc.TestActors.DurableStatePersister
+
 object MigrationToolSpec {
   val config: Config = ConfigFactory
     .parseString("""
@@ -53,6 +55,12 @@ object MigrationToolSpec {
       use-shared-db = "default"
       tables.event_journal.tableName = "jdbc_event_journal"
     }
+    jdbc-durable-state-store {
+      use-shared-db = "default"
+      tables.durable_state.tableName = "jdbc_durable_state"
+    }
+
+    akka.persistence.r2dbc.state.assert-single-writer = off
     """)
     .withFallback(TestConfig.config)
 }
@@ -69,6 +77,7 @@ class MigrationToolSpec
   private val migrationConfig = system.settings.config.getConfig("akka.persistence.r2dbc.migration")
   private val sourceJournalPluginId = "jdbc-journal"
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
+  private val sourceDurableStatePluginId = migrationConfig.getString("source.durable-state-plugin-id")
 
   private val targetPluginId = migrationConfig.getString("target.persistence-plugin-id")
 
@@ -129,10 +138,29 @@ class MigrationToolSpec
         10.seconds)
 
       Await.result(
+        r2dbcExecutor.executeDdl("beforeAll create jdbc tables") { connection =>
+          connection.createStatement("""CREATE TABLE IF NOT EXISTS jdbc_durable_state (
+                                       |  global_offset BIGSERIAL,
+                                       |  persistence_id VARCHAR(255) NOT NULL,
+                                       |  revision BIGINT NOT NULL,
+                                       |  state_payload BYTEA NOT NULL,
+                                       |  state_serial_id INTEGER NOT NULL,
+                                       |  state_serial_manifest VARCHAR(255),
+                                       |  tag VARCHAR,
+                                       |  state_timestamp BIGINT NOT NULL,
+                                       |  PRIMARY KEY(persistence_id)
+                                       |);""".stripMargin)
+        },
+        10.seconds)
+
+      Await.result(
         r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_event_journal")),
         10.seconds)
       Await.result(
         r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_snapshot")),
+        10.seconds)
+      Await.result(
+        r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_durable_state")),
         10.seconds)
 
       Await.result(migration.migrationDao.createProgressTable(), 10.seconds)
@@ -152,6 +180,14 @@ class MigrationToolSpec
     probe.expectMessage(Done)
   }
 
+  private def persistDurableState(pid: PersistenceId, state: Any): Unit = {
+    val probe = testKit.createTestProbe[Done]()
+    val persister = testKit.spawn(DurableStatePersister(pid, sourceDurableStatePluginId))
+    persister ! DurableStatePersister.Persist(state)
+    persister ! DurableStatePersister.Stop(probe.ref)
+    probe.expectMessage(Done)
+  }
+
   private def assertEvents(pid: PersistenceId, expectedEvents: Seq[String]): Unit =
     assertState(pid, expectedEvents.mkString("|"))
 
@@ -162,6 +198,16 @@ class MigrationToolSpec
     targetPersister ! Persister.GetState(probe.ref)
     probe.expectMessage(expectedState)
     targetPersister ! Persister.Stop(probe.ref)
+    probe.expectMessage(Done)
+  }
+
+  private def assertDurableState(pid: PersistenceId, expectedState: String): Unit = {
+    val probe = testKit.createTestProbe[Any]()
+    val targetPersister =
+      testKit.spawn(DurableStatePersister(pid, targetPluginId + ".state"))
+    targetPersister ! DurableStatePersister.GetState(probe.ref)
+    probe.expectMessage(expectedState)
+    targetPersister ! DurableStatePersister.Stop(probe.ref)
     probe.expectMessage(Done)
   }
 
@@ -272,6 +318,59 @@ class MigrationToolSpec
 
       pids.foreach { pid =>
         assertEvents(pid, events)
+      }
+    }
+
+    "migrate durable state of one persistenceId" in {
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      persistDurableState(pid, "s-1")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-1")
+    }
+
+    "migrate durable state of a persistenceId several times" in {
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      persistDurableState(pid, "s-1")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-1")
+
+      // running again should be idempotent and not fail
+      migration.migrateDurableState(pid.id).futureValue shouldBe 0L
+      assertDurableState(pid, "s-1")
+
+      // and running again should find updated revision
+      persistDurableState(pid, "s-2")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-2")
+    }
+
+    "update durable state migration_progress" in {
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      migration.migrationDao.currentProgress(pid.id).futureValue.map(_.durableStateRevision) shouldBe None
+
+      persistDurableState(pid, "s-1")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      migration.migrationDao.currentProgress(pid.id).futureValue.map(_.durableStateRevision) shouldBe Some(1L)
+
+      // store and migration some more
+      persistDurableState(pid, "s-2")
+      persistDurableState(pid, "s-3")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      migration.migrationDao.currentProgress(pid.id).futureValue.map(_.durableStateRevision) shouldBe Some(3L)
+    }
+
+    "migrate all durable state persistenceIds" in {
+      val numberOfPids = 10
+      val pids = (1 to numberOfPids).map(_ => PersistenceId.ofUniqueId(nextPid()))
+
+      pids.foreach { pid =>
+        persistDurableState(pid, s"s-$pid")
+      }
+
+      migration.migrateDurableStates(pids.map(_.id)).futureValue
+
+      pids.foreach { pid =>
+        assertDurableState(pid, s"s-$pid")
       }
     }
 
