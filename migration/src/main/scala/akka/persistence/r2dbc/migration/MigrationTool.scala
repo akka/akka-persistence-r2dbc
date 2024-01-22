@@ -449,7 +449,7 @@ class MigrationTool(system: ActorSystem[_]) {
     val stateSerializer = serialization.findSerializerFor(stateAnyRef)
     val stateManifest = Serializers.manifestFor(stateSerializer, stateAnyRef)
 
-    // not possible to preserve timestamp
+    // not possible to preserve timestamp, because not included in GetObjectResult
     val timestamp = Instant.now()
 
     val serializedRow = SerializedStateRow(
@@ -460,22 +460,19 @@ class MigrationTool(system: ActorSystem[_]) {
       Some(serializedState),
       stateSerializer.identifier,
       stateManifest,
-      tags = Set.empty // not possible to preserve tags
+      tags = Set.empty // not possible to preserve tags, because not included in GetObjectResult
     )
     serializedRow
   }
 
   private def loadSourceDurableState(persistenceId: String, minRevision: Long): Future[Option[SelectedDurableState]] = {
-    if (sourceDurableStatePluginId == "")
-      Future.successful(None)
-    else
-      sourceDurableStateStore
-        .getObject(persistenceId)
-        .map {
-          case GetObjectResult(Some(value), revision) if revision >= minRevision =>
-            Some(SelectedDurableState(persistenceId, revision, value))
-          case _ => None
-        }
+    sourceDurableStateStore
+      .getObject(persistenceId)
+      .map {
+        case GetObjectResult(Some(value), revision) if revision >= minRevision =>
+          Some(SelectedDurableState(persistenceId, revision, value))
+        case _ => None
+      }
   }
 
 }
