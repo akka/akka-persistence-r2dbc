@@ -6,6 +6,11 @@ package akka.persistence.r2dbc
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
+import akka.persistence.r2dbc.internal.codec.TagsCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.ConnectionFactorySettings
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.util.JavaDurationConverters._
@@ -83,6 +88,18 @@ object R2dbcSettings {
 
     val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
 
+    val (tagsCodec: TagsCodec, timestampCodec: TimestampCodec, queryAdapter: QueryAdapter) = {
+      connectionFactorySettings.dialect.name match {
+        case "sqlserver" =>
+          (
+            new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.config),
+            TimestampCodec.SqlServerTimestampCodec,
+            SqlServerQueryAdapter)
+        case "h2" => (TagsCodec.H2TagsCodec, TimestampCodec.H2TimestampCodec, IdentityAdapter)
+        case _    => (TagsCodec.PostgresTagsCodec, TimestampCodec.PostgresTimestampCodec, IdentityAdapter)
+      }
+    }
+
     val querySettings = new QuerySettings(config.getConfig("query"))
 
     val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
@@ -103,6 +120,9 @@ object R2dbcSettings {
       journalPublishEvents,
       snapshotsTable,
       snapshotPayloadCodec,
+      tagsCodec,
+      timestampCodec,
+      queryAdapter,
       durableStateTable,
       durableStatePayloadCodec,
       durableStateAssertSingleWriter,
@@ -137,6 +157,9 @@ final class R2dbcSettings private (
     val journalPublishEvents: Boolean,
     val snapshotsTable: String,
     val snapshotPayloadCodec: PayloadCodec,
+    val tagsCodec: TagsCodec,
+    val timestampCodec: TimestampCodec,
+    val queryAdapter: QueryAdapter,
     val durableStateTable: String,
     val durableStatePayloadCodec: PayloadCodec,
     val durableStateAssertSingleWriter: Boolean,
@@ -155,7 +178,7 @@ final class R2dbcSettings private (
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
 
   /**
-   * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
+   * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
    */
   def dialectName: String = _connectionFactorySettings.dialect.name
 
@@ -215,6 +238,9 @@ final class R2dbcSettings private (
       journalPublishEvents: Boolean = journalPublishEvents,
       snapshotsTable: String = snapshotsTable,
       snapshotPayloadCodec: PayloadCodec = snapshotPayloadCodec,
+      tagsCodec: TagsCodec = tagsCodec,
+      timestampCodec: TimestampCodec = timestampCodec,
+      queryAdapter: QueryAdapter = queryAdapter,
       durableStateTable: String = durableStateTable,
       durableStatePayloadCodec: PayloadCodec = durableStatePayloadCodec,
       durableStateAssertSingleWriter: Boolean = durableStateAssertSingleWriter,
@@ -235,6 +261,9 @@ final class R2dbcSettings private (
       journalPublishEvents,
       snapshotsTable,
       snapshotPayloadCodec,
+      tagsCodec,
+      timestampCodec,
+      queryAdapter,
       durableStateTable,
       durableStatePayloadCodec,
       durableStateAssertSingleWriter,

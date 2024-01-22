@@ -5,8 +5,9 @@
 package akka.persistence.r2dbc.internal
 
 import scala.annotation.varargs
-
 import akka.annotation.InternalStableApi
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
 
 /**
  * INTERNAL API: Utility to format SQL strings. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Trims
@@ -20,9 +21,9 @@ object Sql {
    * to include a literal `?`. Trims whitespace, including line breaks. Standard string interpolation arguments `$` can
    * be used.
    */
-  implicit class Interpolation(val sc: StringContext) extends AnyVal {
+  implicit class Interpolation(val sc: StringContext)(implicit adapter: QueryAdapter = IdentityAdapter) extends AnyRef {
     def sql(args: Any*): String =
-      fillInParameterNumbers(trimLineBreaks(sc.s(args: _*)))
+      adapter(fillInParameterNumbers(trimLineBreaks(sc.s(args: _*))))
   }
 
   /**

@@ -44,8 +44,4 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """
   }
-
-  override protected def tagsFromDb(row: Row, columnName: String): Set[String] =
-    H2Utils.tagsFromDb(row, columnName)
-
 }

@@ -15,8 +15,6 @@ import akka.persistence.r2dbc.internal.SnapshotDao
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 
-import scala.concurrent.ExecutionContext
-
 /**
  * INTERNAL API
  */

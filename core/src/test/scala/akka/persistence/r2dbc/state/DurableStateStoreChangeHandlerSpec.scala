@@ -8,7 +8,6 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -21,6 +20,7 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
+import akka.persistence.r2dbc.state.DurableStateStoreChangeHandlerSpec.config
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
 import akka.persistence.r2dbc.state.scaladsl.R2dbcDurableStateStore
 import akka.persistence.state.DurableStateStoreRegistry
@@ -28,18 +28,37 @@ import akka.persistence.state.scaladsl.GetObjectResult
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
+import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 
 object DurableStateStoreChangeHandlerSpec {
+
+  val testConfig = TestConfig.config
+
+  val dialect = testConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
+  val javaDslcustomEntity = if (dialect == "sqlserver") {
+    classOf[JavadslChangeHandlerSqlServer].getName
+  } else {
+    classOf[JavadslChangeHandler].getName
+  }
+
+  implicit val queryAdapter: QueryAdapter =
+    if (dialect == "sqlserver")
+      SqlServerQueryAdapter
+    else
+      IdentityAdapter
+
   val config: Config = ConfigFactory
     .parseString(s"""
     akka.persistence.r2dbc.state {
       change-handler {
         "CustomEntity" = "${classOf[Handler].getName}"
-        "JavadslCustomEntity" = "${classOf[JavadslChangeHandler].getName}"
+        "JavadslCustomEntity" = "$javaDslcustomEntity"
       }
     }
     """)
-    .withFallback(TestConfig.config)
+    .withFallback(testConfig)
 
   class Handler(system: ActorSystem[_]) extends ChangeHandler[String] {
     private implicit val ec: ExecutionContext = system.executionContext
@@ -81,16 +100,21 @@ class DurableStateStoreChangeHandlerSpec
     with TestData
     with LogCapturing {
 
+  val dialect = config.getString("akka.persistence.r2dbc.connection-factory.dialect")
   private val anotherTable = "changes_test"
+
+  val createTableSql = if (dialect == "sqlserver") {
+    s"IF object_id('$anotherTable') is null create table $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
+  } else {
+    s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
+  }
 
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
     super.beforeAll()
     Await.result(
-      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
-        _.createStatement(
-          s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))")),
+      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTableSql)),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $anotherTable")),

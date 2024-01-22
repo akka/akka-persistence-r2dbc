@@ -11,6 +11,8 @@ import io.r2dbc.postgresql.codec.Json
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 
+// move this file into internal/codec dir?
+
 /**
  * INTERNAL API
  */
@@ -42,10 +44,19 @@ import io.r2dbc.spi.Statement
     def bindPayload(index: Int, payload: Array[Byte]): Statement =
       statement.bind(index, codec.encode(payload))
 
+    def bindPayload(name: String, payload: Array[Byte]): Statement =
+      statement.bind(name, codec.encode(payload))
+
     def bindPayloadOption(index: Int, payloadOption: Option[Array[Byte]]): Statement =
       payloadOption match {
         case Some(payload) => bindPayload(index, payload)
         case None          => bindPayload(index, codec.nonePayload)
+      }
+
+    def bindPayloadOption(name: String, payloadOption: Option[Array[Byte]]): Statement =
+      payloadOption match {
+        case Some(payload) => bindPayload(name, payload)
+        case None          => bindPayload(name, codec.nonePayload)
       }
   }
   implicit class RichRow(val row: Row)(implicit codec: PayloadCodec) extends AnyRef {

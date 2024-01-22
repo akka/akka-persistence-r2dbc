@@ -27,6 +27,9 @@ object TestConfig {
             trace-logging = on
           }
           """)
+      case "sqlserver" =>
+        // defaults are fine
+        ConfigFactory.empty()
     }
 
     // fallback to default here so that connection-factory can be overridden

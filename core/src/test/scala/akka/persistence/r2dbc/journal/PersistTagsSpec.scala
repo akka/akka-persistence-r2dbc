@@ -15,6 +15,8 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.codec.TagsCodec
+import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.typed.PersistenceId
 import org.scalatest.wordspec.AnyWordSpecLike
 
@@ -27,7 +29,7 @@ class PersistTagsSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-
+  implicit val tagsCodec: TagsCodec = settings.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
   "Persist tags" should {
@@ -56,24 +58,11 @@ class PersistTagsSpec
         r2dbcExecutor
           .select[Row]("test")(
             connection => connection.createStatement(s"select * from ${settings.journalTableWithSchema}"),
-            row => {
-              val tags =
-                if (settings.dialectName == "h2") {
-                  row.get("tags", classOf[Object]) match {
-                    case null           => Set.empty[String]
-                    case tags: Array[_] => tags.toSet.asInstanceOf[Set[String]]
-                  }
-                } else {
-                  row.get("tags", classOf[Array[String]]) match {
-                    case null      => Set.empty[String]
-                    case tagsArray => tagsArray.toSet
-                  }
-                }
+            row =>
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                tags)
-            })
+                row.getTags()))
           .futureValue
 
       rows.foreach { case Row(pid, _, tags) =>

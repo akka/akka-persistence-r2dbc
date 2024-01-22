@@ -122,9 +122,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
           .bindNull(11, classOf[String])
           .bindNull(12, classOf[Array[Byte]])
     }
-
     stmt.bind(13, write.dbTimestamp)
-
     stmt
   }
 

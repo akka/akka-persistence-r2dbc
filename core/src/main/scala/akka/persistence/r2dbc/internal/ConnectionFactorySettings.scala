@@ -10,6 +10,7 @@ import akka.persistence.r2dbc.ConnectionPoolSettings
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
+import akka.persistence.r2dbc.internal.sqlserver.SqlServerDialect
 import akka.util.Helpers.toRootLowerCase
 import com.typesafe.config.Config
 
@@ -24,12 +25,13 @@ private[r2dbc] object ConnectionFactorySettings {
 
   def apply(config: Config): ConnectionFactorySettings = {
     val dialect: Dialect = toRootLowerCase(config.getString("dialect")) match {
-      case "yugabyte" => YugabyteDialect: Dialect
-      case "postgres" => PostgresDialect: Dialect
-      case "h2"       => H2Dialect: Dialect
+      case "yugabyte"  => YugabyteDialect: Dialect
+      case "postgres"  => PostgresDialect: Dialect
+      case "h2"        => H2Dialect: Dialect
+      case "sqlserver" => SqlServerDialect: Dialect
       case other =>
         throw new IllegalArgumentException(
-          s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
+          s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, sqlserver, h2].")
     }
 
     // pool settings are common to all dialects but defined inline in the connection factory block

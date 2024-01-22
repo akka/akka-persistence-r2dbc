@@ -5,9 +5,7 @@
 package akka.persistence.r2dbc.journal
 
 import java.time.Instant
-
 import scala.concurrent.duration._
-
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -19,6 +17,9 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.{ PostgresTimestampCodec, SqlServerTimestampCodec }
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -35,6 +36,12 @@ class PersistTimestampSpec
   private val serialization = SerializationExtension(system)
   private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
   case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)
+
+  implicit private val codec: TimestampCodec =
+    if (settings.dialectName == "sqlserver")
+      SqlServerTimestampCodec
+    else
+      PostgresTimestampCodec
 
   "Persist timestamp" should {
 
@@ -80,7 +87,7 @@ class PersistTimestampSpec
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                dbTimestamp = row.get("db_timestamp", classOf[Instant]),
+                dbTimestamp = row.getTimestamp(),
                 event)
             })
           .futureValue

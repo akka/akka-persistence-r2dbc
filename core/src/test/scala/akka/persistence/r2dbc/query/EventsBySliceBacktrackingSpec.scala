@@ -6,9 +6,7 @@ package akka.persistence.r2dbc.query
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-
 import scala.concurrent.duration._
-
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -19,6 +17,8 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.Interpolation
@@ -27,6 +27,7 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -57,6 +58,8 @@ class EventsBySliceBacktrackingSpec
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
+  private implicit val timestampCodec: TimestampCodec = settings.timestampCodec
+  private implicit val queryAdapter: QueryAdapter = settings.queryAdapter
 
   private val query = PersistenceQuery(testKit.system)
     .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
@@ -79,7 +82,7 @@ class EventsBySliceBacktrackingSpec
         .bind(1, entityType)
         .bind(2, persistenceId)
         .bind(3, seqNr)
-        .bind(4, timestamp)
+        .bindTimestamp(4, timestamp)
         .bind(5, stringSerializer.identifier)
         .bindPayload(6, stringSerializer.toBinary(event))
     }

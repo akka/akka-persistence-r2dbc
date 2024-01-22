@@ -10,6 +10,12 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.Row
+import io.r2dbc.spi.Statement
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
@@ -26,13 +32,15 @@ import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao.setFromDb
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
+import akka.persistence.r2dbc.internal.codec.TagsCodec
+import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
+import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.Row
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
 /**
  * INTERNAL API
@@ -53,8 +61,13 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
 
   protected def log: Logger = PostgresSnapshotDao.log
 
-  protected val snapshotTable = settings.snapshotsTableWithSchema
-  private implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
+  protected val snapshotTable: String = settings.snapshotsTableWithSchema
+
+  protected implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
+  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
+  protected implicit val tagsCodec: TagsCodec = settings.tagsCodec
+  protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
+
   protected val r2dbcExecutor = new R2dbcExecutor(
     connectionFactory,
     log,
@@ -99,7 +112,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
 
   private val upsertSql = createUpsertSql
 
-  private def selectSql(criteria: SnapshotSelectionCriteria): String = {
+  protected def selectSql(criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =
       if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
       else ""
@@ -171,7 +184,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       LIMIT ?"""
   }
 
-  private def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
+  protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
     sql"""
      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
      FROM $snapshotTable
@@ -185,15 +198,13 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
-  protected def tagsFromDb(row: Row, columnName: String): Set[String] =
-    setFromDb(row.get(columnName, classOf[Array[String]]))
-
   private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow = {
     val writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long])
+
     // db_timestamp and tags columns were added in 1.2.0
     val dbTimestamp =
       if (settings.querySettings.startFromSnapshotEnabled)
-        row.get("db_timestamp", classOf[Instant]) match {
+        row.getTimestamp() match {
           case null => Instant.ofEpochMilli(writeTimestamp)
           case t    => t
         }
@@ -201,7 +212,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
         Instant.ofEpochMilli(writeTimestamp)
     val tags =
       if (settings.querySettings.startFromSnapshotEnabled)
-        tagsFromDb(row, "tags")
+        row.getTags()
       else
         Set.empty[String]
 
@@ -260,7 +271,39 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
         },
         collectSerializedSnapshot(entityType, _))
       .map(_.headOption)(ExecutionContexts.parasitic)
+  }
 
+  protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {
+    statement
+      .bind(0, serializedRow.slice)
+      .bind(1, serializedRow.entityType)
+      .bind(2, serializedRow.persistenceId)
+      .bind(3, serializedRow.seqNr)
+      .bind(4, serializedRow.writeTimestamp)
+      .bindPayload(5, serializedRow.snapshot)
+      .bind(6, serializedRow.serializerId)
+      .bind(7, serializedRow.serializerManifest)
+
+    serializedRow.metadata match {
+      case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
+        statement
+          .bind(8, serializedMeta)
+          .bind(9, serializerId)
+          .bind(10, serializerManifest)
+      case None =>
+        statement
+          .bindNull(8, classOf[Array[Byte]])
+          .bindNull(9, classOf[Integer])
+          .bindNull(10, classOf[String])
+    }
+
+    // db_timestamp and tags columns were added in 1.2.0
+    if (settings.querySettings.startFromSnapshotEnabled) {
+      statement
+        .bindTimestamp(11, serializedRow.dbTimestamp)
+        .bindTags(12, serializedRow.tags)
+    }
+    statement
   }
 
   def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
@@ -270,36 +313,9 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
           val statement =
             connection
               .createStatement(upsertSql)
-              .bind(0, serializedRow.slice)
-              .bind(1, serializedRow.entityType)
-              .bind(2, serializedRow.persistenceId)
-              .bind(3, serializedRow.seqNr)
-              .bind(4, serializedRow.writeTimestamp)
-              .bindPayload(5, serializedRow.snapshot)
-              .bind(6, serializedRow.serializerId)
-              .bind(7, serializedRow.serializerManifest)
 
-          serializedRow.metadata match {
-            case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
-              statement
-                .bind(8, serializedMeta)
-                .bind(9, serializerId)
-                .bind(10, serializerManifest)
-            case None =>
-              statement
-                .bindNull(8, classOf[Array[Byte]])
-                .bindNull(9, classOf[Integer])
-                .bindNull(10, classOf[String])
-          }
+          bindUpsertSql(statement, serializedRow)
 
-          // db_timestamp and tags columns were added in 1.2.0
-          if (settings.querySettings.startFromSnapshotEnabled) {
-            statement
-              .bind(11, serializedRow.dbTimestamp)
-              .bind(12, serializedRow.tags.toArray)
-          }
-
-          statement
       }
       .map(_ => ())(ExecutionContexts.parasitic)
   }
@@ -338,11 +354,22 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
-        row => row.get("db_timestamp", classOf[Instant]))
+        row => row.getTimestamp())
       .map {
         case Some(time) => time
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
       }
+  }
+
+  protected def bindSnapshotsBySlicesRangeSql(
+      stmt: Statement,
+      entityType: String,
+      fromTimestamp: Instant,
+      bufferSize: Int): Statement = {
+    stmt
+      .bind(0, entityType)
+      .bindTimestamp(1, fromTimestamp)
+      .bind(2, settings.querySettings.bufferSize)
   }
 
   /**
@@ -358,12 +385,8 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
       backtracking: Boolean): Source[SerializedSnapshotRow, NotUsed] = {
     val result = r2dbcExecutor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(
       connection => {
-        val stmt = connection
-          .createStatement(snapshotsBySlicesRangeSql(minSlice, maxSlice))
-          .bind(0, entityType)
-          .bind(1, fromTimestamp)
-          .bind(2, settings.querySettings.bufferSize)
-        stmt
+        val stmt = connection.createStatement(snapshotsBySlicesRangeSql(minSlice, maxSlice))
+        bindSnapshotsBySlicesRangeSql(stmt, entityType, fromTimestamp, settings.querySettings.bufferSize)
       },
       collectSerializedSnapshot(entityType, _))
 
@@ -378,6 +401,19 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
    * is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
    */
   override def countBucketsMayChange: Boolean = true
+
+  protected def bindSelectBucketsSql(
+      stmt: Statement,
+      entityType: String,
+      fromTimestamp: Instant,
+      toTimestamp: Instant,
+      limit: Int): Statement = {
+    stmt
+      .bind(0, entityType)
+      .bindTimestamp(1, fromTimestamp)
+      .bindTimestamp(2, toTimestamp)
+      .bind(3, limit)
+  }
 
   /**
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
@@ -401,13 +437,10 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     }
 
     val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
-      connection =>
-        connection
-          .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
-          .bind(0, entityType)
-          .bind(1, fromTimestamp)
-          .bind(2, toTimestamp)
-          .bind(3, limit),
+      connection => {
+        val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
+        bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
+      },
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong

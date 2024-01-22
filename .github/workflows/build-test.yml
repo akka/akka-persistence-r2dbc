@@ -177,6 +177,38 @@ jobs:
           cp .jvmopts-ci .jvmopts
           sbt -Dconfig.resource=application-h2.conf test
 
+  test-sqlserver:
+    name: Run test with SQL Server
+    runs-on: ubuntu-22.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Checkout GitHub merge
+        if: github.event.pull_request
+        run: |-
+          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
+          git checkout scratch
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 11
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
+
+      - name: Start DB
+        run: |-
+          docker compose -f docker/docker-compose-sqlserver.yml up --wait
+          docker exec -i sqlserver-db /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P '<YourStrong@Passw0rd>' -d master < ddl-scripts/create_tables_sqlserver.sql
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt -Dconfig.resource=application-sqlserver.conf test
+
   test-docs:
     name: Docs
     runs-on: ubuntu-22.04

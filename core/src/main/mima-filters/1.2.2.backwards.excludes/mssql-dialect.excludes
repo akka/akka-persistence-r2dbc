@@ -1,0 +1,6 @@
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.R2dbcSettings.this")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.Sql.Interpolation")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.Sql#Interpolation.equals$extension")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.Sql#Interpolation.hashCode$extension")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.Sql#Interpolation.sql$extension")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.Sql#Interpolation.this")

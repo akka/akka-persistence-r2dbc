@@ -16,6 +16,11 @@ import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.codec.TagsCodec
+import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
@@ -27,6 +32,9 @@ import java.time.Instant
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
+import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 
 /**
  * INTERNAL API
@@ -59,7 +67,6 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends JournalDao {
-
   import JournalDao.SerializedJournalRow
   protected def log: Logger = PostgresJournalDao.log
 
@@ -72,10 +79,13 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       journalSettings.logDbCallsExceeding,
       journalSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
-  protected val journalTable = journalSettings.journalTableWithSchema
+  protected val journalTable: String = journalSettings.journalTableWithSchema
   protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
+  protected implicit val tagsCodec: TagsCodec = journalSettings.tagsCodec
+  protected implicit val timestampCodec: TimestampCodec = journalSettings.timestampCodec
+  implicit val queryAdapter: QueryAdapter = journalSettings.queryAdapter
 
-  private val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
+  protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
       s"INSERT INTO $journalTable " +
       "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
@@ -117,10 +127,11 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   private val deleteEventsSql = sql"""
     DELETE FROM $journalTable
     WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?"""
-  private val insertDeleteMarkerSql = sql"""
+
+  protected def insertDeleteMarkerSql(timestamp: String = "CURRENT_TIMESTAMP"): String = sql"""
     INSERT INTO $journalTable
     (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
-    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)"""
+    VALUES (?, ?, ?, ?, $timestamp, ?, ?, ?, ?, ?, ?)"""
 
   private val deleteEventsByPersistenceIdBeforeTimestampSql = sql"""
     DELETE FROM $journalTable
@@ -159,7 +170,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
         connection =>
           bindInsertStatement(connection.createStatement(insertSql), events.head, useTimestampFromDb, previousSeqNr),
-        row => row.get(0, classOf[Instant]))
+        row => row.getTimestamp())
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, persistenceId)
@@ -172,7 +183,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
             stmt.add()
             bindInsertStatement(stmt, write, useTimestampFromDb, previousSeqNr)
           },
-        row => row.get(0, classOf[Instant]))
+        row => row.getTimestamp())
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
@@ -193,7 +204,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       else insertEventWithParameterTimestampSql
 
     val stmt = bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr)
-    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.get(0, classOf[Instant]))
+    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.getTimestamp())
     if (log.isDebugEnabled())
       result.foreach { _ =>
         log.debug("Wrote [{}] event for persistenceId [{}]", 1, persistenceId)
@@ -218,9 +229,9 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       .bindPayload(8, write.payload.get)
 
     if (write.tags.isEmpty)
-      stmt.bindNull(9, classOf[Array[String]])
+      stmt.bindTagsNull(9)
     else
-      stmt.bind(9, write.tags.toArray)
+      stmt.bindTags(9, write.tags)
 
     // optional metadata
     write.metadata match {
@@ -244,10 +255,10 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     } else {
       if (journalSettings.dbTimestampMonotonicIncreasing)
         stmt
-          .bind(13, write.dbTimestamp)
+          .bindTimestamp(13, write.dbTimestamp)
       else
         stmt
-          .bind(13, write.dbTimestamp)
+          .bindTimestamp(13, write.dbTimestamp)
           .bind(14, write.persistenceId)
           .bind(15, previousSeqNr)
     }
@@ -308,24 +319,34 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       readLowestSequenceNr(persistenceId)
     }
   }
-
+  protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
   override def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
+
+      // should we put this into its own class an re-use it where needed?
+      var i = 0
+      def getAndIncIndex(): Int = {
+        i += 1
+        i - 1
+      }
+
       val entityType = PersistenceId.extractEntityType(persistenceId)
       val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-      connection
-        .createStatement(insertDeleteMarkerSql)
-        .bind(0, slice)
-        .bind(1, entityType)
-        .bind(2, persistenceId)
-        .bind(3, deleteMarkerSeqNr)
-        .bind(4, "")
-        .bind(5, "")
-        .bind(6, 0)
-        .bind(7, "")
-        .bindPayloadOption(8, None)
-        .bind(9, true)
+      val stmt = connection.createStatement(insertDeleteMarkerSql())
+      stmt
+        .bind(getAndIncIndex(), slice)
+        .bind(getAndIncIndex(), entityType)
+        .bind(getAndIncIndex(), persistenceId)
+        .bind(getAndIncIndex(), deleteMarkerSeqNr)
+
+      bindTimestampNow(stmt, getAndIncIndex)
+        .bind(getAndIncIndex(), "")
+        .bind(getAndIncIndex(), "")
+        .bind(getAndIncIndex(), 0)
+        .bind(getAndIncIndex(), "")
+        .bindPayloadOption(getAndIncIndex(), None)
+        .bind(getAndIncIndex(), true)
     }
 
     def deleteBatch(from: Long, to: Long, lastBatch: Boolean): Future[Unit] = {
@@ -377,7 +398,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
         connection
           .createStatement(deleteEventsByPersistenceIdBeforeTimestampSql)
           .bind(0, persistenceId)
-          .bind(1, timestamp)
+          .bindTimestamp(1, timestamp)
       }
       .map(deletedRows =>
         log.debugN("Deleted [{}] events for persistenceId [{}], before [{}]", deletedRows, persistenceId, timestamp))(
@@ -391,7 +412,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
           .createStatement(deleteEventsBySliceBeforeTimestampSql)
           .bind(0, slice)
           .bind(1, entityType)
-          .bind(2, timestamp)
+          .bindTimestamp(2, timestamp)
       }
       .map(deletedRows =>
         log.debugN(
