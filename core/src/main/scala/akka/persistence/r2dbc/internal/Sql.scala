@@ -21,7 +21,7 @@ object Sql {
    * to include a literal `?`. Trims whitespace, including line breaks. Standard string interpolation arguments `$` can
    * be used.
    */
-  implicit class Interpolation(val sc: StringContext)(implicit adapter: QueryAdapter = IdentityAdapter) extends AnyRef {
+  implicit class Interpolation(val sc: StringContext)(implicit adapter: QueryAdapter) extends AnyRef {
     def sql(args: Any*): String =
       adapter(fillInParameterNumbers(trimLineBreaks(sc.s(args: _*))))
   }

@@ -4,13 +4,15 @@
 
 package akka.persistence.r2dbc.internal
 
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import org.scalatest.TestSuite
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class SqlSpec extends AnyWordSpec with TestSuite with Matchers {
   import Sql.Interpolation
-
+  implicit val queryAdapter: QueryAdapter = IdentityAdapter
   "SQL string interpolation" should {
     "replace ? bind parameters with numbered $ (avoiding escaped ones)" in {
       sql"select * from bar where a = ? and qa = 'Question?? Answer!'" shouldBe "select * from bar where a = $1 and qa = 'Question? Answer!'"

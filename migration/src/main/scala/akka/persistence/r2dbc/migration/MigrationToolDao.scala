@@ -7,12 +7,15 @@ package akka.persistence.r2dbc.migration
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.Sql.Interpolation
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.LoggerFactory
 
@@ -37,7 +40,7 @@ import org.slf4j.LoggerFactory
     logDbCallsExceeding: FiniteDuration,
     closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   import MigrationToolDao._
-
+  implicit val queryAdapter: QueryAdapter = IdentityAdapter
   private val r2dbcExecutor =
     new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding)(ec, system)
 

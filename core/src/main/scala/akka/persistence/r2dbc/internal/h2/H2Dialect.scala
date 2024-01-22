@@ -21,7 +21,11 @@ import io.r2dbc.h2.H2ConnectionFactory
 import io.r2dbc.h2.H2ConnectionOption
 import io.r2dbc.spi.ConnectionFactory
 import java.util.Locale
+
 import scala.concurrent.ExecutionContext
+
+import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
 
 /**
  * INTERNAL API
@@ -115,6 +119,8 @@ private[r2dbc] object H2Dialect extends Dialect {
     val snapshotTableWithSchema = schema.map(_ + ".").getOrElse("") + snapshotTable
     val durableStateTable = config.getString("state-table")
     val durableStateTableWithSchema = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+    implicit val queryAdapter: QueryAdapter = IdentityAdapter
 
     val sliceIndexes = if (createSliceIndexes) {
       val sliceIndexWithSchema = journalTableWithSchema + "_slice_idx"
