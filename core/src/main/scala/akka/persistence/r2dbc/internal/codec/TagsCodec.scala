@@ -78,6 +78,6 @@ import akka.annotation.InternalApi
   }
 
   implicit class TagsCodecRichRow(val row: Row)(implicit codec: TagsCodec) extends AnyRef {
-    def getTags(column: String = "tags"): Set[String] = codec.getTags(row, column)
+    def getTags(column: String): Set[String] = codec.getTags(row, column)
   }
 }

@@ -10,6 +10,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
@@ -51,7 +52,7 @@ private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFact
       VALUES (@slice, @entityType, @persistenceId, @seqNr, @writer, @adapterManifest, @eventSerId, @eventSerManifest, @eventPayload, @tags, @metaSerId, @metaSerManifest, @metaSerPayload, @dbTimestamp)"""
 
   override protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement =
-    stmt.bind(getAndIncIndex(), timestampCodec.now())
+    stmt.bindTimestamp(getAndIncIndex(), timestampCodec.instantNow())
 
   override def insertDeleteMarkerSql(timestamp: String): String = super.insertDeleteMarkerSql("?")
 }

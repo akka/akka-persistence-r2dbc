@@ -309,7 +309,7 @@ private[r2dbc] class PostgresDurableStateDao(
         SerializedStateRow(
           persistenceId = persistenceId,
           revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-          dbTimestamp = row.getTimestamp(),
+          dbTimestamp = row.getTimestamp("db_timestamp"),
           readDbTimestamp = Instant.EPOCH, // not needed here
           payload = getPayload(row),
           serId = row.get[Integer]("state_ser_id", classOf[Integer]),
@@ -671,7 +671,7 @@ private[r2dbc] class PostgresDurableStateDao(
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
-        row => row.getTimestamp())
+        row => row.getTimestamp("db_timestamp"))
       .map {
         case Some(time) => time
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
@@ -730,7 +730,7 @@ private[r2dbc] class PostgresDurableStateDao(
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-            dbTimestamp = row.getTimestamp(),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
             readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             // payload = null => lazy loaded for backtracking (ugly, but not worth changing UpdatedDurableState in Akka)
             // payload = None => DeletedDurableState (no lazy loading)
@@ -743,7 +743,7 @@ private[r2dbc] class PostgresDurableStateDao(
           SerializedStateRow(
             persistenceId = row.get("persistence_id", classOf[String]),
             revision = row.get[java.lang.Long]("revision", classOf[java.lang.Long]),
-            dbTimestamp = row.getTimestamp(),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
             readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = getPayload(row),
             serId = row.get[Integer]("state_ser_id", classOf[Integer]),

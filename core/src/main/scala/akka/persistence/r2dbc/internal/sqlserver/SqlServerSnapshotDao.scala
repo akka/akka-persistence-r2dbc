@@ -205,6 +205,6 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
       ORDER BY db_timestamp, seq_nr
       """
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.now())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.instantNow())
 
 }

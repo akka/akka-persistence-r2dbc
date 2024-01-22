@@ -62,7 +62,7 @@ class PersistTagsSpec
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                row.getTags()))
+                row.getTags("tags")))
           .futureValue
 
       rows.foreach { case Row(pid, _, tags) =>

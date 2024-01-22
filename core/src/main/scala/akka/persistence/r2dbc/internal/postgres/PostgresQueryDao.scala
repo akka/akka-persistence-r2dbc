@@ -171,14 +171,12 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
-        row => row.getTimestamp())
+        row => row.getTimestamp("db_timestamp"))
       .map {
         case Some(time) => time
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
       }
   }
-
-  //protected def tagsFromDb(row: Row, columnName: String): Set[String] = row.getTags(columnName)
 
   protected def bindEventsBySlicesRangeSql(
       stmt: Statement,
@@ -224,13 +222,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-            dbTimestamp = row.getTimestamp(),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
             readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = None, // lazy loaded for backtracking
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = "",
             writerUuid = "", // not need in this query
-            tags = row.getTags(),
+            tags = row.getTags("tags"),
             metadata = None)
         else
           SerializedJournalRow(
@@ -238,13 +236,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
             entityType,
             persistenceId = row.get("persistence_id", classOf[String]),
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-            dbTimestamp = row.getTimestamp(),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
             readDbTimestamp = row.getTimestamp("read_db_timestamp"),
             payload = Some(row.getPayload("event_payload")),
             serId = row.get[Integer]("event_ser_id", classOf[Integer]),
             serManifest = row.get("event_ser_manifest", classOf[String]),
             writerUuid = "", // not need in this query
-            tags = row.getTags(),
+            tags = row.getTags("tags"),
             metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)
@@ -258,7 +256,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       entityType: String,
       fromTimestamp: Instant,
       toTimestamp: Instant,
-      limit: Int): _root_.io.r2dbc.spi.Statement = {
+      limit: Int): Statement = {
     stmt
       .bind(0, entityType)
       .bindTimestamp(1, fromTimestamp)
@@ -313,7 +311,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           .createStatement(selectTimestampOfEventSql)
           .bind(0, persistenceId)
           .bind(1, seqNr),
-      row => row.getTimestamp())
+      row => row.getTimestamp("db_timestamp"))
   }
 
   override def loadEvent(
@@ -338,13 +336,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           entityType = row.get("entity_type", classOf[String]),
           persistenceId,
           seqNr,
-          dbTimestamp = row.getTimestamp(),
+          dbTimestamp = row.getTimestamp("db_timestamp"),
           readDbTimestamp = row.getTimestamp("read_db_timestamp"),
           payload,
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = "", // not need in this query
-          tags = row.getTags(),
+          tags = row.getTags("tags"),
           metadata = readMetadata(row))
       })
 
@@ -364,13 +362,13 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           entityType = row.get("entity_type", classOf[String]),
           persistenceId = row.get("persistence_id", classOf[String]),
           seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-          dbTimestamp = row.getTimestamp(),
+          dbTimestamp = row.getTimestamp("db_timestamp"),
           readDbTimestamp = row.getTimestamp("read_db_timestamp"),
           payload = Some(row.getPayload("event_payload")),
           serId = row.get[Integer]("event_ser_id", classOf[Integer]),
           serManifest = row.get("event_ser_manifest", classOf[String]),
           writerUuid = row.get("writer", classOf[String]),
-          tags = row.getTags(),
+          tags = row.getTags("tags"),
           metadata = readMetadata(row)))
 
     if (log.isDebugEnabled)

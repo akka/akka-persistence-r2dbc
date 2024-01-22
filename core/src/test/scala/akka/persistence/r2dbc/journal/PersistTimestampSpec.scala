@@ -87,7 +87,7 @@ class PersistTimestampSpec
               Row(
                 pid = row.get("persistence_id", classOf[String]),
                 seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                dbTimestamp = row.getTimestamp(),
+                dbTimestamp = row.getTimestamp("db_timestamp"),
                 event)
             })
           .futureValue

@@ -23,9 +23,8 @@ import akka.persistence.r2dbc.internal.InstantFactory
   def decode(row: Row, name: String): Instant
   def decode(row: Row, index: Int): Instant
 
+  // should we name it just `now()`? The type should not be in the name...
   def instantNow(): Instant = InstantFactory.now()
-
-  def now[T](): T
 }
 
 /**
@@ -38,8 +37,6 @@ import akka.persistence.r2dbc.internal.InstantFactory
     override def decode(row: Row, index: Int): Instant = row.get(index, classOf[Instant])
 
     override def encode(timestamp: Instant): Any = timestamp
-
-    override def now[T](): T = instantNow().asInstanceOf[T]
   }
   object PostgresTimestampCodec extends PostgresTimestampCodec
 
@@ -55,8 +52,6 @@ import akka.persistence.r2dbc.internal.InstantFactory
 
     override def encode(timestamp: Instant): LocalDateTime = LocalDateTime.ofInstant(timestamp, zone)
 
-    override def now[T](): T = LocalDateTime.ofInstant(instantNow(), zone).asInstanceOf[T]
-
     override def decode(row: Row, index: Int): Instant = toInstant(row.get(index, classOf[LocalDateTime]))
   }
 
@@ -68,6 +63,6 @@ import akka.persistence.r2dbc.internal.InstantFactory
     def bindTimestamp(index: Int, timestamp: Instant): Statement = statement.bind(index, codec.encode(timestamp))
   }
   implicit class TimestampCodecRichRow[T](val row: Row)(implicit codec: TimestampCodec) extends AnyRef {
-    def getTimestamp(index: String = "db_timestamp"): Instant = codec.decode(row, index)
+    def getTimestamp(index: String): Instant = codec.decode(row, index)
   }
 }

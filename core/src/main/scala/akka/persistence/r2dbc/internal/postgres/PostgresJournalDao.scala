@@ -170,7 +170,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
         connection =>
           bindInsertStatement(connection.createStatement(insertSql), events.head, useTimestampFromDb, previousSeqNr),
-        row => row.getTimestamp())
+        row => row.getTimestamp("db_timestamp"))
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", 1, persistenceId)
@@ -183,7 +183,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
             stmt.add()
             bindInsertStatement(stmt, write, useTimestampFromDb, previousSeqNr)
           },
-        row => row.getTimestamp())
+        row => row.getTimestamp("db_timestamp"))
       if (log.isDebugEnabled())
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
@@ -204,7 +204,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       else insertEventWithParameterTimestampSql
 
     val stmt = bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr)
-    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.getTimestamp())
+    val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.getTimestamp("db_timestamp"))
     if (log.isDebugEnabled())
       result.foreach { _ =>
         log.debug("Wrote [{}] event for persistenceId [{}]", 1, persistenceId)

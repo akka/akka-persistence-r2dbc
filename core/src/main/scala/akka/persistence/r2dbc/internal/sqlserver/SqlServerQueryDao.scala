@@ -17,6 +17,7 @@ import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.SqlServerTimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
 import io.r2dbc.spi.ConnectionFactory
@@ -94,7 +95,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
       entityType: String,
       fromTimestamp: Instant,
       toTimestamp: Instant,
-      limit: Int): _root_.io.r2dbc.spi.Statement = {
+      limit: Int): Statement = {
     stmt
       .bind("@limit", limit)
       .bind("@entityType", entityType)
@@ -112,7 +113,8 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= @until" else ""
 
-    def localNow: LocalDateTime = timestampCodec.now[LocalDateTime]()
+    // we know this is a LocalDateTime, so the cast should be ok
+    def localNow: LocalDateTime = timestampCodec.encode(timestampCodec.instantNow()).asInstanceOf[LocalDateTime]
 
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)

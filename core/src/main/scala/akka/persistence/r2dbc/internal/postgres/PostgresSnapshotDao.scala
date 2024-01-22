@@ -204,7 +204,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     // db_timestamp and tags columns were added in 1.2.0
     val dbTimestamp =
       if (settings.querySettings.startFromSnapshotEnabled)
-        row.getTimestamp() match {
+        row.getTimestamp("db_timestamp") match {
           case null => Instant.ofEpochMilli(writeTimestamp)
           case t    => t
         }
@@ -212,7 +212,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
         Instant.ofEpochMilli(writeTimestamp)
     val tags =
       if (settings.querySettings.startFromSnapshotEnabled)
-        row.getTags()
+        row.getTags("tags")
       else
         Set.empty[String]
 
@@ -354,7 +354,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
-        row => row.getTimestamp())
+        row => row.getTimestamp("db_timestamp"))
       .map {
         case Some(time) => time
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
