@@ -146,7 +146,10 @@ object TestActors {
     def apply(pid: String): Behavior[Command] =
       apply(PersistenceId.ofUniqueId(pid))
 
-    def apply(pid: PersistenceId): Behavior[Command] = {
+    def apply(pid: PersistenceId): Behavior[Command] =
+      apply(pid, storePluginId = "")
+
+    def apply(pid: PersistenceId, storePluginId: String): Behavior[Command] = {
       Behaviors.setup { context =>
         DurableStateBehavior[Command, Any](
           persistenceId = pid,
@@ -185,6 +188,7 @@ object TestActors {
                 Effect.stop()
             }
           })
+          .withDurableStateStorePluginId(storePluginId)
       }
     }
   }

@@ -5,12 +5,14 @@
 package akka.persistence.r2dbc.migration
 
 import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
@@ -46,6 +48,12 @@ import akka.util.Timeout
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
+import akka.persistence.state.DurableStateStoreRegistry
+import akka.persistence.state.scaladsl.DurableStateStore
+import akka.persistence.state.scaladsl.GetObjectResult
+import akka.stream.scaladsl.Source
+
 object MigrationTool {
   def main(args: Array[String]): Unit = {
     ActorSystem(MigrationTool(), "MigrationTool")
@@ -54,8 +62,12 @@ object MigrationTool {
   object Result {
     val empty: Result = Result(0, 0, 0)
   }
-
   final case class Result(persistenceIds: Long, events: Long, snapshots: Long)
+
+  object DurableStateResult {
+    val empty: DurableStateResult = DurableStateResult(0, 0)
+  }
+  final case class DurableStateResult(persistenceIds: Long, states: Long)
 
   private def apply(): Behavior[Try[Result]] = {
     Behaviors.setup { context =>
@@ -73,6 +85,8 @@ object MigrationTool {
       }
     }
   }
+
+  private final case class SelectedDurableState(persistenceId: String, revision: Long, value: Any)
 
 }
 
@@ -94,7 +108,8 @@ object MigrationTool {
  * Note: tags are not migrated.
  */
 class MigrationTool(system: ActorSystem[_]) {
-  import MigrationTool.Result
+  import MigrationTool.{ DurableStateResult, Result }
+  import MigrationTool.SelectedDurableState
   import system.executionContext
   private implicit val sys: ActorSystem[_] = system
 
@@ -118,6 +133,9 @@ class MigrationTool(system: ActorSystem[_]) {
   private val targetSnapshotDao =
     targetR2dbcSettings.connectionFactorySettings.dialect
       .createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
+  private val targetDurableStateDao =
+    targetR2dbcSettings.connectionFactorySettings.dialect
+      .createDurableStateDao(targetR2dbcSettings, targetConnectionFactory)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 
@@ -128,6 +146,10 @@ class MigrationTool(system: ActorSystem[_]) {
 
   private val sourceSnapshotPluginId = migrationConfig.getString("source.snapshot-plugin-id")
   private lazy val sourceSnapshotStore = Persistence(system).snapshotStoreFor(sourceSnapshotPluginId)
+
+  private val sourceDurableStatePluginId = migrationConfig.getString("source.durable-state-plugin-id")
+  private lazy val sourceDurableStateStore =
+    DurableStateStoreRegistry(system).durableStateStoreFor[DurableStateStore[Any]](sourceDurableStatePluginId)
 
   if (targetR2dbcSettings.dialectName == "h2") {
     log.error("Migrating to H2 using the migration tool not currently supported")
@@ -142,8 +164,10 @@ class MigrationTool(system: ActorSystem[_]) {
     migrationDao.createProgressTable()
 
   /**
-   * Migrates events and snapshots for all persistence ids.
-   * @return
+   * Migrates events, snapshots for all persistence ids.
+   *
+   * Note that Durable State is not migrated by this method, instead you need to use
+   * [[MigrationTool#migrateDurableStates]] for a given list of persistence ids.
    */
   def migrateAll(): Future[Result] = {
     log.info("Migration started.")
@@ -343,6 +367,112 @@ class MigrationTool(system: ActorSystem[_]) {
         .map(result => result.snapshot.flatMap(s => if (s.metadata.sequenceNr >= minSequenceNr) Some(s) else None))
     }
 
+  }
+
+  /**
+   * Migrate Durable State for a list of persistence ids.
+   */
+  def migrateDurableStates(persistenceIds: Seq[String]): Future[DurableStateResult] = {
+    log.info("Migration started.")
+    val result =
+      Source(persistenceIds)
+        .mapAsyncUnordered(parallelism) { persistenceId =>
+          for {
+            _ <- createProgressTable
+            currentProgress <- migrationDao.currentProgress(persistenceId)
+            stateCount <- migrateDurableState(persistenceId, currentProgress)
+          } yield persistenceId -> DurableStateResult(1, stateCount)
+        }
+        .map { case (pid, result @ DurableStateResult(_, states)) =>
+          log.debugN("Migrated persistenceId [{}] with [{}] durable state.", pid, states)
+          result
+        }
+        .runWith(Sink.fold(DurableStateResult.empty) { case (acc, DurableStateResult(_, states)) =>
+          val result = DurableStateResult(acc.persistenceIds + 1, acc.states + states)
+          if (result.persistenceIds % 100 == 0)
+            log.infoN("Migrated [{}] persistenceIds with [{}] durable states.", result.persistenceIds, result.states)
+          result
+        })
+
+    result.transform {
+      case s @ Success(DurableStateResult(persistenceIds, states)) =>
+        log.infoN(
+          "Migration successful. Migrated [{}] persistenceIds with [{}] durable states.",
+          persistenceIds,
+          states)
+        s
+      case f @ Failure(exc) =>
+        log.error("Migration failed.", exc)
+        f
+    }
+  }
+
+  /**
+   * Migrate Durable State for a single persistence id.
+   */
+  def migrateDurableState(persistenceId: String): Future[Int] = {
+    for {
+      _ <- createProgressTable
+      currentProgress <- migrationDao.currentProgress(persistenceId)
+      stateCount <- migrateDurableState(persistenceId, currentProgress)
+    } yield stateCount
+  }
+
+  private def migrateDurableState(persistenceId: String, currentProgress: Option[CurrentProgress]): Future[Int] = {
+    val progressRevision = currentProgress.map(_.durableStateRevision).getOrElse(0L)
+    loadSourceDurableState(persistenceId, progressRevision + 1).flatMap {
+      case None => Future.successful(0)
+      case Some(selectedDurableState) =>
+        for {
+          revision <- {
+            val serializedRow = serializedDurableStateRow(selectedDurableState)
+            targetDurableStateDao
+              .upsertState(serializedRow, selectedDurableState.value, changeEvent = None)
+              .map(_ => selectedDurableState.revision)(ExecutionContexts.parasitic)
+          }
+          _ <- migrationDao.updateDurableStateProgress(persistenceId, revision)
+        } yield 1
+    }
+  }
+
+  private lazy val checkAssertSingleWriter: Unit = {
+    if (targetR2dbcSettings.durableStateAssertSingleWriter) {
+      throw new IllegalArgumentException(
+        "When running the MigrationTool the " +
+        "`akka.persistence.r2dbc.state.assert-single-writer` configuration must be set to off.")
+    }
+  }
+
+  private def serializedDurableStateRow(selectedDurableState: SelectedDurableState): SerializedStateRow = {
+    val stateAnyRef = selectedDurableState.value.asInstanceOf[AnyRef]
+    val serializedState = serialization.serialize(stateAnyRef).get
+    val stateSerializer = serialization.findSerializerFor(stateAnyRef)
+    val stateManifest = Serializers.manifestFor(stateSerializer, stateAnyRef)
+
+    // not possible to preserve timestamp, because not included in GetObjectResult
+    val timestamp = Instant.now()
+
+    val serializedRow = SerializedStateRow(
+      selectedDurableState.persistenceId,
+      selectedDurableState.revision,
+      timestamp,
+      timestamp,
+      Some(serializedState),
+      stateSerializer.identifier,
+      stateManifest,
+      tags = Set.empty // not possible to preserve tags, because not included in GetObjectResult
+    )
+    serializedRow
+  }
+
+  private def loadSourceDurableState(persistenceId: String, minRevision: Long): Future[Option[SelectedDurableState]] = {
+    sourceDurableStateStore
+      .getObject(persistenceId)
+      .map {
+        case GetObjectResult(Some(value), revision) if revision >= minRevision =>
+          Some(SelectedDurableState(persistenceId, revision, value))
+        case _ => None
+      }
   }
 
 }
