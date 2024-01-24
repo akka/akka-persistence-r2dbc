@@ -6,13 +6,12 @@ package akka.persistence.r2dbc.internal.codec
 
 import java.time.Instant
 import java.time.LocalDateTime
-import java.util.TimeZone
+import java.time.ZoneId
 
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 
 import akka.annotation.InternalApi
-import akka.persistence.r2dbc.internal.InstantFactory
 
 /**
  * INTERNAL API
@@ -24,7 +23,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
   def decode(row: Row, index: Int): Instant
 
   // should we name it just `now()`? The type should not be in the name...
-  def instantNow(): Instant = InstantFactory.now()
+  //def instantNow(): Instant = InstantFactory.now()
 }
 
 /**
@@ -43,7 +42,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
   case object SqlServerTimestampCodec extends TimestampCodec {
 
     // should this come from config?
-    private val zone = TimeZone.getTimeZone("UTC").toZoneId
+    private val zone = ZoneId.of("UTC")
 
     private def toInstant(timestamp: LocalDateTime) =
       timestamp.atZone(zone).toInstant

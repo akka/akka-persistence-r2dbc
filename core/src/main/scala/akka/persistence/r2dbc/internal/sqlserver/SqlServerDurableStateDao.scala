@@ -25,6 +25,8 @@ import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.InstantFactory
+
 /**
  * INTERNAL API
  */
@@ -110,7 +112,7 @@ private[r2dbc] class SqlServerDurableStateDao(
       .bindTimestamp("@fromTimestamp", fromTimestamp)
     stmt.bind("@limit", settings.querySettings.bufferSize)
     if (behindCurrentTime > Duration.Zero) {
-      stmt.bindTimestamp("@now", timestampCodec.instantNow())
+      stmt.bindTimestamp("@now", InstantFactory.now())
     }
     toTimestamp.foreach(until => stmt.bindTimestamp("@until", until))
     stmt
@@ -154,7 +156,7 @@ private[r2dbc] class SqlServerDurableStateDao(
   }
 
   override protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement =
-    stmt.bindTimestamp(getAndIncIndex(), timestampCodec.instantNow())
+    stmt.bindTimestamp(getAndIncIndex(), InstantFactory.now())
 
   override protected def persistenceIdsForEntityTypeAfterSql(table: String): String =
     sql"SELECT TOP(@limit) persistence_id from $table WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @after ORDER BY persistence_id"
@@ -194,6 +196,6 @@ private[r2dbc] class SqlServerDurableStateDao(
     .bind("@persistenceId", after)
     .bind("@limit", limit)
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.instantNow())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
 
 }

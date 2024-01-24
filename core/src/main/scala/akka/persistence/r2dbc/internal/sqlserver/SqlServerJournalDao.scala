@@ -17,6 +17,8 @@ import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.InstantFactory
+
 /**
  * INTERNAL API
  */
@@ -52,7 +54,7 @@ private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFact
       VALUES (@slice, @entityType, @persistenceId, @seqNr, @writer, @adapterManifest, @eventSerId, @eventSerManifest, @eventPayload, @tags, @metaSerId, @metaSerManifest, @metaSerPayload, @dbTimestamp)"""
 
   override protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement =
-    stmt.bindTimestamp(getAndIncIndex(), timestampCodec.instantNow())
+    stmt.bindTimestamp(getAndIncIndex(), InstantFactory.now())
 
   override def insertDeleteMarkerSql(timestamp: String): String = super.insertDeleteMarkerSql("?")
 }

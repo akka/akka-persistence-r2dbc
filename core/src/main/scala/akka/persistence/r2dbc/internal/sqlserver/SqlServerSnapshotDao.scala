@@ -25,6 +25,8 @@ import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.InstantFactory
+
 /**
  * INTERNAL API
  */
@@ -205,6 +207,6 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
       ORDER BY db_timestamp, seq_nr
       """
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.instantNow())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
 
 }

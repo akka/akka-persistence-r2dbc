@@ -6,6 +6,8 @@ package akka.persistence.r2dbc.internal.sqlserver
 
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.Date.UTC
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -113,12 +115,9 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= @until" else ""
 
-    // we know this is a LocalDateTime, so the cast should be ok
-    def localNow: LocalDateTime = timestampCodec.encode(timestampCodec.instantNow()).asInstanceOf[LocalDateTime]
-
     def behindCurrentTimeIntervalCondition =
       if (behindCurrentTime > Duration.Zero)
-        s"AND db_timestamp < DATEADD(ms, -${behindCurrentTime.toMillis}, CAST('$localNow' as datetime2(6)))"
+        s"AND db_timestamp < DATEADD(ms, -${behindCurrentTime.toMillis}, SYSUTCDATETIME())"
       else ""
 
     val selectColumns = {
@@ -202,6 +201,6 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override protected val allPersistenceIdsSql: String =
     sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from $journalTable) as sub  ORDER BY persistence_id"
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(timestampCodec.instantNow())
+  override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
 
 }
