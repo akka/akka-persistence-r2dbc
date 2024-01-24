@@ -41,7 +41,6 @@ import akka.annotation.InternalApi
 
   case object SqlServerTimestampCodec extends TimestampCodec {
 
-    // should this come from config?
     private val zone = ZoneId.of("UTC")
 
     private def toInstant(timestamp: LocalDateTime) =
