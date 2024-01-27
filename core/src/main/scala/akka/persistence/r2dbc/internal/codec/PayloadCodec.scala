@@ -2,14 +2,15 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.internal
+package akka.persistence.r2dbc.internal.codec
 
 import java.nio.charset.StandardCharsets.UTF_8
 
-import akka.annotation.InternalApi
 import io.r2dbc.postgresql.codec.Json
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
+
+import akka.annotation.InternalApi
 
 /**
  * INTERNAL API

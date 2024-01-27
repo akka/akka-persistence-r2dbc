@@ -37,7 +37,6 @@ private[r2dbc] object SqlServerDurableStateDao {
 
 /**
  * INTERNAL API
- *
  */
 @InternalApi
 private[r2dbc] class SqlServerDurableStateDao(

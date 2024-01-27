@@ -75,10 +75,12 @@ private[r2dbc] object SqlServerDialect extends Dialect {
             .option(ConnectionFactoryOptions.PASSWORD, settings.password)
             .option(ConnectionFactoryOptions.DATABASE, settings.database)
             .option(ConnectionFactoryOptions.CONNECT_TIMEOUT, JDuration.ofMillis(settings.connectTimeout.toMillis))
-            //the option below is necessary to avoid https://github.com/r2dbc/r2dbc-mssql/issues/276
-            .option(MssqlConnectionFactoryProvider.PREFER_CURSORED_EXECUTION, false)
       }
-    ConnectionFactories.get(builder.build())
+    ConnectionFactories.get(
+      builder
+        //the option below is necessary to avoid https://github.com/r2dbc/r2dbc-mssql/issues/276
+        .option(MssqlConnectionFactoryProvider.PREFER_CURSORED_EXECUTION, false)
+        .build())
   }
 
   override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit

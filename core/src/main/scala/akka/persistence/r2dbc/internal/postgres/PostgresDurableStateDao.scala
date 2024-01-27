@@ -44,11 +44,11 @@ import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
@@ -359,21 +359,16 @@ private[r2dbc] class PostgresDurableStateDao(
         stmt.bindTags(i, state.tags)
     }
 
-    var i = 0
-
-    def getAndIncIndex(): Int = {
-      i += 1
-      i - 1
-    }
+    val idx = Iterator.range(0, Int.MaxValue)
 
     def bindAdditionalColumns(
         stmt: Statement,
         additionalBindings: IndexedSeq[EvaluatedAdditionalColumnBindings]): Statement = {
       additionalBindings.foreach {
         case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindValue(v)) =>
-          stmt.bind(getAndIncIndex(), v)
+          stmt.bind(idx.next(), v)
         case EvaluatedAdditionalColumnBindings(col, AdditionalColumn.BindNull) =>
-          stmt.bindNull(getAndIncIndex(), col.fieldClass)
+          stmt.bindNull(idx.next(), col.fieldClass)
         case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
       }
       stmt
@@ -398,17 +393,17 @@ private[r2dbc] class PostgresDurableStateDao(
         def insertStatement(connection: Connection): Statement = {
           val stmt = connection
             .createStatement(insertStateSql(entityType, additionalBindings))
-            .bind(getAndIncIndex(), slice)
-            .bind(getAndIncIndex(), entityType)
-            .bind(getAndIncIndex(), state.persistenceId)
-            .bind(getAndIncIndex(), state.revision)
-            .bind(getAndIncIndex(), state.serId)
-            .bind(getAndIncIndex(), state.serManifest)
-            .bindPayloadOption(getAndIncIndex(), state.payload)
-          bindTags(stmt, getAndIncIndex())
+            .bind(idx.next(), slice)
+            .bind(idx.next(), entityType)
+            .bind(idx.next(), state.persistenceId)
+            .bind(idx.next(), state.revision)
+            .bind(idx.next(), state.serId)
+            .bind(idx.next(), state.serManifest)
+            .bindPayloadOption(idx.next(), state.payload)
+          bindTags(stmt, idx.next())
           bindAdditionalColumns(stmt, additionalBindings)
 
-          bindTimestampNow(stmt, getAndIncIndex)
+          bindTimestampNow(stmt, idx.next)
           stmt
         }
 
@@ -441,31 +436,31 @@ private[r2dbc] class PostgresDurableStateDao(
         def updateStatement(connection: Connection): Statement = {
           val stmt = connection
             .createStatement(updateStateSql(entityType, updateTags = true, additionalBindings))
-            .bind(getAndIncIndex(), state.revision)
-            .bind(getAndIncIndex(), state.serId)
-            .bind(getAndIncIndex(), state.serManifest)
-            .bindPayloadOption(getAndIncIndex(), state.payload)
-          bindTags(stmt, getAndIncIndex())
+            .bind(idx.next(), state.revision)
+            .bind(idx.next(), state.serId)
+            .bind(idx.next(), state.serManifest)
+            .bindPayloadOption(idx.next(), state.payload)
+          bindTags(stmt, idx.next())
           bindAdditionalColumns(stmt, additionalBindings)
 
-          bindTimestampNow(stmt, getAndIncIndex)
+          bindTimestampNow(stmt, idx.next)
 
           if (settings.dbTimestampMonotonicIncreasing) {
             if (settings.durableStateAssertSingleWriter)
               stmt
-                .bind(getAndIncIndex(), state.persistenceId)
-                .bind(getAndIncIndex(), previousRevision)
+                .bind(idx.next(), state.persistenceId)
+                .bind(idx.next(), previousRevision)
             else
               stmt
-                .bind(getAndIncIndex(), state.persistenceId)
+                .bind(idx.next(), state.persistenceId)
           } else {
             stmt
-              .bind(getAndIncIndex(), state.persistenceId)
-              .bind(getAndIncIndex(), previousRevision)
-              .bind(getAndIncIndex(), state.persistenceId)
+              .bind(idx.next(), state.persistenceId)
+              .bind(idx.next(), previousRevision)
+              .bind(idx.next(), state.persistenceId)
 
             if (settings.durableStateAssertSingleWriter)
-              stmt.bind(getAndIncIndex(), previousRevision)
+              stmt.bind(idx.next(), previousRevision)
             else
               stmt
           }
@@ -576,39 +571,35 @@ private[r2dbc] class PostgresDurableStateDao(
           val previousRevision = revision - 1
 
           def updateStatement(connection: Connection): Statement = {
-            var i = 0
-            def getAndIncIndex(): Int = {
-              i += 1
-              i - 1
-            }
+            val idx = Iterator.range(0, Int.MaxValue)
 
             val stmt = connection
               .createStatement(
                 updateStateSql(entityType, updateTags = false, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
-              .bind(getAndIncIndex(), revision)
-              .bind(getAndIncIndex(), 0)
-              .bind(getAndIncIndex(), "")
-              .bindPayloadOption(getAndIncIndex(), None)
+              .bind(idx.next(), revision)
+              .bind(idx.next(), 0)
+              .bind(idx.next(), "")
+              .bindPayloadOption(idx.next(), None)
 
-            bindTimestampNow(stmt, getAndIncIndex)
+            bindTimestampNow(stmt, idx.next)
 
             if (settings.dbTimestampMonotonicIncreasing) {
               if (settings.durableStateAssertSingleWriter)
                 stmt
-                  .bind(getAndIncIndex(), persistenceId)
-                  .bind(getAndIncIndex(), previousRevision)
+                  .bind(idx.next(), persistenceId)
+                  .bind(idx.next(), previousRevision)
               else
                 stmt
-                  .bind(getAndIncIndex(), persistenceId)
+                  .bind(idx.next(), persistenceId)
             } else {
               stmt
-                .bind(getAndIncIndex(), persistenceId)
-                .bind(getAndIncIndex(), previousRevision)
-                .bind(getAndIncIndex(), persistenceId)
+                .bind(idx.next(), persistenceId)
+                .bind(idx.next(), previousRevision)
+                .bind(idx.next(), persistenceId)
 
               if (settings.durableStateAssertSingleWriter)
-                stmt.bind(getAndIncIndex(), previousRevision)
+                stmt.bind(idx.next(), previousRevision)
               else
                 stmt
             }

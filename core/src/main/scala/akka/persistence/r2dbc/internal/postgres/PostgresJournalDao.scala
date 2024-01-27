@@ -11,8 +11,7 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.Interpolation
@@ -32,6 +31,7 @@ import java.time.Instant
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
@@ -83,7 +83,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
   protected implicit val tagsCodec: TagsCodec = journalSettings.tagsCodec
   protected implicit val timestampCodec: TimestampCodec = journalSettings.timestampCodec
-  implicit val queryAdapter: QueryAdapter = journalSettings.queryAdapter
+  protected implicit val queryAdapter: QueryAdapter = journalSettings.queryAdapter
 
   protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =
@@ -324,29 +324,24 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
 
-      // should we put this into its own class an re-use it where needed?
-      var i = 0
-      def getAndIncIndex(): Int = {
-        i += 1
-        i - 1
-      }
+      val idx = Iterator.range(0, Int.MaxValue)
 
       val entityType = PersistenceId.extractEntityType(persistenceId)
       val slice = persistenceExt.sliceForPersistenceId(persistenceId)
       val stmt = connection.createStatement(insertDeleteMarkerSql())
       stmt
-        .bind(getAndIncIndex(), slice)
-        .bind(getAndIncIndex(), entityType)
-        .bind(getAndIncIndex(), persistenceId)
-        .bind(getAndIncIndex(), deleteMarkerSeqNr)
+        .bind(idx.next(), slice)
+        .bind(idx.next(), entityType)
+        .bind(idx.next(), persistenceId)
+        .bind(idx.next(), deleteMarkerSeqNr)
 
-      bindTimestampNow(stmt, getAndIncIndex)
-        .bind(getAndIncIndex(), "")
-        .bind(getAndIncIndex(), "")
-        .bind(getAndIncIndex(), 0)
-        .bind(getAndIncIndex(), "")
-        .bindPayloadOption(getAndIncIndex(), None)
-        .bind(getAndIncIndex(), true)
+      bindTimestampNow(stmt, idx.next)
+        .bind(idx.next(), "")
+        .bind(idx.next(), "")
+        .bind(idx.next(), 0)
+        .bind(idx.next(), "")
+        .bindPayloadOption(idx.next(), None)
+        .bind(idx.next(), true)
     }
 
     def deleteBatch(from: Long, to: Long, lastBatch: Boolean): Future[Unit] = {

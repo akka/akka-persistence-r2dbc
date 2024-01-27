@@ -38,7 +38,6 @@ private[r2dbc] object SqlServerQueryDao {
 
 /**
  * INTERNAL API
- *
  */
 @InternalApi
 private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit

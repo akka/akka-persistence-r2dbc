@@ -22,8 +22,6 @@ import akka.annotation.InternalApi
   def decode(row: Row, name: String): Instant
   def decode(row: Row, index: Int): Instant
 
-  // should we name it just `now()`? The type should not be in the name...
-  //def instantNow(): Instant = InstantFactory.now()
 }
 
 /**

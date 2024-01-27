@@ -10,8 +10,7 @@ import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
@@ -23,6 +22,7 @@ import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRo
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import org.scalatest.wordspec.AnyWordSpecLike
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 class PersistTimestampSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)

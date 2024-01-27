@@ -26,12 +26,12 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.PayloadCodec.RichStatement
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement

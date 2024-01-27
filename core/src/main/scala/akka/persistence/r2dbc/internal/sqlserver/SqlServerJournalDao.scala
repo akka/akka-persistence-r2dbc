@@ -30,7 +30,6 @@ private[r2dbc] object SqlServerJournalDao {
 
 /**
  * INTERNAL API
- *
  */
 @InternalApi
 private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit

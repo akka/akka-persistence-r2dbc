@@ -12,13 +12,13 @@ import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.ConnectionFactorySettings
-import akka.persistence.r2dbc.internal.PayloadCodec
 import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 
 import java.util.Locale
 import scala.collection.immutable
 import scala.concurrent.duration._
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * INTERNAL API
