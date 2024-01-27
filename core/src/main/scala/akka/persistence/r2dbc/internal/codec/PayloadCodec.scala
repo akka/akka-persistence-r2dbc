@@ -11,8 +11,6 @@ import io.r2dbc.postgresql.codec.Json
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 
-// move this file into internal/codec dir?
-
 /**
  * INTERNAL API
  */
