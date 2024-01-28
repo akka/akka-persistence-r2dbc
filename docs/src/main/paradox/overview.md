@@ -7,6 +7,7 @@ Currently, the R2DBC plugin has support for:
  * [PostgreSQL](https://www.postgresql.org) 
  * [Yugabyte](https://www.yugabyte.com)
  * [H2](https://h2database.com) - As a minimal in-process memory or file based database.
+ * [Microsoft SQL Server](https://microsoft.com/sqlserver)
 
 It is specifically designed to work well for distributed SQL databases.
 
@@ -40,5 +41,3 @@ dependencies are in the same version, so it is recommended to depend on them exp
 with transient dependencies causing an unlucky mix of versions.
 
 @@dependencies{ projectId="core" }
-
-

@@ -141,7 +141,7 @@ lazy val docs = project
     Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
     paradoxGroups := Map(
       "Language" -> Seq("Java", "Scala"),
-      "Dialect" -> Seq("Postgres", "Yugabyte", "SQL Server", "H2")),
+      "Dialect" -> Seq("Postgres", "Yugabyte", "H2", "SQLServer")),
     Compile / paradoxProperties ++= Map(
       "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
       "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
@@ -159,7 +159,8 @@ lazy val docs = project
       "javadoc.akka.persistence.r2dbc.base_url" -> "", // no Javadoc is published
       "scaladoc.akka.base_url" -> s"https://doc.akka.io/api/akka/${Dependencies.AkkaVersionInDocs}/",
       "javadoc.akka.base_url" -> s"https://doc.akka.io/japi/akka/${Dependencies.AkkaVersionInDocs}/",
-      "scaladoc.com.typesafe.config.base_url" -> s"https://lightbend.github.io/config/latest/api/"),
+      "scaladoc.com.typesafe.config.base_url" -> s"https://lightbend.github.io/config/latest/api/",
+      "sqlserver.version" -> Dependencies.SqlServerVersion),
     ApidocPlugin.autoImport.apidocRootPackage := "akka",
     apidocRootPackage := "akka",
     resolvers += Resolver.jcenterRepo,
