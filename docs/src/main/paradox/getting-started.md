@@ -99,6 +99,28 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
+#### Using Microsoft SQL Server
+
+The SQL Server dependency is marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using SQL Server. It must be listed explicitly as dependencies in the build configuration for projects that use it. The required artifacts is:
+
+@@dependency [Maven,sbt,Gradle] {
+group=io.r2dbc
+artifact=r2dbc-mssql_$scala.binary.version$
+version=$sqlserver.version$
+}
+
+With the dependencies added to your project, configure the connection factory to the default SQL Server block:
+
+```hocon
+akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.sqlserver}
+akka.persistence.r2dbc.connection-factory = {
+  # overrides for default values from the 'akka.persistence.r2dbc.sqlserver' config block
+  user = "myuser"
+}
+```
+
+See @ref[Configuration](config.md) for more configuration details.
+
 ## Local testing with docker
 
 The database can be run in Docker. Here's a sample docker compose file:
