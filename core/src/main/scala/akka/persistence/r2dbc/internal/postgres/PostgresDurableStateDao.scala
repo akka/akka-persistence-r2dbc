@@ -102,7 +102,7 @@ private[r2dbc] class PostgresDurableStateDao(
   private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
   implicit val timestampCodec: TimestampCodec = settings.timestampCodec
   private implicit val tagsCodec: TagsCodec = settings.tagsCodec
-  implicit val queryAdapter: QueryAdapter = settings.queryAdapter
+  protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
 
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, connectionFactory)

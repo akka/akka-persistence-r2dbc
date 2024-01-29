@@ -69,5 +69,3 @@ IF NOT EXISTS(SELECT * FROM sys.indexes WHERE name = 'durable_state_slice_idx' A
     BEGIN
         CREATE INDEX durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp, revision);
     END;
-
---DROP TABLE event_journal;

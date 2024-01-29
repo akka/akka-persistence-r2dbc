@@ -7,6 +7,7 @@ package akka.persistence.r2dbc
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
@@ -18,7 +19,6 @@ import com.typesafe.config.Config
 import java.util.Locale
 import scala.collection.immutable
 import scala.concurrent.duration._
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * INTERNAL API
