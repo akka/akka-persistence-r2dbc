@@ -73,7 +73,7 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
-#### Using H2
+#### H2
 
 The H2 dependencies are marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using H2. They must be listed explicitly as dependencies in the build configuration for projects that use them. The two required artifacts are:
 
@@ -99,7 +99,7 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
-#### Using Microsoft SQL Server
+#### Microsoft SQL Server
 
 The SQL Server dependency is marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using SQL Server. It must be listed explicitly as dependencies in the build configuration for projects that use it. The required artifacts is:
 
@@ -131,16 +131,24 @@ Postgres:
 Yugabyte:
 : @@snip [docker-compose.yml](/docker/docker-compose-yugabyte.yml)
 
+SQLServer:
+: @@snip [docker-compose.yml](/docker/docker-compose-sqlserver.yml)
+
 Start with:
 
 Postgres:
 : ```
-docker-compose -f docker/docker-compose-postgres.yml up --wait
+docker compose -f docker/docker-compose-postgres.yml up --wait
 ```
 
 Yugabyte:
 : ```
-docker-compose -f docker/docker-compose-yugabyte.yml up
+docker compose -f docker/docker-compose-yugabyte.yml up
+```
+
+SQLServer:
+: ```
+docker compose -f docker/docker-compose-sqlserver.yml up
 ```
 
 <a id="schema"></a>

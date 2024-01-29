@@ -4,15 +4,26 @@
 
 package akka.persistence.r2dbc.internal.codec
 
-trait QueryAdapter {
+import akka.annotation.InternalApi
+
+/**
+ * INTERNAL API
+ */
+@InternalApi private[akka] trait QueryAdapter {
   def apply(query: String): String
 }
 
-object IdentityAdapter extends QueryAdapter {
+/**
+ * INTERNAL API
+ */
+@InternalApi private[akka] object IdentityAdapter extends QueryAdapter {
   override def apply(query: String): String = query
 }
 
-object SqlServerQueryAdapter extends QueryAdapter {
+/**
+ * INTERNAL API
+ */
+@InternalApi private[akka] object SqlServerQueryAdapter extends QueryAdapter {
   /*
    * Convert a sqlserver query like
    *  `sql"select * from t where a=$1 and b=$2"`
