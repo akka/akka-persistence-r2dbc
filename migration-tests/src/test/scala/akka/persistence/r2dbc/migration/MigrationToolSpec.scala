@@ -82,7 +82,7 @@ class MigrationToolSpec
   private val targetPluginId = migrationConfig.getString("target.persistence-plugin-id")
 
   private val migration = new MigrationTool(system)
-  
+
   private val testEnabled: Boolean = {
     // don't run this for Yugabyte since it is using akka-persistence-jdbc
     system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect") == "postgres"
