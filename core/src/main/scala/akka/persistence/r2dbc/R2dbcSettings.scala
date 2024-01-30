@@ -26,6 +26,9 @@ import scala.concurrent.duration._
 @InternalStableApi
 object R2dbcSettings {
 
+  // must correspond to akka.persistence.Persistence.numberOfSlices
+  private val NumberOfSlices = 1024
+
   def apply(config: Config): R2dbcSettings = {
     if (config.hasPath("dialect")) {
       throw new IllegalArgumentException(
@@ -45,6 +48,7 @@ object R2dbcSettings {
     val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
 
     val journalTable: String = config.getString("journal.table")
+    val journalTableDataPartitions = config.getInt("journal.table-data-partitions")
 
     def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type").toUpperCase match {
       case "BYTEA"          => false
@@ -131,6 +135,7 @@ object R2dbcSettings {
     val settingsFromConfig = new R2dbcSettings(
       schema,
       journalTable,
+      journalTableDataPartitions,
       journalPublishEvents,
       snapshotsTable,
       durableStateTable,
@@ -163,6 +168,7 @@ object R2dbcSettings {
 final class R2dbcSettings private (
     val schema: Option[String],
     val journalTable: String,
+    val journalTableDataPartitions: Int,
     val journalPublishEvents: Boolean,
     val snapshotsTable: String,
     val durableStateTable: String,
@@ -178,10 +184,33 @@ final class R2dbcSettings private (
     _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
     _durableStateChangeHandlerClasses: Map[String, String],
     _useAppTimestamp: Boolean) {
+  import R2dbcSettings.NumberOfSlices
 
-  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
+  require(
+    0 <= journalTableDataPartitions && journalTableDataPartitions <= NumberOfSlices,
+    s"journalTableDataPartitions must be between 1 and $NumberOfSlices")
+  require(
+    journalTableDataPartitions * NumberOfSlices / journalTableDataPartitions == NumberOfSlices,
+    s"journalTableDataPartitions [$journalTableDataPartitions] must be a whole number divisor of numberOfSlices [$NumberOfSlices].")
+
+  private val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
   val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  def journalTableWithSchema(slice: Int): String = {
+    if (journalTableDataPartitions == 1) {
+      journalTableWithSchema
+    } else {
+      val dataPartition = slice / (NumberOfSlices / journalTableDataPartitions)
+      s"${journalTableWithSchema}_$dataPartition"
+    }
+  }
+
+  val alljournalTablesWithSchema: Set[String] = {
+    (0 until NumberOfSlices).map { slice =>
+      journalTableWithSchema(slice)
+    }.toSet
+  }
 
   /**
    * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
@@ -240,6 +269,7 @@ final class R2dbcSettings private (
   private def copy(
       schema: Option[String] = schema,
       journalTable: String = journalTable,
+      journalTableDataPartitions: Int = journalTableDataPartitions,
       journalPublishEvents: Boolean = journalPublishEvents,
       snapshotsTable: String = snapshotsTable,
       durableStateTable: String = durableStateTable,
@@ -258,6 +288,7 @@ final class R2dbcSettings private (
     new R2dbcSettings(
       schema,
       journalTable,
+      journalTableDataPartitions: Int,
       journalPublishEvents,
       snapshotsTable,
       durableStateTable,

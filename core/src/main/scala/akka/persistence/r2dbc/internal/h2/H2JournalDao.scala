@@ -40,7 +40,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
   require(journalSettings.useAppTimestamp)
   require(journalSettings.dbTimestampMonotonicIncreasing)
 
-  private val insertSql = sql"INSERT INTO $journalTable " +
+  private def insertSql(slice: Int) = sql"INSERT INTO ${journalTable(slice)} " +
     "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
@@ -59,15 +59,16 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
 
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     val totalEvents = events.size
     val result =
       if (totalEvents == 1) {
         r2dbcExecutor.updateOne(s"insert [$persistenceId]")(connection =>
-          bindInsertStatement(connection.createStatement(insertSql), events.head))
+          bindInsertStatement(connection.createStatement(insertSql(slice)), events.head))
       } else {
         r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
-          events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
+          events.foldLeft(connection.createStatement(insertSql(slice))) { (stmt, write) =>
             stmt.add()
             bindInsertStatement(stmt, write)
           })
@@ -82,8 +83,9 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
 
   override def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant] = {
     val persistenceId = event.persistenceId
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    val stmt = bindInsertStatement(connection.createStatement(insertSql), event)
+    val stmt = bindInsertStatement(connection.createStatement(insertSql(slice)), event)
     val result = R2dbcExecutor.updateOneInTx(stmt)
 
     if (log.isDebugEnabled())

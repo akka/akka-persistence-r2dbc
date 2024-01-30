@@ -53,7 +53,7 @@ private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: Conn
 
     sql"""
       $selectColumns
-      FROM $journalTable
+      FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition

@@ -27,6 +27,7 @@ import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
+import akka.persistence.Persistence
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import io.r2dbc.spi.ConnectionFactory
@@ -54,7 +55,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   import settings.codecSettings.JournalImplicits._
 
   protected def log: Logger = PostgresQueryDao.log
-  protected val journalTable: String = settings.journalTableWithSchema
+  protected val persistenceExt: Persistence = Persistence(system)
+  protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
 
   protected def sqlFalse: String = "false"
   protected def sqlDbTimestamp = "CURRENT_TIMESTAMP"
@@ -85,7 +87,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
 
     sql"""
       $selectColumns
-      FROM $journalTable
+      FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
@@ -100,7 +102,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
     sql"""
       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-      FROM $journalTable
+      FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? AND db_timestamp <= ?
@@ -109,23 +111,23 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       """
   }
 
-  private val selectTimestampOfEventSql = sql"""
-    SELECT db_timestamp FROM $journalTable
+  protected def selectTimestampOfEventSql(slice: Int) = sql"""
+    SELECT db_timestamp FROM ${journalTable(slice)}
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
 
-  protected val selectOneEventSql = sql"""
+  protected def selectOneEventSql(slice: Int) = sql"""
     SELECT slice, entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    FROM $journalTable
+    FROM ${journalTable(slice)}
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
 
-  private val selectOneEventWithoutPayloadSql = sql"""
+  protected def selectOneEventWithoutPayloadSql(slice: Int) = sql"""
     SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    FROM $journalTable
+    FROM ${journalTable(slice)}
     WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
 
-  protected val selectEventsSql = sql"""
+  protected def selectEventsSql(slice: Int) = sql"""
     SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    from $journalTable
+    from ${journalTable(slice)}
     WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
     AND deleted = false
     ORDER BY seq_nr
@@ -142,17 +144,37 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     .bind(2, toSequenceNr)
     .bind(3, settings.querySettings.bufferSize)
 
-  protected val allPersistenceIdsSql =
-    sql"SELECT DISTINCT(persistence_id) from $journalTable ORDER BY persistence_id LIMIT ?"
+  protected def allPersistenceIdsSql = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "allPersistenceIdsSql not implemented for more than one data-partition yet")
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} ORDER BY persistence_id LIMIT ?"
+  }
 
-  protected val persistenceIdsForEntityTypeSql =
-    sql"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+  protected def persistenceIdsForEntityTypeSql = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+  }
 
-  protected val allPersistenceIdsAfterSql =
-    sql"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  protected def allPersistenceIdsAfterSql = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  }
 
-  protected val persistenceIdsForEntityTypeAfterSql =
-    sql"SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  protected def persistenceIdsForEntityTypeAfterSql = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  }
 
   protected val r2dbcExecutor = new R2dbcExecutor(
     connectionFactory,
@@ -298,10 +320,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   override def countBucketsMayChange: Boolean = false
 
   override def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     r2dbcExecutor.selectOne("select timestampOfEvent")(
       connection =>
         connection
-          .createStatement(selectTimestampOfEventSql)
+          .createStatement(selectTimestampOfEventSql(slice))
           .bind(0, persistenceId)
           .bind(1, seqNr),
       row => row.getTimestamp("db_timestamp"))
@@ -310,10 +333,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   override def loadEvent(
       persistenceId: String,
       seqNr: Long,
-      includePayload: Boolean): Future[Option[SerializedJournalRow]] =
+      includePayload: Boolean): Future[Option[SerializedJournalRow]] = {
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     r2dbcExecutor.selectOne("select one event")(
       connection => {
-        val selectSql = if (includePayload) selectOneEventSql else selectOneEventWithoutPayloadSql
+        val selectSql = if (includePayload) selectOneEventSql(slice) else selectOneEventWithoutPayloadSql(slice)
         connection
           .createStatement(selectSql)
           .bind(0, persistenceId)
@@ -338,15 +362,16 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
           tags = row.getTags("tags"),
           metadata = readMetadata(row))
       })
+  }
 
   override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
-
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val result = r2dbcExecutor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection => {
-        val stmt = connection.createStatement(selectEventsSql)
+        val stmt = connection.createStatement(selectEventsSql(slice))
         bindSelectEventsSql(stmt, persistenceId, fromSequenceNr, toSequenceNr, settings.querySettings.bufferSize)
       },
       row =>

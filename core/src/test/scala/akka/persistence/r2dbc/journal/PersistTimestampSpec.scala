@@ -42,6 +42,30 @@ class PersistTimestampSpec
     else
       PostgresTimestampCodec
 
+  private def selectRows(table: String): IndexedSeq[Row] = {
+    r2dbcExecutor
+      .select[Row]("test")(
+        connection => connection.createStatement(s"select * from $table"),
+        row => {
+          val event = serialization
+            .deserialize(
+              row.getPayload("event_payload"),
+              row.get("event_ser_id", classOf[Integer]),
+              row.get("event_ser_manifest", classOf[String]))
+            .get
+            .asInstanceOf[String]
+          Row(
+            pid = row.get("persistence_id", classOf[String]),
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
+            event)
+        })
+      .futureValue
+  }
+
+  private def selectAllRows(): IndexedSeq[Row] =
+    r2dbcSettings.alljournalTablesWithSchema.toVector.sorted.flatMap(selectRows)
+
   "Persist timestamp" should {
 
     "be the same for events stored in same transaction" in {
@@ -71,25 +95,7 @@ class PersistTimestampSpec
       }
       pingProbe.receiveMessages(entities.size, 20.seconds)
 
-      val rows =
-        r2dbcExecutor
-          .select[Row]("test")(
-            connection => connection.createStatement(s"select * from ${settings.journalTableWithSchema}"),
-            row => {
-              val event = serialization
-                .deserialize(
-                  row.getPayload("event_payload"),
-                  row.get("event_ser_id", classOf[Integer]),
-                  row.get("event_ser_manifest", classOf[String]))
-                .get
-                .asInstanceOf[String]
-              Row(
-                pid = row.get("persistence_id", classOf[String]),
-                seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                dbTimestamp = row.getTimestamp("db_timestamp"),
-                event)
-            })
-          .futureValue
+      val rows = selectAllRows()
 
       rows.groupBy(_.event).foreach { case (_, rowsByUniqueEvent) =>
         withClue(s"pid [${rowsByUniqueEvent.head.pid}]: ") {

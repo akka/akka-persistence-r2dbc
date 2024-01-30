@@ -19,10 +19,13 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
   "Settings for postgres" should {
     "have table names with schema" in {
       val config = ConfigFactory
-        .parseString("akka.persistence.r2dbc.schema=s1")
+        .parseString("""
+          akka.persistence.r2dbc.schema=s1
+          akka.persistence.r2dbc.journal.table-data-partitions = 1
+          """)
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
-      settings.journalTableWithSchema shouldBe "s1.event_journal"
+      settings.journalTableWithSchema(0) shouldBe "s1.event_journal"
       settings.snapshotsTableWithSchema shouldBe "s1.snapshot"
       settings.durableStateTableWithSchema shouldBe "s1.durable_state"
 
@@ -30,6 +33,24 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings shouldBe a[PostgresConnectionFactorySettings]
       connectionFactorySettings.urlOption should not be defined
+    }
+
+    "have table names with data partition suffix" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.schema=s1
+          akka.persistence.r2dbc.journal.table-data-partitions = 4
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.journalTableWithSchema(slice = 0) shouldBe "s1.event_journal_0"
+      settings.journalTableWithSchema(slice = 17) shouldBe "s1.event_journal_0"
+      settings.journalTableWithSchema(slice = 256) shouldBe "s1.event_journal_1"
+      settings.journalTableWithSchema(slice = 511) shouldBe "s1.event_journal_1"
+      settings.journalTableWithSchema(slice = 512) shouldBe "s1.event_journal_2"
+      settings.journalTableWithSchema(slice = 767) shouldBe "s1.event_journal_2"
+      settings.journalTableWithSchema(slice = 768) shouldBe "s1.event_journal_3"
+      settings.journalTableWithSchema(slice = 1023) shouldBe "s1.event_journal_3"
     }
 
     "support connection settings build from url" in {

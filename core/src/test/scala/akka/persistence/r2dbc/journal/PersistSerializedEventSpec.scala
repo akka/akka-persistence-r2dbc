@@ -38,6 +38,7 @@ class PersistSerializedEventSpec
 
       val entityType = nextEntityType()
       val persistenceId = PersistenceId.ofUniqueId(nextPid(entityType))
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId.id)
       val ref = spawn(Persister(persistenceId, Set.empty))
 
       // String serialization has no manifest
@@ -73,7 +74,7 @@ class PersistSerializedEventSpec
           .select[Row]("test")(
             connection =>
               connection.createStatement(
-                s"select * from ${settings.journalTableWithSchema} where persistence_id = '${persistenceId.id}'"),
+                s"select * from ${settings.journalTableWithSchema(slice)} where persistence_id = '${persistenceId.id}'"),
             row => {
               Row(
                 pid = row.get("persistence_id", classOf[String]),

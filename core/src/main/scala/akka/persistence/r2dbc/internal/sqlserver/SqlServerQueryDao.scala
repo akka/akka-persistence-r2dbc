@@ -48,10 +48,10 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override def log = SqlServerQueryDao.log
   override protected def sqlDbTimestamp = "SYSUTCDATETIME()"
 
-  override protected val selectEventsSql =
+  override protected def selectEventsSql(slice: Int) =
     sql"""
       SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      from $journalTable
+      from ${journalTable(slice)}
       WHERE persistence_id = @persistenceId AND seq_nr >= @from AND seq_nr <= @to
       AND deleted = $sqlFalse
       ORDER BY seq_nr"""
@@ -78,7 +78,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     sql"""
         SELECT TOP(@limit) bucket, count(*) as count from
          (select DATEDIFF(s,'1970-01-01 00:00:00', db_timestamp)/10 as bucket
-          FROM $journalTable
+          FROM ${journalTable(minSlice)}
           WHERE entity_type = @entityType
           AND ${sliceCondition(minSlice, maxSlice)}
           AND db_timestamp >= @fromTimestamp AND db_timestamp <= @toTimestamp
@@ -124,7 +124,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
 
     sql"""
         $selectColumns
-        FROM $journalTable
+        FROM ${journalTable(minSlice)}
         WHERE entity_type = @entityType
         AND ${sliceCondition(minSlice, maxSlice)}
         AND db_timestamp >= @from $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
@@ -145,11 +145,16 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     stmt
   }
 
-  override protected val persistenceIdsForEntityTypeAfterSql: String =
+  override protected def persistenceIdsForEntityTypeAfterSql: String = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
+  }
 
   override protected def bindPersistenceIdsForEntityTypeAfterSql(
       stmt: Statement,
@@ -163,11 +168,16 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
       .bind("@persistenceId", afterPersistenceId)
   }
 
-  override protected val persistenceIdsForEntityTypeSql: String =
+  override protected def persistenceIdsForEntityTypeSql: String = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id LIKE @persistenceIdLike
+          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE @persistenceIdLike
          ) as sub ORDER BY persistence_id"""
+  }
 
   override protected def bindPersistenceIdsForEntityTypeSql(
       stmt: Statement,
@@ -187,14 +197,24 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
       .bind("@limit", limit)
       .bind("@persistenceId", afterPersistenceId)
   }
-  override protected val allPersistenceIdsAfterSql: String =
+  override protected def allPersistenceIdsAfterSql: String = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from $journalTable WHERE persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
+  }
 
-  override protected val allPersistenceIdsSql: String =
-    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from $journalTable) as sub  ORDER BY persistence_id"
+  override protected def allPersistenceIdsSql: String = {
+    // FIXME
+    require(
+      settings.journalTableDataPartitions == 1,
+      "allPersistenceIdsSql not implemented for more than one data-partition yet")
+    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(0)} as sub  ORDER BY persistence_id"
+  }
 
   override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
 

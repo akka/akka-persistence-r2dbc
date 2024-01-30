@@ -89,12 +89,13 @@ class PayloadSpec
 
   private def selectJournalRow(persistenceId: String): TestRow = {
     import settings.codecSettings.JournalImplicits.journalPayloadCodec
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
         connection =>
           connection.createStatement(
-            s"select * from ${settings.journalTableWithSchema} where persistence_id = '$persistenceId'"),
+            s"select * from ${settings.journalTableWithSchema(slice)} where persistence_id = '$persistenceId'"),
         row => {
           val payload = row.getPayload("event_payload")
           TestRow(
