@@ -89,6 +89,8 @@ class EventsBySliceBacktrackingSpec
   "eventsBySlices backtracking" should {
 
     "find old events with earlier timestamp" in {
+      pendingIfMoreThanOneDataPartition()
+
       // this scenario is handled by the backtracking query
       val entityType = nextEntityType()
       val pid1 = nextPid(entityType)
@@ -179,6 +181,8 @@ class EventsBySliceBacktrackingSpec
     }
 
     "emit from backtracking after first normal query" in {
+      pendingIfMoreThanOneDataPartition()
+
       val entityType = nextEntityType()
       val pid1 = nextPid(entityType)
       val pid2 = nextPid(entityType)
@@ -237,6 +241,8 @@ class EventsBySliceBacktrackingSpec
     }
 
     "predict backtracking filtered events based on latest seen counts" in {
+      pendingIfMoreThanOneDataPartition()
+
       val entityType = nextEntityType()
       val pid = nextPid(entityType)
       val slice = query.sliceForPersistenceId(pid)

@@ -212,6 +212,16 @@ final class R2dbcSettings private (
     }.toSet
   }
 
+  def isJournalSliceRangeWithinSameDataPartition(minSlice: Int, maxSlice: Int): Boolean = {
+    if (journalTableDataPartitions == 1)
+      true
+    else {
+      val dataPartition1 = minSlice / (NumberOfSlices / journalTableDataPartitions)
+      val dataPartition2 = maxSlice / (NumberOfSlices / journalTableDataPartitions)
+      dataPartition1 == dataPartition2
+    }
+  }
+
   /**
    * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
    */

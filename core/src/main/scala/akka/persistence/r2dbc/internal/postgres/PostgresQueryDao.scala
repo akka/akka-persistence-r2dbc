@@ -218,6 +218,11 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
+
+    if (!settings.isJournalSliceRangeWithinSameDataPartition(minSlice, maxSlice))
+      throw new IllegalArgumentException(
+        s"Slice range [$minSlice-$maxSlice] spans over more than one " +
+        s"of the [${settings.journalTableDataPartitions}] data partitions.")
     val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection

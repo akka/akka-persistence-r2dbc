@@ -53,6 +53,24 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       settings.journalTableWithSchema(slice = 1023) shouldBe "s1.event_journal_3"
     }
 
+    "verify slice range within same data partition" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.journal.table-data-partitions = 4
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.isJournalSliceRangeWithinSameDataPartition(0, 255) shouldBe true
+      settings.isJournalSliceRangeWithinSameDataPartition(256, 511) shouldBe true
+      settings.isJournalSliceRangeWithinSameDataPartition(512, 767) shouldBe true
+      settings.isJournalSliceRangeWithinSameDataPartition(768, 1023) shouldBe true
+
+      settings.isJournalSliceRangeWithinSameDataPartition(0, 1023) shouldBe false
+      settings.isJournalSliceRangeWithinSameDataPartition(0, 511) shouldBe false
+      settings.isJournalSliceRangeWithinSameDataPartition(512, 1023) shouldBe false
+      settings.isJournalSliceRangeWithinSameDataPartition(511, 512) shouldBe false
+    }
+
     "support connection settings build from url" in {
       val config =
         ConfigFactory

@@ -40,6 +40,10 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
 
   lazy val persistenceExt: Persistence = Persistence(typedSystem)
 
+  def pendingIfMoreThanOneDataPartition(): Unit =
+    if (r2dbcSettings.journalTableDataPartitions > 1)
+      pending
+
   override protected def beforeAll(): Unit = {
     try {
       r2dbcSettings.alljournalTablesWithSchema.foreach { table =>
