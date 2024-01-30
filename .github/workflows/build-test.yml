@@ -112,6 +112,40 @@ jobs:
             -Dakka.persistence.r2dbc.state.payload-column-type=JSONB \
             "core/testOnly akka.persistence.r2dbc.PayloadSpec"
 
+  test-postgres-data-partitions:
+    name: Run test with Postgres and several data partitions
+    runs-on: ubuntu-22.04
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Checkout GitHub merge
+        if: github.event.pull_request
+        run: |-
+          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
+          git checkout scratch
+
+      - name: Cache Coursier cache
+        uses: coursier/cache-action@v6.4.0
+
+      - name: Set up JDK 11
+        uses: coursier/setup-action@v1.3.0
+        with:
+          jvm: temurin:1.11.0
+
+      - name: Start DB
+        run: |-
+          docker compose -f docker/docker-compose-postgres.yml up --wait
+          docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres_4.sql
+
+      - name: sbt test
+        run: |-
+          cp .jvmopts-ci .jvmopts
+          sbt -Dakka.persistence.r2dbc.journal.table-data-partitions=4 test
+
   test-yugabyte:
     name: Run tests with Yugabyte
     runs-on: ubuntu-22.04
