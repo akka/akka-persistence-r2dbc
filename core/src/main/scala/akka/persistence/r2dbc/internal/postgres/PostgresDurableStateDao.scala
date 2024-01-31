@@ -100,8 +100,9 @@ private[r2dbc] class PostgresDurableStateDao(
     settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   private implicit val statePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
-  implicit val timestampCodec: TimestampCodec = settings.timestampCodec
   private implicit val tagsCodec: TagsCodec = settings.tagsCodec
+
+  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
   protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
 
   // used for change events
