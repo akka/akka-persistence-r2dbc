@@ -26,7 +26,6 @@ import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.DurableStateStoreBySliceQuery
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
@@ -45,6 +44,8 @@ import akka.serialization.Serializers
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
+
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 object R2dbcDurableStateStore {
   val Identifier = "akka.persistence.r2dbc.state"
@@ -65,20 +66,22 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.state$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
-  private val journalSettings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
   log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
-  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(
-    settings,
-    ConnectionFactoryProvider(typedSystem)
-      .connectionFactoryFor(sharedConfigPath + ".connection-factory"))(typedSystem)
+  // FIXME maybe this is using the wrong executionContext, H2Dialect is using another dispatcher?
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))(
+      typedSystem.executionContext,
+      typedSystem)
+  private val stateDao =
+    settings.connectionFactorySettings.dialect.createDurableStateDao(settings, executorProvider)(typedSystem)
   private val changeEventWriterUuid = UUID.randomUUID().toString
 
   private val pubSub: Option[PubSub] =
-    if (journalSettings.journalPublishEvents) Some(PubSub(typedSystem))
+    if (settings.journalPublishEvents) Some(PubSub(typedSystem))
     else None
 
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
@@ -225,7 +228,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
 
       val entityType = PersistenceId.extractEntityType(persistenceId)
       val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-      val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
+      val timestamp = if (settings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
 
       SerializedJournalRow(
         slice,

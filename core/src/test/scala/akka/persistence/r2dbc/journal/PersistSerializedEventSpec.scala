@@ -70,7 +70,7 @@ class PersistSerializedEventSpec
       replyProbe.expectMessage("e1|Some(e2)")
 
       val rows =
-        r2dbcExecutor
+        r2dbcExecutor(slice)
           .select[Row]("test")(
             connection =>
               connection.createStatement(

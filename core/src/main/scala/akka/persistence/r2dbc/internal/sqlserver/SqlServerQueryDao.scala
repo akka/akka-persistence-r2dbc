@@ -23,6 +23,8 @@ import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+
 /**
  * INTERNAL API
  */
@@ -36,10 +38,10 @@ private[r2dbc] object SqlServerQueryDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresQueryDao(settings, connectionFactory) {
+    extends PostgresQueryDao(settings, executorProvider) {
   import settings.codecSettings.JournalImplicits._
 
   override def sqlFalse = "0"
@@ -148,7 +150,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override protected def persistenceIdsForEntityTypeAfterSql: String = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
@@ -171,7 +173,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override protected def persistenceIdsForEntityTypeSql: String = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
@@ -200,7 +202,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override protected def allPersistenceIdsAfterSql: String = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
@@ -211,11 +213,11 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
   override protected def allPersistenceIdsSql: String = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "allPersistenceIdsSql not implemented for more than one data-partition yet")
     sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(0)} as sub  ORDER BY persistence_id"
   }
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
+  override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
 
 }

@@ -20,12 +20,12 @@ import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresSnapshotDao
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -39,10 +39,10 @@ private[r2dbc] object SqlServerSnapshotDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresSnapshotDao(settings, connectionFactory) {
+    extends PostgresSnapshotDao(settings, executorProvider) {
   import settings.codecSettings.SnapshotImplicits._
 
   override def log: Logger = SqlServerSnapshotDao.log
@@ -206,6 +206,6 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
       ORDER BY db_timestamp, seq_nr
       """
 
-  override def currentDbTimestamp(): Future[Instant] = Future.successful(InstantFactory.now())
+  override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
 
 }

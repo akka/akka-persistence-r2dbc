@@ -31,15 +31,15 @@ private[r2dbc] trait Dialect {
 
   def createConnectionFactory(config: Config): ConnectionFactory
 
-  def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): JournalDao
 
-  def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): QueryDao
 
-  def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): SnapshotDao
 
-  def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): DurableStateDao
 }

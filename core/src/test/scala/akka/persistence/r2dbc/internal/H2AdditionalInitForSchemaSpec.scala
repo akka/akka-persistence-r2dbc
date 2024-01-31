@@ -32,6 +32,9 @@ object H2AdditionalInitForSchemaSpec {
         additional-init = "alter table durable_state add if not exists col1 varchar(256)"
       }
       // #additionalColumn
+
+      # when testing with number-of-databases > 1 we must override that for H2
+      akka.persistence.r2dbc.data-partition.number-of-databases = 1
       """)
     .withFallback(ConfigFactory.load())
     .resolve()

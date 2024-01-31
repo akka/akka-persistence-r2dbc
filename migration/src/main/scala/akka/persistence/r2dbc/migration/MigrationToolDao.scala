@@ -6,18 +6,17 @@ package akka.persistence.r2dbc.migration
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.duration.FiniteDuration
 
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.LoggerFactory
+
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -35,14 +34,13 @@ import org.slf4j.LoggerFactory
 /**
  * INTERNAL API
  */
-@InternalApi private[r2dbc] class MigrationToolDao(
-    connectionFactory: ConnectionFactory,
-    logDbCallsExceeding: FiniteDuration,
-    closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+@InternalApi private[r2dbc] class MigrationToolDao(executorProvider: R2dbcExecutorProvider)(implicit
+    ec: ExecutionContext,
+    system: ActorSystem[_]) {
   import MigrationToolDao._
-  private implicit val queryAdapter: QueryAdapter = IdentityAdapter
-  private val r2dbcExecutor =
-    new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding)(ec, system)
+  implicit val queryAdapter: QueryAdapter = IdentityAdapter
+  // progress always in data partition 0
+  private val r2dbcExecutor = executorProvider.executorFor(slice = 0)
 
   def createProgressTable(): Future[Done] = {
     r2dbcExecutor.executeDdl("create migration progress table") { connection =>

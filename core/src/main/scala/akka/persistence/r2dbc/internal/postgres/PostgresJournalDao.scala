@@ -20,7 +20,6 @@ import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRo
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
 import io.r2dbc.spi.Connection
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
@@ -29,8 +28,9 @@ import java.time.Instant
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 
@@ -61,7 +61,8 @@ private[r2dbc] object PostgresJournalDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(
+    implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends JournalDao {
@@ -70,13 +71,6 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   protected def log: Logger = PostgresJournalDao.log
 
   protected val persistenceExt: Persistence = Persistence(system)
-
-  protected val r2dbcExecutor =
-    new R2dbcExecutor(
-      connectionFactory,
-      log,
-      journalSettings.logDbCallsExceeding,
-      journalSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   protected def journalTable(slice: Int): String = journalSettings.journalTableWithSchema(slice)
 
@@ -153,6 +147,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
     val previousSeqNr = events.head.seqNr - 1
 
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
@@ -164,7 +159,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
     val totalEvents = events.size
     if (totalEvents == 1) {
-      val result = r2dbcExecutor.updateOneReturning(s"insert [$persistenceId]")(
+      val result = executor.updateOneReturning(s"insert [$persistenceId]")(
         connection =>
           bindInsertStatement(connection.createStatement(insertSql), events.head, useTimestampFromDb, previousSeqNr),
         row => row.getTimestamp("db_timestamp"))
@@ -174,7 +169,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
         }
       result
     } else {
-      val result = r2dbcExecutor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
+      val result = executor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
         connection =>
           events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
             stmt.add()
@@ -266,7 +261,8 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
   override def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    val result = r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    val result = executor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
           connection
@@ -287,7 +283,8 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
   override def readLowestSequenceNr(persistenceId: String): Future[Long] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    val result = r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    val result = executor
       .select(s"select lowest seqNr [$persistenceId]")(
         connection =>
           connection
@@ -322,6 +319,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
   override def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
       val idx = Iterator.range(0, Int.MaxValue)
@@ -344,7 +342,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
     def deleteBatch(from: Long, to: Long, lastBatch: Boolean): Future[Unit] = {
       (if (lastBatch && !resetSequenceNumber) {
-         r2dbcExecutor
+         executor
            .update(s"delete [$persistenceId] and insert marker") { connection =>
              Vector(
                connection.createStatement(deleteEventsSql(slice)).bind(0, persistenceId).bind(1, from).bind(2, to),
@@ -352,7 +350,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
            }
            .map(_.head)
        } else {
-         r2dbcExecutor
+         executor
            .updateOne(s"delete [$persistenceId]") { connection =>
              connection.createStatement(deleteEventsSql(slice)).bind(0, persistenceId).bind(1, from).bind(2, to)
            }
@@ -387,7 +385,8 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
 
   override def deleteEventsBefore(persistenceId: String, timestamp: Instant): Future[Unit] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    executor
       .updateOne(s"delete [$persistenceId]") { connection =>
         connection
           .createStatement(deleteEventsByPersistenceIdBeforeTimestampSql(slice))
@@ -400,7 +399,8 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
   }
 
   override def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): Future[Unit] = {
-    r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    executor
       .updateOne(s"delete [$entityType]") { connection =>
         connection
           .createStatement(deleteEventsBySliceBeforeTimestampSql(slice))

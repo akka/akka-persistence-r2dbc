@@ -47,6 +47,7 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
@@ -80,7 +81,7 @@ private[r2dbc] object PostgresDurableStateDao {
 @InternalApi
 private[r2dbc] class PostgresDurableStateDao(
     settings: R2dbcSettings,
-    connectionFactory: ConnectionFactory,
+    executorProvider: R2dbcExecutorProvider,
     dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
     extends DurableStateDao {
   import DurableStateDao._
@@ -89,14 +90,10 @@ private[r2dbc] class PostgresDurableStateDao(
   protected def log: Logger = PostgresDurableStateDao.log
 
   private val persistenceExt = Persistence(system)
-  protected val r2dbcExecutor = new R2dbcExecutor(
-    connectionFactory,
-    log,
-    settings.logDbCallsExceeding,
-    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
+  protected val r2dbcExecutor = executorProvider.executorFor(slice = 0) // FIXME support data partitions
 
   // used for change events
-  private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, connectionFactory)
+  private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, executorProvider)
 
   private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
@@ -649,7 +646,7 @@ private[r2dbc] class PostgresDurableStateDao(
     result.map(_ => Done)(ExecutionContexts.parasitic)
   }
 
-  override def currentDbTimestamp(): Future[Instant] = {
+  override def currentDbTimestamp(slice: Int): Future[Instant] = {
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),

@@ -18,6 +18,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -32,10 +33,10 @@ private[r2dbc] object SqlServerJournalDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresJournalDao(settings, connectionFactory) {
+    extends PostgresJournalDao(settings, executorProvider) {
   import settings.codecSettings.JournalImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")

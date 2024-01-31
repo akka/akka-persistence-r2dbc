@@ -72,7 +72,7 @@ class EventsBySliceBacktrackingSpec
       VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
     val entityType = PersistenceId.extractEntityType(persistenceId)
 
-    val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
+    val result = r2dbcExecutor(slice).updateOne("test writeEvent") { connection =>
       connection
         .createStatement(insertEventSql)
         .bind(0, slice)

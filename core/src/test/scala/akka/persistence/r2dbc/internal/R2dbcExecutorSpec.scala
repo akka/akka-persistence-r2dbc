@@ -73,6 +73,8 @@ class R2dbcExecutorSpec
   }
 
   "R2dbcExecutor" should {
+    // when number-of-databases > 1 the test config above will not be used
+    pendingIfMoreThanOneDataPartition()
 
     "close connection when no response from update" in {
       pendingIfCannotBeTestedWithDialect()

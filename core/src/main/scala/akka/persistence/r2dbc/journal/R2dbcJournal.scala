@@ -27,7 +27,6 @@ import akka.persistence.SerializedEvent
 import akka.persistence.journal.AsyncWriteJournal
 import akka.persistence.journal.Tagged
 import akka.persistence.query.PersistenceQuery
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao
@@ -41,6 +40,9 @@ import akka.serialization.SerializationExtension
 import akka.serialization.Serializers
 import akka.stream.scaladsl.Sink
 import com.typesafe.config.Config
+import org.slf4j.LoggerFactory
+
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -89,16 +91,17 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   private val sharedConfigPath = cfgPath.replaceAll("""\.journal$""", "")
   private val serialization: Serialization = SerializationExtension(context.system)
-  private val journalSettings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
-  log.debug("R2DBC journal starting up with dialect [{}]", journalSettings.dialectName)
+  private val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
+  log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
-  private val journalDao = journalSettings.connectionFactorySettings.dialect.createJournalDao(
-    journalSettings,
-    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory"))
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
+  private val journalDao =
+    settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)
   private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
 
   private val pubSub: Option[PubSub] =
-    if (journalSettings.journalPublishEvents) Some(PubSub(system))
+    if (settings.journalPublishEvents) Some(PubSub(system))
     else None
 
   // if there are pending writes when an actor restarts we must wait for
@@ -111,7 +114,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   override def asyncWriteMessages(messages: immutable.Seq[AtomicWrite]): Future[immutable.Seq[Try[Unit]]] = {
     def atomicWrite(atomicWrite: AtomicWrite): Future[Instant] = {
-      val timestamp = if (journalSettings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
+      val timestamp = if (settings.useAppTimestamp) InstantFactory.now() else JournalDao.EmptyDbTimestamp
       val serialized: Try[Seq[SerializedJournalRow]] = Try {
         atomicWrite.payload.map { pr =>
           val (event, tags) = pr.payload match {

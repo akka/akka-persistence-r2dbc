@@ -13,19 +13,20 @@ import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class H2QueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresQueryDao(settings, connectionFactory) {
+    extends PostgresQueryDao(settings, executorProvider) {
   import settings.codecSettings.JournalImplicits._
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 

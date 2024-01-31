@@ -12,7 +12,6 @@ import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -24,15 +23,16 @@ import scala.concurrent.Future
 import io.r2dbc.spi.Connection
 
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresJournalDao(journalSettings, connectionFactory) {
+    extends PostgresJournalDao(journalSettings, executorProvider) {
   import JournalDao.SerializedJournalRow
   import journalSettings.codecSettings.JournalImplicits._
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
@@ -60,14 +60,15 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
 
     val totalEvents = events.size
     val result =
       if (totalEvents == 1) {
-        r2dbcExecutor.updateOne(s"insert [$persistenceId]")(connection =>
+        executor.updateOne(s"insert [$persistenceId]")(connection =>
           bindInsertStatement(connection.createStatement(insertSql(slice)), events.head))
       } else {
-        r2dbcExecutor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
+        executor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
           events.foldLeft(connection.createStatement(insertSql(slice))) { (stmt, write) =>
             stmt.add()
             bindInsertStatement(stmt, write)

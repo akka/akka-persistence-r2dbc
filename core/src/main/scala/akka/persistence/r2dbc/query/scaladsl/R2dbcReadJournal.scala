@@ -39,7 +39,6 @@ import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
@@ -55,6 +54,8 @@ import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
+
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
@@ -92,12 +93,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   import typedSystem.executionContext
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
-  private val connectionFactory = ConnectionFactoryProvider(typedSystem)
-    .connectionFactoryFor(sharedConfigPath + ".connection-factory")
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))(
+      typedSystem.executionContext,
+      typedSystem)
+  private val journalDao =
+    settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)(typedSystem)
   private val queryDao =
-    settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)(typedSystem)
+    settings.connectionFactorySettings.dialect.createQueryDao(settings, executorProvider)(typedSystem)
   private lazy val snapshotDao =
-    settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)(typedSystem)
+    settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)(typedSystem)
 
   private val filteredPayloadSerId = SerializationExtension(system).findSerializerFor(FilteredPayload).identifier
 
@@ -165,9 +170,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       source = EnvelopeOrigin.SourceSnapshot,
       tags = row.tags)
   }
-
-  private val journalDao =
-    settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)(typedSystem)
 
   def extractEntityTypeFromPersistenceId(persistenceId: String): String =
     PersistenceId.extractEntityType(persistenceId)

@@ -91,7 +91,7 @@ class PayloadSpec
     import settings.codecSettings.JournalImplicits.journalPayloadCodec
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    r2dbcExecutor
+    r2dbcExecutor(slice)
       .selectOne[TestRow]("test")(
         connection =>
           connection.createStatement(

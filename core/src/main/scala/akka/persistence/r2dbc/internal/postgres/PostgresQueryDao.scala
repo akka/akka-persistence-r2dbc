@@ -22,7 +22,6 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.QueryDao
-import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
@@ -30,10 +29,13 @@ import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichSt
 import akka.persistence.Persistence
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
+import akka.persistence.Persistence
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * INTERNAL API
@@ -47,7 +49,7 @@ private[r2dbc] object PostgresQueryDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends QueryDao {
@@ -147,7 +149,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def allPersistenceIdsSql = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "allPersistenceIdsSql not implemented for more than one data-partition yet")
     sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} ORDER BY persistence_id LIMIT ?"
   }
@@ -155,7 +157,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def persistenceIdsForEntityTypeSql = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
     sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
   }
@@ -163,7 +165,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def allPersistenceIdsAfterSql = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
     sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
   }
@@ -171,19 +173,14 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   protected def persistenceIdsForEntityTypeAfterSql = {
     // FIXME
     require(
-      settings.journalTableDataPartitions == 1,
+      settings.numberOfDataPartitions == 1,
       "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
     sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
   }
 
-  protected val r2dbcExecutor = new R2dbcExecutor(
-    connectionFactory,
-    log,
-    settings.logDbCallsExceeding,
-    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
-
-  def currentDbTimestamp(): Future[Instant] = {
-    r2dbcExecutor
+  override def currentDbTimestamp(slice: Int): Future[Instant] = {
+    val executor = executorProvider.executorFor(slice)
+    executor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
         row => row.getTimestamp("db_timestamp"))
@@ -219,11 +216,12 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
 
-    if (!settings.isJournalSliceRangeWithinSameDataPartition(minSlice, maxSlice))
+    if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
         s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.journalTableDataPartitions}] data partitions.")
-    val result = r2dbcExecutor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
+        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+    val executor = executorProvider.executorFor(minSlice)
+    val result = executor.select(s"select eventsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
           .createStatement(
@@ -290,6 +288,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       maxSlice: Int,
       fromTimestamp: Instant,
       limit: Int): Future[Seq[Bucket]] = {
+    val executor = executorProvider.executorFor(minSlice)
 
     val toTimestamp = {
       val now = InstantFactory.now() // not important to use database time
@@ -302,7 +301,7 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       }
     }
 
-    val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection.createStatement(selectBucketsSql(minSlice, maxSlice))
         bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
@@ -326,7 +325,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
 
   override def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    r2dbcExecutor.selectOne("select timestampOfEvent")(
+    val executor = executorProvider.executorFor(slice)
+    executor.selectOne("select timestampOfEvent")(
       connection =>
         connection
           .createStatement(selectTimestampOfEventSql(slice))
@@ -340,7 +340,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       seqNr: Long,
       includePayload: Boolean): Future[Option[SerializedJournalRow]] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    r2dbcExecutor.selectOne("select one event")(
+    val executor = executorProvider.executorFor(slice)
+    executor.selectOne("select one event")(
       connection => {
         val selectSql = if (includePayload) selectOneEventSql(slice) else selectOneEventWithoutPayloadSql(slice)
         connection
@@ -374,7 +375,8 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
       fromSequenceNr: Long,
       toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    val result = r2dbcExecutor.select(s"select eventsByPersistenceId [$persistenceId]")(
+    val executor = executorProvider.executorFor(slice)
+    val result = executor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection => {
         val stmt = connection.createStatement(selectEventsSql(slice))
         bindSelectEventsSql(stmt, persistenceId, fromSequenceNr, toSequenceNr, settings.querySettings.bufferSize)
@@ -424,7 +426,10 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
 
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
-    val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
+    // FIXME
+    require(settings.numberOfDataPartitions == 1, "persistenceIds not implemented for more than one data-partition yet")
+    val executor = executorProvider.executorFor(slice = 0)
+    val result = executor.select(s"select persistenceIds by entity type")(
       connection =>
         afterId match {
           case Some(after) =>
@@ -451,7 +456,10 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
   }
 
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    val result = r2dbcExecutor.select(s"select persistenceIds")(
+    // FIXME
+    require(settings.numberOfDataPartitions == 1, "persistenceIds not implemented for more than one data-partition yet")
+    val executor = executorProvider.executorFor(slice = 0)
+    val result = executor.select(s"select persistenceIds")(
       connection =>
         afterId match {
           case Some(after) =>

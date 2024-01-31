@@ -31,8 +31,8 @@ class PersistTagsSpec
   import settings.codecSettings.JournalImplicits.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
-  private def selectRows(table: String): IndexedSeq[Row] = {
-    r2dbcExecutor
+  private def selectRows(table: String, minSlice: Int): IndexedSeq[Row] = {
+    r2dbcExecutor(minSlice)
       .select[Row]("test")(
         connection => connection.createStatement(s"select * from $table"),
         row =>
@@ -44,7 +44,9 @@ class PersistTagsSpec
   }
 
   private def selectAllRows(): IndexedSeq[Row] =
-    r2dbcSettings.alljournalTablesWithSchema.toVector.sorted.flatMap(selectRows)
+    r2dbcSettings.alljournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
+      selectRows(table, minSlice)
+    }
 
   "Persist tags" should {
 

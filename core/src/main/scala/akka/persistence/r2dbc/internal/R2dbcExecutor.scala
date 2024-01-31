@@ -34,6 +34,10 @@ import org.slf4j.Logger
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
+import akka.annotation.InternalApi
+import akka.persistence.r2dbc.ConnectionFactoryProvider
+import akka.persistence.r2dbc.R2dbcSettings
+
 /**
  * INTERNAL API
  */
@@ -382,4 +386,27 @@ class R2dbcExecutor(
     // throw by PooledConnection assertNotClosed, if connection closed after timeout
     Future.successful(Done)
   }
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalApi private[akka] class R2dbcExecutorProvider(
+    val settings: R2dbcSettings,
+    connectionFactoryBaseConfigPath: String,
+    log: Logger)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+  private val connectionFactoryProvider = ConnectionFactoryProvider(system)
+
+  def executorFor(slice: Int): R2dbcExecutor = {
+    val connectionFactoryConfigPath =
+      settings.resolveConnectionFactoryConfigPath(connectionFactoryBaseConfigPath, slice)
+    val connectionFactory = connectionFactoryProvider.connectionFactoryFor(connectionFactoryConfigPath)
+    // FIXME cache the instances
+    new R2dbcExecutor(
+      connectionFactory,
+      log,
+      settings.logDbCallsExceeding,
+      settings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+  }
+
 }

@@ -1,0 +1,30 @@
+version: '2.2'
+services:
+  postgres-db-0:
+    image: postgres:latest
+    container_name: postgres-db-0
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ['CMD', 'pg_isready', "-q", "-d", "postgres", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+      start_period: 5s
+      timeout: 5s
+  postgres-db-1:
+    image: postgres:latest
+    container_name: postgres-db-1
+    ports:
+      - 5433:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: [ 'CMD', 'pg_isready', "-q", "-d", "postgres", "-U", "postgres" ]
+      interval: 5s
+      retries: 5
+      start_period: 5s
+      timeout: 5s

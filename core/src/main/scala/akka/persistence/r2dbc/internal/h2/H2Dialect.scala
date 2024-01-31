@@ -24,6 +24,7 @@ import java.util.Locale
 
 import scala.concurrent.ExecutionContext
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 
@@ -36,6 +37,8 @@ private[r2dbc] object H2Dialect extends Dialect {
   override def name: String = "h2"
 
   override def adaptSettings(settings: R2dbcSettings): R2dbcSettings = {
+    if (settings.numberOfDatabases > 1)
+      throw new IllegalArgumentException("H2 dialect doesn't support more than one data-partition.number-of-databases")
     val res = settings
       // app timestamp is db timestamp because same process
       .withUseAppTimestamp(true)
@@ -84,21 +87,21 @@ private[r2dbc] object H2Dialect extends Dialect {
     new H2ConnectionFactory(h2Config)
   }
 
-  override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): JournalDao =
-    new H2JournalDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2JournalDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): SnapshotDao =
-    new H2SnapshotDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2SnapshotDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): QueryDao =
-    new H2QueryDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2QueryDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new H2DurableStateDao(settings, connectionFactory, this)(ecForDaos(system, settings), system)
+    new H2DurableStateDao(settings, executorProvider, this)(ecForDaos(system, settings), system)
 
   private def ecForDaos(system: ActorSystem[_], settings: R2dbcSettings): ExecutionContext = {
     // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
@@ -113,14 +116,14 @@ private[r2dbc] object H2Dialect extends Dialect {
       else Some(s)
     }
     val schema = optionalConfString("schema")
+    val numberOfDataPartitions = config.getInt("number-of-partitions")
     val journalTable = config.getString("journal-table")
-    val journalTableDataPartitions = config.getInt("journal-table-data-partitions")
     val journalTableWithSchema = schema.map(_ + ".").getOrElse("") + journalTable
     val allJournalTablesWithSchema =
-      if (journalTableDataPartitions == 1)
+      if (numberOfDataPartitions == 1)
         Vector(journalTableWithSchema)
       else
-        (0 until journalTableDataPartitions).map { dataPartition =>
+        (0 until numberOfDataPartitions).map { dataPartition =>
           s"${journalTableWithSchema}_$dataPartition"
         }
     val snapshotTable = config.getString("snapshot-table")

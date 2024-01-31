@@ -138,13 +138,14 @@ jobs:
 
       - name: Start DB
         run: |-
-          docker compose -f docker/docker-compose-postgres.yml up --wait
-          docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres_4.sql
+          docker compose -f docker/docker-compose-postgres-2.yml up --wait
+          docker exec -i postgres-db-0 psql -U postgres -t < ddl-scripts/create_tables_postgres_0-1.sql
+          docker exec -i postgres-db-1 psql -U postgres -t < ddl-scripts/create_tables_postgres_2-3.sql
 
       - name: sbt test
         run: |-
           cp .jvmopts-ci .jvmopts
-          sbt -Dakka.persistence.r2dbc.journal.table-data-partitions=4 test
+          sbt -Dconfig.resource=application-postgres-data-partitions.conf test
 
   test-yugabyte:
     name: Run tests with Yugabyte

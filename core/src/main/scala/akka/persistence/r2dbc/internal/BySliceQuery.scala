@@ -150,7 +150,7 @@ import org.slf4j.Logger
   }
 
   trait Dao[SerializedRow] {
-    def currentDbTimestamp(): Future[Instant]
+    def currentDbTimestamp(slice: Int): Future[Instant]
 
     def rowsBySlices(
         entityType: String,
@@ -262,7 +262,7 @@ import org.slf4j.Logger
 
     val currentTimestamp =
       if (settings.useAppTimestamp) Future.successful(InstantFactory.now())
-      else dao.currentDbTimestamp()
+      else dao.currentDbTimestamp(minSlice)
 
     Source
       .futureSource[Envelope, NotUsed] {

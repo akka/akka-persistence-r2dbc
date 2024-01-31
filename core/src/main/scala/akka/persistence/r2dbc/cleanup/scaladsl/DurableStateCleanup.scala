@@ -9,6 +9,8 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 
+import org.slf4j.LoggerFactory
+
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
@@ -16,10 +18,8 @@ import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.DurableStateDao
-import org.slf4j.LoggerFactory
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * Scala API: Tool for deleting durable state for a given list of `persistenceIds` without using `DurableStateBehavior`
@@ -57,9 +57,9 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
   private val sharedConfigPath = configPath.replaceAll("""\.cleanup$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 
-  private val connectionFactory =
-    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(settings, connectionFactory)
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
+  private val stateDao = settings.connectionFactorySettings.dialect.createDurableStateDao(settings, executorProvider)
 
   /**
    * Delete the state related to one single `persistenceId`.
