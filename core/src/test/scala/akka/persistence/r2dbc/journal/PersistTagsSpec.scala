@@ -29,7 +29,7 @@ class PersistTagsSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-  implicit val tagsCodec: TagsCodec = settings.tagsCodec
+  private implicit val tagsCodec: TagsCodec = settings.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
   "Persist tags" should {

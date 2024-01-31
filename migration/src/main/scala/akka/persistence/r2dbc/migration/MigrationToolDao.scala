@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory
     logDbCallsExceeding: FiniteDuration,
     closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   import MigrationToolDao._
-  implicit val queryAdapter: QueryAdapter = IdentityAdapter
+  private implicit val queryAdapter: QueryAdapter = IdentityAdapter
   private val r2dbcExecutor =
     new R2dbcExecutor(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding)(ec, system)
 

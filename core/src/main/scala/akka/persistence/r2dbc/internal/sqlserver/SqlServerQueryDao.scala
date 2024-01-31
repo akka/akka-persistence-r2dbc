@@ -5,9 +5,6 @@
 package akka.persistence.r2dbc.internal.sqlserver
 
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.util.Date.UTC
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -19,7 +16,6 @@ import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.SqlServerTimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
 import io.r2dbc.spi.ConnectionFactory
