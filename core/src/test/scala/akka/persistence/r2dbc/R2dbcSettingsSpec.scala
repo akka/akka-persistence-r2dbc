@@ -244,6 +244,15 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       settings.connectionFactorSliceRanges.size shouldBe 2
       settings.connectionFactorSliceRanges(0) should be(0 until 512)
       settings.connectionFactorSliceRanges(1) should be(512 until 1024)
+
+      val configPaths =
+        R2dbcSettings.connectionFactoryConfigPaths(
+          "a.b.connection-factory",
+          numberOfDataPartitions = 8,
+          numberOfDatabases = 2)
+      configPaths.size shouldBe 2
+      configPaths(0) shouldBe "a.b.connection-factory-0-3"
+      configPaths(1) shouldBe "a.b.connection-factory-4-7"
     }
 
     "use default connection-factory config property when one database" in {

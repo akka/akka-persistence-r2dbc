@@ -191,6 +191,23 @@ object R2dbcSettings {
     cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
   }
 
+  /**
+   * The config paths for the connection factories that are used for the given number of data partitions and databases.
+   */
+  def connectionFactoryConfigPaths(
+      baseConfigPath: String,
+      numberOfDataPartitions: Int,
+      numberOfDatabases: Int): immutable.IndexedSeq[String] = {
+    if (numberOfDatabases == 1) {
+      Vector(baseConfigPath)
+    } else {
+      val rangeSize = numberOfDataPartitions / numberOfDatabases
+      (0 until numberOfDatabases).map { i =>
+        s"$baseConfigPath-${i * rangeSize}-${i * rangeSize + rangeSize - 1}"
+      }
+    }
+  }
+
 }
 
 /**
@@ -248,10 +265,7 @@ final class R2dbcSettings private (
     }
   }
 
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val numberOfDatabases: Int = _connectionFactorySettings.size
+  val numberOfDatabases: Int = _connectionFactorySettings.size
 
   val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
     val rangeSize = NumberOfSlices / numberOfDataPartitions
