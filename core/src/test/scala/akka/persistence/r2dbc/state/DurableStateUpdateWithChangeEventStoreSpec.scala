@@ -4,8 +4,6 @@
 
 package akka.persistence.r2dbc.state
 
-import org.scalatest.concurrent.ScalaFutures.convertScalaFuture
-
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem

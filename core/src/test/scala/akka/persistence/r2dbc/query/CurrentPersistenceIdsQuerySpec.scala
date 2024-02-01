@@ -63,8 +63,6 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   "Event Sourced currentPersistenceIds" should {
-    // FIXME maybe
-    pendingIfMoreThanOneDataPartition()
 
     "retrieve all ids" in {
       val result = query.currentPersistenceIds().runWith(Sink.seq).futureValue

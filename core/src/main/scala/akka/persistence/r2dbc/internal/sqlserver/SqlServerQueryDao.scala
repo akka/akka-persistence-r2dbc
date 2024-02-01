@@ -147,14 +147,10 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider
     stmt
   }
 
-  override protected def persistenceIdsForEntityTypeAfterSql: String = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
+  override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String = {
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
   }
 
@@ -170,14 +166,10 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider
       .bind("@persistenceId", afterPersistenceId)
   }
 
-  override protected def persistenceIdsForEntityTypeSql: String = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
+  override protected def persistenceIdsForEntityTypeSql(minSlice: Int): String = {
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE @persistenceIdLike
+          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike
          ) as sub ORDER BY persistence_id"""
   }
 
@@ -199,23 +191,15 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider
       .bind("@limit", limit)
       .bind("@persistenceId", afterPersistenceId)
   }
-  override protected def allPersistenceIdsAfterSql: String = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
+  override protected def allPersistenceIdsAfterSql(minSlice: Int): String = {
     sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
   }
 
-  override protected def allPersistenceIdsSql: String = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "allPersistenceIdsSql not implemented for more than one data-partition yet")
-    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(0)} as sub  ORDER BY persistence_id"
+  override protected def allPersistenceIdsSql(minSlice: Int): String = {
+    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} as sub  ORDER BY persistence_id"
   }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())

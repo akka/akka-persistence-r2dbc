@@ -245,7 +245,24 @@ final class R2dbcSettings private (
    */
   @InternalApi private[akka] val numberOfDatabases: Int = _connectionFactorySettings.size
 
-  def isSliceRangeWithinSameDataPartition(minSlice: Int, maxSlice: Int): Boolean =
+  val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDataPartitions
+    (0 until numberOfDataPartitions).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
+  val connectionFactorSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDatabases
+    (0 until numberOfDatabases).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def isSliceRangeWithinSameDataPartition(minSlice: Int, maxSlice: Int): Boolean =
     numberOfDataPartitions == 1 || dataPartition(minSlice) == dataPartition(maxSlice)
 
   private def dataPartition(slice: Int): Int =

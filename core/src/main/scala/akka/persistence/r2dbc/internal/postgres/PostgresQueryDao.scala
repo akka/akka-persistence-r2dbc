@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import scala.collection.immutable
 import java.time.Instant
 
 import scala.concurrent.ExecutionContext
@@ -146,37 +147,18 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, executorProvider:
     .bind(2, toSequenceNr)
     .bind(3, settings.querySettings.bufferSize)
 
-  protected def allPersistenceIdsSql = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "allPersistenceIdsSql not implemented for more than one data-partition yet")
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} ORDER BY persistence_id LIMIT ?"
+  protected def allPersistenceIdsSql(minSlice: Int) = {
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} ORDER BY persistence_id LIMIT ?"
   }
 
-  protected def persistenceIdsForEntityTypeSql = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "persistenceIdsForEntityTypeSql not implemented for more than one data-partition yet")
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
-  }
+  protected def persistenceIdsForEntityTypeSql(minSlice: Int) =
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
 
-  protected def allPersistenceIdsAfterSql = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "allPersistenceIdsAfterSql not implemented for more than one data-partition yet")
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
-  }
+  protected def allPersistenceIdsAfterSql(minSlice: Int) =
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
-  protected def persistenceIdsForEntityTypeAfterSql = {
-    // FIXME
-    require(
-      settings.numberOfDataPartitions == 1,
-      "persistenceIdsForEntityTypeAfterSql not implemented for more than one data-partition yet")
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(0)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
-  }
+  protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int) =
+    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
@@ -425,28 +407,38 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, executorProvider:
   }
 
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
+    val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
-    // FIXME
-    require(settings.numberOfDataPartitions == 1, "persistenceIds not implemented for more than one data-partition yet")
-    val executor = executorProvider.executorFor(slice = 0)
-    val result = executor.select(s"select persistenceIds by entity type")(
-      connection =>
-        afterId match {
-          case Some(after) =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql)
-            bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, limit)
+    val results: immutable.IndexedSeq[Future[immutable.IndexedSeq[String]]] =
+      // query each data partition
+      settings.dataPartitionSliceRanges.map { sliceRange =>
+        val executor = executorProvider.executorFor(sliceRange.min)
+        executor.select(s"select persistenceIds by entity type")(
+          connection =>
+            afterId match {
+              case Some(after) =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(sliceRange.min))
+                bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
 
-          case None =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeSql)
-            bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, limit)
+              case None =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(sliceRange.min))
+                bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
 
-        },
-      row => row.get("persistence_id", classOf[String]))
+            },
+          row => row.get("persistence_id", classOf[String]))
+      }
+
+    // Theoretically it could blow up with too many rows (> Int.MaxValue) when fetching from more than
+    // one data partition, but we have other places with a hard limit of a total number of persistenceIds less
+    // than Int.MaxValue.
+    val combined: Future[immutable.IndexedSeq[String]] =
+      if (results.size == 1) results.head // no data partition databases
+      else Future.sequence(results).map(_.flatten.sorted.take(actualLimit))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
+      combined.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
 
-    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+    Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
   protected def bindAllPersistenceIdsAfterSql(stmt: Statement, after: String, limit: Long): Statement = {
@@ -456,27 +448,37 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, executorProvider:
   }
 
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    // FIXME
-    require(settings.numberOfDataPartitions == 1, "persistenceIds not implemented for more than one data-partition yet")
-    val executor = executorProvider.executorFor(slice = 0)
-    val result = executor.select(s"select persistenceIds")(
-      connection =>
-        afterId match {
-          case Some(after) =>
-            val stmt = connection.createStatement(allPersistenceIdsAfterSql)
-            bindAllPersistenceIdsAfterSql(stmt, after, limit)
+    val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
+    val results: immutable.IndexedSeq[Future[immutable.IndexedSeq[String]]] =
+      // query each data partition
+      settings.dataPartitionSliceRanges.map { sliceRange =>
+        val executor = executorProvider.executorFor(sliceRange.min)
+        executor.select(s"select persistenceIds")(
+          connection =>
+            afterId match {
+              case Some(after) =>
+                val stmt = connection.createStatement(allPersistenceIdsAfterSql(sliceRange.min))
+                bindAllPersistenceIdsAfterSql(stmt, after, actualLimit)
 
-          case None =>
-            connection
-              .createStatement(allPersistenceIdsSql)
-              .bind(0, limit)
-        },
-      row => row.get("persistence_id", classOf[String]))
+              case None =>
+                connection
+                  .createStatement(allPersistenceIdsSql(sliceRange.min))
+                  .bind(0, actualLimit)
+            },
+          row => row.get("persistence_id", classOf[String]))
+      }
+
+    // Theoretically it could blow up with too many rows (> Int.MaxValue) when fetching from more than
+    // one data partition, but we have other places with a hard limit of a total number of persistenceIds less
+    // than Int.MaxValue.
+    val combined: Future[immutable.IndexedSeq[String]] =
+      if (results.size == 1) results.head // no data partitions
+      else Future.sequence(results).map(_.flatten.sorted.take(actualLimit))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
+      combined.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
 
-    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+    Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
 }
