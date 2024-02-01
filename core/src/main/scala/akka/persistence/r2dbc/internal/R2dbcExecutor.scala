@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.internal
 import java.util.function.BiConsumer
 
 import scala.collection.immutable
+import scala.collection.immutable.IntMap
 import scala.collection.mutable
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext
@@ -396,17 +397,24 @@ class R2dbcExecutor(
     connectionFactoryBaseConfigPath: String,
     log: Logger)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
   private val connectionFactoryProvider = ConnectionFactoryProvider(system)
+  private var cache = IntMap.empty[R2dbcExecutor]
 
   def executorFor(slice: Int): R2dbcExecutor = {
-    val connectionFactoryConfigPath =
-      settings.resolveConnectionFactoryConfigPath(connectionFactoryBaseConfigPath, slice)
-    val connectionFactory = connectionFactoryProvider.connectionFactoryFor(connectionFactoryConfigPath)
-    // FIXME cache the instances
-    new R2dbcExecutor(
-      connectionFactory,
-      log,
-      settings.logDbCallsExceeding,
-      settings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+    cache.get(slice) match {
+      case Some(executor) => executor
+      case None =>
+        val connectionFactoryConfigPath =
+          settings.resolveConnectionFactoryConfigPath(connectionFactoryBaseConfigPath, slice)
+        val connectionFactory = connectionFactoryProvider.connectionFactoryFor(connectionFactoryConfigPath)
+        val executor = new R2dbcExecutor(
+          connectionFactory,
+          log,
+          settings.logDbCallsExceeding,
+          settings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+        // it's just a cache so no need for guarding concurrent updates or visibility
+        cache = cache.updated(slice, executor)
+        executor
+    }
   }
 
 }
