@@ -218,16 +218,24 @@ final class R2dbcSettings private (
     val numberOfDataPartitions: Int) {
   import R2dbcSettings.NumberOfSlices
 
-  private val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
-  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
-  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+  /**
+   * The journal table and schema name without data partition suffix.
+   */
+  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
+  /**
+   * The journal table and schema name with data partition suffix for the given slice. When number-of-partitions is 1
+   * the table name is without suffix.
+   */
   def journalTableWithSchema(slice: Int): String = {
     if (numberOfDataPartitions == 1)
       journalTableWithSchema
     else
       s"${journalTableWithSchema}_${dataPartition(slice)}"
   }
+
+  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
+  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
 
   /**
    * INTERNAL API: All journal tables and their the lower slice
