@@ -257,7 +257,7 @@ final class R2dbcSettings private (
   /**
    * INTERNAL API: All journal tables and their the lower slice
    */
-  @InternalApi private[akka] val alljournalTablesWithSchema: Map[String, Int] = {
+  @InternalApi private[akka] val allJournalTablesWithSchema: Map[String, Int] = {
     (0 until NumberOfSlices).foldLeft(Map.empty[String, Int]) { case (acc, slice) =>
       val table = journalTableWithSchema(slice)
       if (acc.contains(table)) acc

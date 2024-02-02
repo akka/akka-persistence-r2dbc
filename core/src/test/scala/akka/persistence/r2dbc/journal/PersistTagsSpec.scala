@@ -44,7 +44,7 @@ class PersistTagsSpec
   }
 
   private def selectAllRows(): IndexedSeq[Row] =
-    r2dbcSettings.alljournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
+    r2dbcSettings.allJournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
       selectRows(table, minSlice)
     }
 

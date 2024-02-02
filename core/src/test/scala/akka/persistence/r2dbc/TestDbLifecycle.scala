@@ -51,7 +51,7 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
 
   override protected def beforeAll(): Unit = {
     try {
-      r2dbcSettings.alljournalTablesWithSchema.foreach { case (table, minSlice) =>
+      r2dbcSettings.allJournalTablesWithSchema.foreach { case (table, minSlice) =>
         Await.result(
           r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
           10.seconds)
