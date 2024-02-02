@@ -6,7 +6,6 @@ package akka.persistence.r2dbc.migration
 
 import java.time.Instant
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
@@ -30,7 +29,6 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.scaladsl.CurrentEventsByPersistenceIdQuery
 import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
 import akka.persistence.query.scaladsl.ReadJournal
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao
@@ -48,7 +46,12 @@ import akka.util.Timeout
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.state.DurableStateStoreRegistry
+import akka.persistence.state.scaladsl.DurableStateStore
+import akka.persistence.state.scaladsl.GetObjectResult
+import akka.stream.scaladsl.Source
 
 object MigrationTool {
   def main(args: Array[String]): Unit = {
