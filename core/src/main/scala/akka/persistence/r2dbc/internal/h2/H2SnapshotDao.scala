@@ -22,18 +22,18 @@ private[r2dbc] final class H2SnapshotDao(executorProvider: R2dbcExecutorProvider
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 
-  override protected def createUpsertSql: String = {
+  override protected def upsertSql(slice: Int): String = {
     // db_timestamp and tags columns were added in 1.2.0
     if (settings.querySettings.startFromSnapshotEnabled)
       sql"""
-      MERGE INTO $snapshotTable
+      MERGE INTO ${snapshotTable(slice)}
       (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
       KEY (persistence_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """
     else
       sql"""
-      MERGE INTO $snapshotTable
+      MERGE INTO ${snapshotTable(slice)}
       (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
       KEY (persistence_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

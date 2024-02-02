@@ -380,6 +380,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       }
     }
 
+    // FIXME data partitions
     val customTables = settings.durableStateTableByEntityTypeWithSchema.toList.sortBy(_._1).map(_._2)
     val tables = settings.durableStateTableWithSchema :: customTables
 

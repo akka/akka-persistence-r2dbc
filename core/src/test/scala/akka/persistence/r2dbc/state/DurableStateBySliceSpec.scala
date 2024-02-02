@@ -20,7 +20,6 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.UpdatedDurableState
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.DurableStatePersister.DeleteWithAck
 import akka.persistence.r2dbc.TestActors.DurableStatePersister.Persist
@@ -63,7 +62,6 @@ class DurableStateBySliceSpec
   import DurableStateBySliceSpec._
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private val query = DurableStateStoreRegistry(testKit.system)
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)

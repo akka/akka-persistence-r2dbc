@@ -103,6 +103,8 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   "Durable State persistenceIds" should {
+    pendingIfMoreThanOneDataPartition() // FIXME
+
     "retrieve all ids" in {
       val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
       result shouldBe pids.map(_.id)

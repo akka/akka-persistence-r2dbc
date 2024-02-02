@@ -45,9 +45,10 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
   override def log: Logger = SqlServerDurableStateDao.log
 
   override protected def insertStateSql(
+      slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = durableStateTable(entityType, slice)
     val additionalCols = additionalInsertColumns(additionalBindings)
     val additionalParams = additionalInsertParameters(additionalBindings)
     sql"""
@@ -60,14 +61,15 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
    * here, the currentTimestamp is another query param. Binding is happening in the overridden method `bindTimestampNow`
    */
   override protected def updateStateSql(
+      slice: Int,
       entityType: String,
       updateTags: Boolean,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
       currentTimestamp: String): String =
-    super.updateStateSql(entityType, updateTags, additionalBindings, currentTimestamp = "?")
+    super.updateStateSql(slice, entityType, updateTags, additionalBindings, currentTimestamp = "?")
 
   override def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = durableStateTable(entityType, minSlice)
 
     val subQuery =
       s"""
@@ -124,7 +126,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
         s"AND db_timestamp < DATEADD(ms, -${behindCurrentTime.toMillis}, @now)"
       else ""
 
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = durableStateTable(entityType, minSlice)
 
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < @until" else ""

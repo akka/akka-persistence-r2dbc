@@ -20,6 +20,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
+import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
@@ -57,15 +58,15 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
 
   protected def log: Logger = PostgresSnapshotDao.log
 
-  protected val snapshotTable: String = settings.snapshotsTableWithSchema
+  protected val persistenceExt: Persistence = Persistence(system)
 
-  protected val r2dbcExecutor = executorProvider.executorFor(slice = 0) // FIXME support data partitions
+  protected def snapshotTable(slice: Int): String = settings.snapshotTableWithSchema(slice)
 
-  protected def createUpsertSql: String = {
+  protected def upsertSql(slice: Int): String = {
     // db_timestamp and tags columns were added in 1.2.0
     if (settings.querySettings.startFromSnapshotEnabled)
       sql"""
-        INSERT INTO $snapshotTable
+        INSERT INTO ${snapshotTable(slice)}
         (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (persistence_id)
@@ -82,7 +83,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
           meta_ser_manifest = excluded.meta_ser_manifest"""
     else
       sql"""
-      INSERT INTO $snapshotTable
+      INSERT INTO ${snapshotTable(slice)}
       (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (persistence_id)
@@ -97,9 +98,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         meta_ser_manifest = excluded.meta_ser_manifest"""
   }
 
-  private val upsertSql = createUpsertSql
-
-  protected def selectSql(criteria: SnapshotSelectionCriteria): String = {
+  protected def selectSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =
       if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
       else ""
@@ -120,20 +119,20 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     if (settings.querySettings.startFromSnapshotEnabled)
       sql"""
         SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
-        FROM $snapshotTable
+        FROM ${snapshotTable(slice)}
         WHERE persistence_id = ?
         $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
         LIMIT 1"""
     else
       sql"""
       SELECT slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM $snapshotTable
+      FROM ${snapshotTable(slice)}
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
       LIMIT 1"""
   }
 
-  private def deleteSql(criteria: SnapshotSelectionCriteria): String = {
+  private def deleteSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =
       if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
       else ""
@@ -151,7 +150,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       else ""
 
     sql"""
-      DELETE FROM $snapshotTable
+      DELETE FROM ${snapshotTable(slice)}
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition"""
   }
@@ -163,7 +162,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
 
     sql"""
       SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM $snapshotTable
+      FROM ${snapshotTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ?
@@ -174,7 +173,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
     sql"""
      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-     FROM $snapshotTable
+     FROM ${snapshotTable(minSlice)}
      WHERE entity_type = ?
      AND ${sliceCondition(minSlice, maxSlice)}
      AND db_timestamp >= ? AND db_timestamp <= ?
@@ -230,11 +229,13 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       persistenceId: String,
       criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
-    r2dbcExecutor
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    executor
       .select(s"select snapshot [$persistenceId], criteria: [$criteria]")(
         { connection =>
           val statement = connection
-            .createStatement(selectSql(criteria))
+            .createStatement(selectSql(slice, criteria))
             .bind(0, persistenceId)
 
           var bindIdx = 0
@@ -294,12 +295,14 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   }
 
   def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
-    r2dbcExecutor
+    val slice = persistenceExt.sliceForPersistenceId(serializedRow.persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    executor
       .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
         connection =>
           val statement =
             connection
-              .createStatement(upsertSql)
+              .createStatement(upsertSql(slice))
 
           bindUpsertSql(statement, serializedRow)
 
@@ -308,9 +311,11 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {
-    r2dbcExecutor.updateOne(s"delete snapshot [$persistenceId], criteria [$criteria]") { connection =>
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    executor.updateOne(s"delete snapshot [$persistenceId], criteria [$criteria]") { connection =>
       val statement = connection
-        .createStatement(deleteSql(criteria))
+        .createStatement(deleteSql(slice, criteria))
         .bind(0, persistenceId)
 
       var bindIdx = 0
@@ -338,7 +343,8 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
    */
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
-    r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    executor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
         row => row.getTimestamp("db_timestamp"))
@@ -370,7 +376,13 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedSnapshotRow, NotUsed] = {
-    val result = r2dbcExecutor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(
+    if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
+      throw new IllegalArgumentException(
+        s"Slice range [$minSlice-$maxSlice] spans over more than one " +
+        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+
+    val executor = executorProvider.executorFor(minSlice)
+    val result = executor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection.createStatement(snapshotsBySlicesRangeSql(minSlice, maxSlice))
         bindSnapshotsBySlicesRangeSql(stmt, entityType, fromTimestamp, settings.querySettings.bufferSize)
@@ -423,7 +435,9 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       }
     }
 
-    val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+    val executor = executorProvider.executorFor(minSlice)
+
+    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
         bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)

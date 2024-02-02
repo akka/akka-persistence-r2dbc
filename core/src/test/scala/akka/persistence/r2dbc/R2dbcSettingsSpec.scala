@@ -27,8 +27,8 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       settings.journalTableWithSchema(0) shouldBe "s1.event_journal"
-      settings.snapshotsTableWithSchema shouldBe "s1.snapshot"
-      settings.durableStateTableWithSchema shouldBe "s1.durable_state"
+      settings.snapshotTableWithSchema(0) shouldBe "s1.snapshot"
+      settings.durableStateTableWithSchema(0) shouldBe "s1.durable_state"
 
       // by default connection is configured with options
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
@@ -42,7 +42,6 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
           .parseString("akka.persistence.r2dbc.connection-factory.url=whatever-url")
           .withFallback(ConfigFactory.load("application-postgres.conf"))
 
-      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings shouldBe a[PostgresConnectionFactorySettings]
       connectionFactorySettings.urlOption shouldBe defined
@@ -52,7 +51,6 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val config = ConfigFactory
         .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=VERIFY_FULL")
         .withFallback(ConfigFactory.load("application-postgres.conf"))
-      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings.sslMode shouldBe "VERIFY_FULL"
       SSLMode.fromValue(connectionFactorySettings.sslMode) shouldBe SSLMode.VERIFY_FULL
@@ -62,7 +60,6 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val config = ConfigFactory
         .parseString("akka.persistence.r2dbc.connection-factory.ssl.mode=verify-full")
         .withFallback(ConfigFactory.load("application-postgres.conf"))
-      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val connectionFactorySettings = postgresConnectionFactorySettings(config)
       connectionFactorySettings.sslMode shouldBe "verify-full"
       SSLMode.fromValue(connectionFactorySettings.sslMode) shouldBe SSLMode.VERIFY_FULL
@@ -115,6 +112,7 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
           """)
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+
       settings.journalTableWithSchema(slice = 0) shouldBe "s1.event_journal_0"
       settings.journalTableWithSchema(slice = 17) shouldBe "s1.event_journal_0"
       settings.journalTableWithSchema(slice = 256) shouldBe "s1.event_journal_1"
@@ -123,6 +121,24 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       settings.journalTableWithSchema(slice = 767) shouldBe "s1.event_journal_2"
       settings.journalTableWithSchema(slice = 768) shouldBe "s1.event_journal_3"
       settings.journalTableWithSchema(slice = 1023) shouldBe "s1.event_journal_3"
+
+      settings.snapshotTableWithSchema(slice = 0) shouldBe "s1.snapshot_0"
+      settings.snapshotTableWithSchema(slice = 17) shouldBe "s1.snapshot_0"
+      settings.snapshotTableWithSchema(slice = 256) shouldBe "s1.snapshot_1"
+      settings.snapshotTableWithSchema(slice = 511) shouldBe "s1.snapshot_1"
+      settings.snapshotTableWithSchema(slice = 512) shouldBe "s1.snapshot_2"
+      settings.snapshotTableWithSchema(slice = 767) shouldBe "s1.snapshot_2"
+      settings.snapshotTableWithSchema(slice = 768) shouldBe "s1.snapshot_3"
+      settings.snapshotTableWithSchema(slice = 1023) shouldBe "s1.snapshot_3"
+
+      settings.durableStateTableWithSchema(slice = 0) shouldBe "s1.durable_state_0"
+      settings.durableStateTableWithSchema(slice = 17) shouldBe "s1.durable_state_0"
+      settings.durableStateTableWithSchema(slice = 256) shouldBe "s1.durable_state_1"
+      settings.durableStateTableWithSchema(slice = 511) shouldBe "s1.durable_state_1"
+      settings.durableStateTableWithSchema(slice = 512) shouldBe "s1.durable_state_2"
+      settings.durableStateTableWithSchema(slice = 767) shouldBe "s1.durable_state_2"
+      settings.durableStateTableWithSchema(slice = 768) shouldBe "s1.durable_state_3"
+      settings.durableStateTableWithSchema(slice = 1023) shouldBe "s1.durable_state_3"
     }
 
     "verify slice range within same data partition" in {
