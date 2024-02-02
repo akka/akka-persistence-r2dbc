@@ -63,13 +63,17 @@ class CurrentPersistenceIdsQuerySpec
   private val customPid1 = nextPid(customEntityType)
   private val customPid2 = nextPid(customEntityType)
 
+  private val createTable = if (r2dbcSettings.dialectName == "sqlserver") {
+    s"IF object_id('$customTable') is null SELECT * into $customTable from durable_state where persistence_id = ''"
+  } else {
+    s"create table if not exists $customTable as select * from durable_state where persistence_id = ''"
+  }
+
   override protected def beforeAll(): Unit = {
     super.beforeAll()
 
     Await.result(
-      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(
-        _.createStatement(
-          s"create table if not exists $customTable as select * from durable_state where persistence_id = ''")),
+      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTable)),
       20.seconds)
 
     Await.result(

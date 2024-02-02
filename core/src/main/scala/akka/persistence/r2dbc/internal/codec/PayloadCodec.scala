@@ -2,14 +2,15 @@
  * Copyright (C) 2022 - 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package akka.persistence.r2dbc.internal
+package akka.persistence.r2dbc.internal.codec
 
 import java.nio.charset.StandardCharsets.UTF_8
 
-import akka.annotation.InternalApi
 import io.r2dbc.postgresql.codec.Json
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
+
+import akka.annotation.InternalApi
 
 /**
  * INTERNAL API
@@ -42,10 +43,19 @@ import io.r2dbc.spi.Statement
     def bindPayload(index: Int, payload: Array[Byte]): Statement =
       statement.bind(index, codec.encode(payload))
 
+    def bindPayload(name: String, payload: Array[Byte]): Statement =
+      statement.bind(name, codec.encode(payload))
+
     def bindPayloadOption(index: Int, payloadOption: Option[Array[Byte]]): Statement =
       payloadOption match {
         case Some(payload) => bindPayload(index, payload)
         case None          => bindPayload(index, codec.nonePayload)
+      }
+
+    def bindPayloadOption(name: String, payloadOption: Option[Array[Byte]]): Statement =
+      payloadOption match {
+        case Some(payload) => bindPayload(name, payload)
+        case None          => bindPayload(name, codec.nonePayload)
       }
   }
   implicit class RichRow(val row: Row)(implicit codec: PayloadCodec) extends AnyRef {

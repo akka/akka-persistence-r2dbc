@@ -12,10 +12,10 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.r2dbc.TestActors.DurableStatePersister
 import akka.persistence.r2dbc.TestActors.Persister
-import akka.persistence.r2dbc.internal.PayloadCodec
-import akka.persistence.r2dbc.internal.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * The purpose of this test is to verify JSONB payloads, but it can also be run with ordinary BYTEA payloads. To test

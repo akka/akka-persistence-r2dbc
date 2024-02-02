@@ -59,6 +59,10 @@ class EventsBySlicePerfSpec
 
   s"EventsBySlices performance" should {
 
+    if (r2dbcSettings.dialectName == "sqlserver") {
+      pending
+    }
+
     "retrieve from several slices" in {
       // increase these properties for "real" testing
       // also, remove LogCapturing and change logback log levels for "real" testing

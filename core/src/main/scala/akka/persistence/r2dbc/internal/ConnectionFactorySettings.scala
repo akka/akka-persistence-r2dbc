@@ -10,14 +10,19 @@ import akka.persistence.r2dbc.ConnectionPoolSettings
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
+import akka.persistence.r2dbc.internal.sqlserver.SqlServerDialect
 import akka.util.Helpers.toRootLowerCase
 import com.typesafe.config.Config
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * INTERNAL API
  */
 @InternalApi
 private[r2dbc] object ConnectionFactorySettings {
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   def apply(system: ActorSystem[_]): ConnectionFactorySettings =
     apply(system.settings.config.getConfig("akka.persistence.r2dbc.connection-factory"))
@@ -27,9 +32,12 @@ private[r2dbc] object ConnectionFactorySettings {
       case "yugabyte" => YugabyteDialect: Dialect
       case "postgres" => PostgresDialect: Dialect
       case "h2"       => H2Dialect: Dialect
+      case "sqlserver" =>
+        log.warn("The `sqlserver` dialect is currently marked as experimental and not yet production ready.")
+        SqlServerDialect: Dialect
       case other =>
         throw new IllegalArgumentException(
-          s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, h2].")
+          s"Unknown dialect [$other]. Supported dialects are [postgres, yugabyte, sqlserver, h2].")
     }
 
     // pool settings are common to all dialects but defined inline in the connection factory block

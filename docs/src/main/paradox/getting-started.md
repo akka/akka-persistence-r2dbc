@@ -73,7 +73,7 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
-#### Using H2
+#### H2
 
 The H2 dependencies are marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using H2. They must be listed explicitly as dependencies in the build configuration for projects that use them. The two required artifacts are:
 
@@ -99,6 +99,34 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
+#### Microsoft SQL Server
+
+@@@ warning
+
+The SQL Server dialect is marked `experimental` and not yet production ready until various [issues](https://github.com/akka/akka-persistence-r2dbc/issues?q=is%3Aopen+label%3Asqlserver+label%3Abug) with the integration of the `r2dbc-mssql` plugin have been resolved.
+
+@@@
+
+The SQL Server dependency is marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using SQL Server. It must be listed explicitly as dependencies in the build configuration for projects that use it. The required artifacts is:
+
+@@dependency [Maven,sbt,Gradle] {
+group=io.r2dbc
+artifact=r2dbc-mssql_$scala.binary.version$
+version=$sqlserver.version$
+}
+
+With the dependencies added to your project, configure the connection factory to the default SQL Server block:
+
+```hocon
+akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.sqlserver}
+akka.persistence.r2dbc.connection-factory = {
+  # overrides for default values from the 'akka.persistence.r2dbc.sqlserver' config block
+  user = "myuser"
+}
+```
+
+See @ref[Configuration](config.md) for more configuration details.
+
 ## Local testing with docker
 
 The database can be run in Docker. Here's a sample docker compose file:
@@ -109,16 +137,24 @@ Postgres:
 Yugabyte:
 : @@snip [docker-compose.yml](/docker/docker-compose-yugabyte.yml)
 
+SQLServer:
+: @@snip [docker-compose.yml](/docker/docker-compose-sqlserver.yml)
+
 Start with:
 
 Postgres:
 : ```
-docker-compose -f docker/docker-compose-postgres.yml up --wait
+docker compose -f docker/docker-compose-postgres.yml up --wait
 ```
 
 Yugabyte:
 : ```
-docker-compose -f docker/docker-compose-yugabyte.yml up
+docker compose -f docker/docker-compose-yugabyte.yml up
+```
+
+SQLServer:
+: ```
+docker compose -f docker/docker-compose-sqlserver.yml up
 ```
 
 <a id="schema"></a>

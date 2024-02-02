@@ -34,5 +34,4 @@ private[r2dbc] final class H2DurableStateDao(
     if (behindCurrentTime > Duration.Zero)
       s"AND db_timestamp < CURRENT_TIMESTAMP - interval '${behindCurrentTime.toMillis.toDouble / 1000}' second"
     else ""
-
 }

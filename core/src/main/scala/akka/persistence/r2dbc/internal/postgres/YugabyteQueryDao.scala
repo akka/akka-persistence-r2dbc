@@ -4,14 +4,14 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import scala.concurrent.ExecutionContext
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import io.r2dbc.spi.ConnectionFactory
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
-import scala.concurrent.ExecutionContext
 
 /**
  * INTERNAL API
