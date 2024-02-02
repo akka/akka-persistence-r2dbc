@@ -63,10 +63,10 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
 
   protected val snapshotTable: String = settings.snapshotsTableWithSchema
 
-  protected implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
-  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
-  protected implicit val tagsCodec: TagsCodec = settings.tagsCodec
-  protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
+  protected implicit val snapshotPayloadCodec: PayloadCodec = settings.codecSettings.snapshotPayloadCodec
+  protected implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
+  protected implicit val tagsCodec: TagsCodec = settings.codecSettings.tagsCodec
+  protected implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
 
   protected val r2dbcExecutor = new R2dbcExecutor(
     connectionFactory,

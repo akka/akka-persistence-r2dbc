@@ -57,9 +57,9 @@ class EventsBySliceBacktrackingSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
-  private implicit val timestampCodec: TimestampCodec = settings.timestampCodec
-  private implicit val queryAdapter: QueryAdapter = settings.queryAdapter
+  private implicit val journalPayloadCodec: PayloadCodec = settings.codecSettings.journalPayloadCodec
+  private implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
+  private implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
 
   private val query = PersistenceQuery(testKit.system)
     .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)

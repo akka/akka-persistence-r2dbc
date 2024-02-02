@@ -89,7 +89,7 @@ class PayloadSpec
   }
 
   private def selectJournalRow(persistenceId: String): TestRow = {
-    implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
+    implicit val journalPayloadCodec: PayloadCodec = settings.codecSettings.journalPayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
@@ -108,7 +108,7 @@ class PayloadSpec
   }
 
   private def selectSnapshotRow(persistenceId: String): TestRow = {
-    implicit val snapshotPayloadCodec: PayloadCodec = settings.snapshotPayloadCodec
+    implicit val snapshotPayloadCodec: PayloadCodec = settings.codecSettings.snapshotPayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
@@ -127,7 +127,7 @@ class PayloadSpec
   }
 
   private def selectDurableStateRow(persistenceId: String): TestRow = {
-    implicit val durableStatePayloadCodec: PayloadCodec = settings.durableStatePayloadCodec
+    implicit val durableStatePayloadCodec: PayloadCodec = settings.codecSettings.durableStatePayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
@@ -205,7 +205,7 @@ class PayloadSpec
       testKit.stop(ref1)
 
       val row1 = selectDurableStateRow(persistenceId)
-      row1.payload.toVector shouldBe settings.durableStatePayloadCodec.nonePayload.toVector
+      row1.payload.toVector shouldBe settings.codecSettings.durableStatePayloadCodec.nonePayload.toVector
 
       val ref2 = spawn(DurableStatePersister(persistenceId))
       ref2 ! DurableStatePersister.GetState(probe.ref)
@@ -228,7 +228,7 @@ class PayloadSpec
       testKit.stop(ref3)
 
       val row3 = selectDurableStateRow(persistenceId)
-      row3.payload.toVector shouldBe settings.durableStatePayloadCodec.nonePayload.toVector
+      row3.payload.toVector shouldBe settings.codecSettings.durableStatePayloadCodec.nonePayload.toVector
     }
   }
 }

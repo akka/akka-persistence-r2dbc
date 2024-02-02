@@ -58,10 +58,10 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
 
   protected def log: Logger = PostgresQueryDao.log
   protected val journalTable: String = settings.journalTableWithSchema
-  protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
-  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
-  protected implicit val tagsCodec: TagsCodec = settings.tagsCodec
-  protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
+  protected implicit val journalPayloadCodec: PayloadCodec = settings.codecSettings.journalPayloadCodec
+  protected implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
+  protected implicit val tagsCodec: TagsCodec = settings.codecSettings.tagsCodec
+  protected implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
 
   protected def sqlFalse: String = "false"
   protected def sqlDbTimestamp = "CURRENT_TIMESTAMP"

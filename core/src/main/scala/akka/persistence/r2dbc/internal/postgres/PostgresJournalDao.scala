@@ -80,10 +80,10 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       journalSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   protected val journalTable: String = journalSettings.journalTableWithSchema
-  protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.journalPayloadCodec
-  protected implicit val tagsCodec: TagsCodec = journalSettings.tagsCodec
-  protected implicit val timestampCodec: TimestampCodec = journalSettings.timestampCodec
-  protected implicit val queryAdapter: QueryAdapter = journalSettings.queryAdapter
+  protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.codecSettings.journalPayloadCodec
+  protected implicit val tagsCodec: TagsCodec = journalSettings.codecSettings.tagsCodec
+  protected implicit val timestampCodec: TimestampCodec = journalSettings.codecSettings.timestampCodec
+  protected implicit val queryAdapter: QueryAdapter = journalSettings.codecSettings.queryAdapter
 
   protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =

@@ -29,11 +29,13 @@ object Sql {
   }
 
   /**
-   * INTERNAL API: Scala string interpolation with `sql` prefix. Replaces `?` with numbered `\$1`, `\$2` for bind parameters. Use `??`
-   * to include a literal `?`. Trims whitespace, including line breaks. Standard string interpolation arguments `$` can
-   * be used.
+   * INTERNAL API: Scala string interpolation with `sql` prefix. Replaces `?` with numbered `\$1`, `\$2` for bind
+   * parameters. Use `??` to include a literal `?`. Trims whitespace, including line breaks. Standard string
+   * interpolation arguments `$` can be used.
    */
-  @InternalApi private[akka] implicit class InterpolationWithAdapter(val sc: StringContext)(implicit adapter: QueryAdapter) extends AnyRef {
+  @InternalApi private[akka] implicit class InterpolationWithAdapter(val sc: StringContext)(implicit
+      adapter: QueryAdapter)
+      extends AnyRef {
     def sql(args: Any*): String =
       adapter(fillInParameterNumbers(trimLineBreaks(sc.s(args: _*))))
   }
