@@ -10,7 +10,7 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
@@ -34,6 +34,7 @@ private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, connectionFact
     system: ActorSystem[_])
     extends PostgresJournalDao(journalSettings, connectionFactory) {
   import JournalDao.SerializedJournalRow
+  import journalSettings.codecSettings.JournalImplicits._
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
   // always app timestamp (db is same process) monotonic increasing
   require(journalSettings.useAppTimestamp)

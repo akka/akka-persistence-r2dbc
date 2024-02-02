@@ -13,7 +13,7 @@ import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.util.ccompat.JavaConverters._
 import com.typesafe.config.Config
 import io.r2dbc.h2.H2ConnectionConfiguration

@@ -54,20 +54,11 @@ object R2dbcSettings {
           s"Expected akka.persistence.r2dbc.$prefix.payload-column-type to be one of 'BYTEA', 'JSON' or 'JSONB' but found '$t'")
     }
 
-    val journalPayloadCodec: PayloadCodec =
-      if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
-
     val journalPublishEvents: Boolean = config.getBoolean("journal.publish-events")
 
     val snapshotsTable: String = config.getString("snapshot.table")
 
-    val snapshotPayloadCodec: PayloadCodec =
-      if (useJsonPayload("snapshot")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
-
     val durableStateTable: String = config.getString("state.table")
-
-    val durableStatePayloadCodec: PayloadCodec =
-      if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
 
     val durableStateTableByEntityType: Map[String, String] =
       configToMap(config.getConfig("state.custom-table"))
@@ -88,18 +79,6 @@ object R2dbcSettings {
 
     val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
 
-    val (tagsCodec: TagsCodec, timestampCodec: TimestampCodec, queryAdapter: QueryAdapter) = {
-      connectionFactorySettings.dialect.name match {
-        case "sqlserver" =>
-          (
-            new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.config),
-            TimestampCodec.SqlServerTimestampCodec,
-            SqlServerQueryAdapter)
-        case "h2" => (TagsCodec.H2TagsCodec, TimestampCodec.H2TimestampCodec, IdentityAdapter)
-        case _    => (TagsCodec.PostgresTagsCodec, TimestampCodec.PostgresTimestampCodec, IdentityAdapter)
-      }
-    }
-
     val querySettings = new QuerySettings(config.getConfig("query"))
 
     val dbTimestampMonotonicIncreasing: Boolean = config.getBoolean("db-timestamp-monotonic-increasing")
@@ -112,24 +91,55 @@ object R2dbcSettings {
         case _     => config.getDuration("log-db-calls-exceeding").asScala
       }
 
+    val codecSettings = {
+      val journalPayloadCodec: PayloadCodec =
+        if (useJsonPayload("journal")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+      val snapshotPayloadCodec: PayloadCodec =
+        if (useJsonPayload("snapshot")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+      val durableStatePayloadCodec: PayloadCodec =
+        if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
+
+      connectionFactorySettings.dialect.name match {
+        case "sqlserver" =>
+          new CodecSettings(
+            journalPayloadCodec,
+            snapshotPayloadCodec,
+            durableStatePayloadCodec,
+            tagsCodec = new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.config),
+            timestampCodec = TimestampCodec.SqlServerTimestampCodec,
+            queryAdapter = SqlServerQueryAdapter)
+        case "h2" =>
+          new CodecSettings(
+            journalPayloadCodec,
+            snapshotPayloadCodec,
+            durableStatePayloadCodec,
+            tagsCodec = TagsCodec.H2TagsCodec,
+            timestampCodec = TimestampCodec.H2TimestampCodec,
+            queryAdapter = IdentityAdapter)
+        case _ =>
+          new CodecSettings(
+            journalPayloadCodec,
+            snapshotPayloadCodec,
+            durableStatePayloadCodec,
+            tagsCodec = TagsCodec.PostgresTagsCodec,
+            timestampCodec = TimestampCodec.PostgresTimestampCodec,
+            queryAdapter = IdentityAdapter)
+      }
+    }
+
     val cleanupSettings = new CleanupSettings(config.getConfig("cleanup"))
     val settingsFromConfig = new R2dbcSettings(
       schema,
       journalTable,
-      journalPayloadCodec,
       journalPublishEvents,
       snapshotsTable,
-      snapshotPayloadCodec,
-      tagsCodec,
-      timestampCodec,
-      queryAdapter,
       durableStateTable,
-      durableStatePayloadCodec,
       durableStateAssertSingleWriter,
       logDbCallsExceeding,
       querySettings,
       dbTimestampMonotonicIncreasing,
       cleanupSettings,
+      codecSettings,
       connectionFactorySettings,
       durableStateTableByEntityType,
       durableStateAdditionalColumnClasses,
@@ -153,20 +163,16 @@ object R2dbcSettings {
 final class R2dbcSettings private (
     val schema: Option[String],
     val journalTable: String,
-    val journalPayloadCodec: PayloadCodec,
     val journalPublishEvents: Boolean,
     val snapshotsTable: String,
-    val snapshotPayloadCodec: PayloadCodec,
-    val tagsCodec: TagsCodec,
-    val timestampCodec: TimestampCodec,
-    val queryAdapter: QueryAdapter,
     val durableStateTable: String,
-    val durableStatePayloadCodec: PayloadCodec,
     val durableStateAssertSingleWriter: Boolean,
     val logDbCallsExceeding: FiniteDuration,
     val querySettings: QuerySettings,
     val dbTimestampMonotonicIncreasing: Boolean,
     val cleanupSettings: CleanupSettings,
+    /** INTERNAL API */
+    @InternalApi private[akka] val codecSettings: CodecSettings,
     _connectionFactorySettings: ConnectionFactorySettings,
     _durableStateTableByEntityType: Map[String, String],
     _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
@@ -234,20 +240,15 @@ final class R2dbcSettings private (
   private def copy(
       schema: Option[String] = schema,
       journalTable: String = journalTable,
-      journalPayloadCodec: PayloadCodec = journalPayloadCodec,
       journalPublishEvents: Boolean = journalPublishEvents,
       snapshotsTable: String = snapshotsTable,
-      snapshotPayloadCodec: PayloadCodec = snapshotPayloadCodec,
-      tagsCodec: TagsCodec = tagsCodec,
-      timestampCodec: TimestampCodec = timestampCodec,
-      queryAdapter: QueryAdapter = queryAdapter,
       durableStateTable: String = durableStateTable,
-      durableStatePayloadCodec: PayloadCodec = durableStatePayloadCodec,
       durableStateAssertSingleWriter: Boolean = durableStateAssertSingleWriter,
       logDbCallsExceeding: FiniteDuration = logDbCallsExceeding,
       querySettings: QuerySettings = querySettings,
       dbTimestampMonotonicIncreasing: Boolean = dbTimestampMonotonicIncreasing,
       cleanupSettings: CleanupSettings = cleanupSettings,
+      codecSettings: CodecSettings = codecSettings,
       connectionFactorySettings: ConnectionFactorySettings = connectionFactorySettings,
       durableStateTableByEntityType: Map[String, String] = _durableStateTableByEntityType,
       durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
@@ -257,20 +258,15 @@ final class R2dbcSettings private (
     new R2dbcSettings(
       schema,
       journalTable,
-      journalPayloadCodec,
       journalPublishEvents,
       snapshotsTable,
-      snapshotPayloadCodec,
-      tagsCodec,
-      timestampCodec,
-      queryAdapter,
       durableStateTable,
-      durableStatePayloadCodec,
       durableStateAssertSingleWriter,
       logDbCallsExceeding,
       querySettings,
       dbTimestampMonotonicIncreasing,
       cleanupSettings,
+      codecSettings,
       connectionFactorySettings,
       _durableStateTableByEntityType,
       _durableStateAdditionalColumnClasses,
@@ -326,6 +322,39 @@ final class ConnectionPoolSettings(config: Config) {
 final class PublishEventsDynamicSettings(config: Config) {
   val throughputThreshold: Int = config.getInt("throughput-threshold")
   val throughputCollectInterval: FiniteDuration = config.getDuration("throughput-collect-interval").asScala
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+final class CodecSettings(
+    val journalPayloadCodec: PayloadCodec,
+    val snapshotPayloadCodec: PayloadCodec,
+    val durableStatePayloadCodec: PayloadCodec,
+    val tagsCodec: TagsCodec,
+    val timestampCodec: TimestampCodec,
+    val queryAdapter: QueryAdapter) {
+
+  // implicits that can be imported
+  object JournalImplicits {
+    implicit def journalPayloadCodec: PayloadCodec = CodecSettings.this.journalPayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
+  object SnapshotImplicits {
+    implicit def snapshotPayloadCodec: PayloadCodec = CodecSettings.this.snapshotPayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
+  object DurableStateImplicits {
+    implicit def durableStatePayloadCodec: PayloadCodec = CodecSettings.this.durableStatePayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
 }
 
 /**

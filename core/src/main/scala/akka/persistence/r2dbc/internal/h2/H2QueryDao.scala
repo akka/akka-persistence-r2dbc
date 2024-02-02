@@ -7,7 +7,7 @@ package akka.persistence.r2dbc.internal.h2
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
@@ -26,6 +26,7 @@ private[r2dbc] class H2QueryDao(settings: R2dbcSettings, connectionFactory: Conn
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
+  import settings.codecSettings.JournalImplicits._
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 
   override protected def eventsBySlicesRangeSql(

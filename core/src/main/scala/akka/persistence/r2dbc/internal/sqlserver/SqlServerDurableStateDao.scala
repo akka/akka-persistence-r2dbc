@@ -16,7 +16,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Dialect
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
 import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao.EvaluatedAdditionalColumnBindings
@@ -44,6 +44,7 @@ private[r2dbc] class SqlServerDurableStateDao(
     connectionFactory: ConnectionFactory,
     dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
     extends PostgresDurableStateDao(settings, connectionFactory, dialect) {
+  import settings.codecSettings.DurableStateImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")
 

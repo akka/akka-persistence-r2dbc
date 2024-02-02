@@ -12,7 +12,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class SqlSpec extends AnyWordSpec with TestSuite with Matchers {
-  import Sql.Interpolation
+  import Sql.InterpolationWithAdapter
   "SQL string interpolation" should {
     implicit val queryAdapter: QueryAdapter = IdentityAdapter
     "replace ? bind parameters with numbered $ (avoiding escaped ones)" in {

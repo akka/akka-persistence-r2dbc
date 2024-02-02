@@ -23,11 +23,8 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
-import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
@@ -36,7 +33,6 @@ import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * INTERNAL API
@@ -55,13 +51,10 @@ private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, connectionFactory
     system: ActorSystem[_])
     extends QueryDao {
   import PostgresJournalDao.readMetadata
+  import settings.codecSettings.JournalImplicits._
 
   protected def log: Logger = PostgresQueryDao.log
   protected val journalTable: String = settings.journalTableWithSchema
-  protected implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
-  protected implicit val timestampCodec: TimestampCodec = settings.timestampCodec
-  protected implicit val tagsCodec: TagsCodec = settings.tagsCodec
-  protected implicit val queryAdapter: QueryAdapter = settings.queryAdapter
 
   protected def sqlFalse: String = "false"
   protected def sqlDbTimestamp = "CURRENT_TIMESTAMP"

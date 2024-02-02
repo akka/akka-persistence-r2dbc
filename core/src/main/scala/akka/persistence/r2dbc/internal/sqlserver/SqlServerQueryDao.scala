@@ -15,7 +15,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
 import io.r2dbc.spi.ConnectionFactory
@@ -40,6 +40,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
+  import settings.codecSettings.JournalImplicits._
 
   override def sqlFalse = "0"
 

@@ -22,7 +22,6 @@ import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRo
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import org.scalatest.wordspec.AnyWordSpecLike
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 class PersistTimestampSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)
@@ -31,10 +30,10 @@ class PersistTimestampSpec
     with TestData
     with LogCapturing {
 
+  import settings.codecSettings.JournalImplicits.journalPayloadCodec
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   private val serialization = SerializationExtension(system)
-  private implicit val journalPayloadCodec: PayloadCodec = settings.journalPayloadCodec
   case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)
 
   implicit private val codec: TimestampCodec =

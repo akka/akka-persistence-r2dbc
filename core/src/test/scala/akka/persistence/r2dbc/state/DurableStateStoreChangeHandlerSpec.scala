@@ -18,7 +18,7 @@ import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
 import akka.persistence.r2dbc.state.DurableStateStoreChangeHandlerSpec.config
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
