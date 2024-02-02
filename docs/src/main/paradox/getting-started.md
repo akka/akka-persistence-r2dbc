@@ -101,6 +101,12 @@ See @ref[Configuration](config.md) for more configuration details.
 
 #### Microsoft SQL Server
 
+@@@ warning
+
+The SQL Server dialect is marked `experimental` and not yet production ready until various [issues](https://github.com/akka/akka-persistence-r2dbc/issues?q=is%3Aopen+label%3Asqlserver+label%3Abug) with the integration of the `r2dbc-mssql` plugin have been resolved.
+
+@@@
+
 The SQL Server dependency is marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using SQL Server. It must be listed explicitly as dependencies in the build configuration for projects that use it. The required artifacts is:
 
 @@dependency [Maven,sbt,Gradle] {
