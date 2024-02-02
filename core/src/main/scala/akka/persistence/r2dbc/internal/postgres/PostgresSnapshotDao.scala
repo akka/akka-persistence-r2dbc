@@ -31,12 +31,8 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
@@ -58,15 +54,11 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
     system: ActorSystem[_])
     extends SnapshotDao {
   import SnapshotDao._
+  import settings.codecSettings.SnapshotImplicits._
 
   protected def log: Logger = PostgresSnapshotDao.log
 
   protected val snapshotTable: String = settings.snapshotsTableWithSchema
-
-  protected implicit val snapshotPayloadCodec: PayloadCodec = settings.codecSettings.snapshotPayloadCodec
-  protected implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
-  protected implicit val tagsCodec: TagsCodec = settings.codecSettings.tagsCodec
-  protected implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
 
   protected val r2dbcExecutor = new R2dbcExecutor(
     connectionFactory,

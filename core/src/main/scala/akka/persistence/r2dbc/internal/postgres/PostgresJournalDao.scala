@@ -15,9 +15,7 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
@@ -68,6 +66,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
     system: ActorSystem[_])
     extends JournalDao {
   import JournalDao.SerializedJournalRow
+  import journalSettings.codecSettings.JournalImplicits._
   protected def log: Logger = PostgresJournalDao.log
 
   private val persistenceExt = Persistence(system)
@@ -80,10 +79,6 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, connecti
       journalSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
 
   protected val journalTable: String = journalSettings.journalTableWithSchema
-  protected implicit val journalPayloadCodec: PayloadCodec = journalSettings.codecSettings.journalPayloadCodec
-  protected implicit val tagsCodec: TagsCodec = journalSettings.codecSettings.tagsCodec
-  protected implicit val timestampCodec: TimestampCodec = journalSettings.codecSettings.timestampCodec
-  protected implicit val queryAdapter: QueryAdapter = journalSettings.codecSettings.queryAdapter
 
   protected val (insertEventWithParameterTimestampSql, insertEventWithTransactionTimestampSql) = {
     val baseSql =

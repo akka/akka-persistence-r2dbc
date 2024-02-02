@@ -15,7 +15,6 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * The purpose of this test is to verify JSONB payloads, but it can also be run with ordinary BYTEA payloads. To test
@@ -89,7 +88,7 @@ class PayloadSpec
   }
 
   private def selectJournalRow(persistenceId: String): TestRow = {
-    implicit val journalPayloadCodec: PayloadCodec = settings.codecSettings.journalPayloadCodec
+    import settings.codecSettings.JournalImplicits.journalPayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
@@ -108,7 +107,7 @@ class PayloadSpec
   }
 
   private def selectSnapshotRow(persistenceId: String): TestRow = {
-    implicit val snapshotPayloadCodec: PayloadCodec = settings.codecSettings.snapshotPayloadCodec
+    import settings.codecSettings.SnapshotImplicits.snapshotPayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(
@@ -127,7 +126,7 @@ class PayloadSpec
   }
 
   private def selectDurableStateRow(persistenceId: String): TestRow = {
-    implicit val durableStatePayloadCodec: PayloadCodec = settings.codecSettings.durableStatePayloadCodec
+    import settings.codecSettings.DurableStateImplicits.durableStatePayloadCodec
 
     r2dbcExecutor
       .selectOne[TestRow]("test")(

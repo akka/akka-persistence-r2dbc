@@ -334,7 +334,28 @@ final class CodecSettings(
     val durableStatePayloadCodec: PayloadCodec,
     val tagsCodec: TagsCodec,
     val timestampCodec: TimestampCodec,
-    val queryAdapter: QueryAdapter)
+    val queryAdapter: QueryAdapter) {
+
+  // implicits that can be imported
+  object JournalImplicits {
+    implicit def journalPayloadCodec: PayloadCodec = CodecSettings.this.journalPayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
+  object SnapshotImplicits {
+    implicit def snapshotPayloadCodec: PayloadCodec = CodecSettings.this.snapshotPayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
+  object DurableStateImplicits {
+    implicit def durableStatePayloadCodec: PayloadCodec = CodecSettings.this.durableStatePayloadCodec
+    implicit def tagsCodec: TagsCodec = CodecSettings.this.tagsCodec
+    implicit def timestampCodec: TimestampCodec = CodecSettings.this.timestampCodec
+    implicit def queryAdapter: QueryAdapter = CodecSettings.this.queryAdapter
+  }
+}
 
 /**
  * INTERNAL API

@@ -44,6 +44,7 @@ private[r2dbc] class SqlServerDurableStateDao(
     connectionFactory: ConnectionFactory,
     dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
     extends PostgresDurableStateDao(settings, connectionFactory, dialect) {
+  import settings.codecSettings.DurableStateImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")
 

@@ -24,6 +24,7 @@ private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFact
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresSnapshotDao(settings, connectionFactory) {
+  import settings.codecSettings.SnapshotImplicits._
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])
 

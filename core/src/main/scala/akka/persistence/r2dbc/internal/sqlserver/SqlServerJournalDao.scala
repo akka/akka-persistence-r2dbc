@@ -36,6 +36,7 @@ private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFact
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresJournalDao(settings, connectionFactory) {
+  import settings.codecSettings.JournalImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")
   require(

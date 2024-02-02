@@ -15,7 +15,6 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.typed.PersistenceId
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -29,7 +28,7 @@ class PersistTagsSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-  private implicit val tagsCodec: TagsCodec = settings.codecSettings.tagsCodec
+  import settings.codecSettings.JournalImplicits.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
   "Persist tags" should {

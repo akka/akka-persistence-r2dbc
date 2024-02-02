@@ -40,6 +40,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, connectionFactor
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresQueryDao(settings, connectionFactory) {
+  import settings.codecSettings.JournalImplicits._
 
   override def sqlFalse = "0"
 

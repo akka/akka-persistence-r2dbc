@@ -48,12 +48,7 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
@@ -90,6 +85,7 @@ private[r2dbc] class PostgresDurableStateDao(
     extends DurableStateDao {
   import DurableStateDao._
   import PostgresDurableStateDao._
+  import settings.codecSettings.DurableStateImplicits._
   protected def log: Logger = PostgresDurableStateDao.log
 
   private val persistenceExt = Persistence(system)
@@ -98,12 +94,6 @@ private[r2dbc] class PostgresDurableStateDao(
     log,
     settings.logDbCallsExceeding,
     settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
-
-  private implicit val statePayloadCodec: PayloadCodec = settings.codecSettings.durableStatePayloadCodec
-  private implicit val tagsCodec: TagsCodec = settings.codecSettings.tagsCodec
-
-  protected implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
-  protected implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
 
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, connectionFactory)
@@ -322,7 +312,7 @@ private[r2dbc] class PostgresDurableStateDao(
   private def getPayload(row: Row): Option[Array[Byte]] = {
     val serId = row.get("state_ser_id", classOf[Integer])
     val rowPayload = row.getPayload("state_payload")
-    if (serId == 0 && (rowPayload == null || util.Arrays.equals(statePayloadCodec.nonePayload, rowPayload)))
+    if (serId == 0 && (rowPayload == null || util.Arrays.equals(durableStatePayloadCodec.nonePayload, rowPayload)))
       None // delete marker
     else
       Option(rowPayload)

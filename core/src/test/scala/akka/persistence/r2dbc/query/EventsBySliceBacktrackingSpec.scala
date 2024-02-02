@@ -35,7 +35,6 @@ import akka.stream.testkit.scaladsl.TestSink
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 object EventsBySliceBacktrackingSpec {
   private val BufferSize = 10 // small buffer for testing
@@ -57,9 +56,7 @@ class EventsBySliceBacktrackingSpec
 
   override def typedSystem: ActorSystem[_] = system
   private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
-  private implicit val journalPayloadCodec: PayloadCodec = settings.codecSettings.journalPayloadCodec
-  private implicit val timestampCodec: TimestampCodec = settings.codecSettings.timestampCodec
-  private implicit val queryAdapter: QueryAdapter = settings.codecSettings.queryAdapter
+  import settings.codecSettings.JournalImplicits._
 
   private val query = PersistenceQuery(testKit.system)
     .readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)

@@ -43,6 +43,7 @@ private[r2dbc] class SqlServerSnapshotDao(settings: R2dbcSettings, connectionFac
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends PostgresSnapshotDao(settings, connectionFactory) {
+  import settings.codecSettings.SnapshotImplicits._
 
   override def log: Logger = SqlServerSnapshotDao.log
 
