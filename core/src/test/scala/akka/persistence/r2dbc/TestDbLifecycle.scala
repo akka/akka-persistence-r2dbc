@@ -12,7 +12,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutor
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.Suite
 import org.slf4j.LoggerFactory
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.h2.H2Dialect
 
 import java.time.Instant

@@ -10,7 +10,7 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.Sql.Interpolation
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
