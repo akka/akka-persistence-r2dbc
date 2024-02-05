@@ -109,12 +109,13 @@ class PayloadSpec
 
   private def selectSnapshotRow(persistenceId: String): TestRow = {
     import settings.codecSettings.SnapshotImplicits.snapshotPayloadCodec
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    r2dbcExecutor
+    r2dbcExecutor(slice)
       .selectOne[TestRow]("test")(
         connection =>
           connection.createStatement(
-            s"select * from ${settings.snapshotsTableWithSchema} where persistence_id = '$persistenceId'"),
+            s"select * from ${settings.snapshotTableWithSchema(slice)} where persistence_id = '$persistenceId'"),
         row => {
           val payload = row.getPayload("snapshot")
           TestRow(
@@ -128,12 +129,13 @@ class PayloadSpec
 
   private def selectDurableStateRow(persistenceId: String): TestRow = {
     import settings.codecSettings.DurableStateImplicits.durableStatePayloadCodec
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
-    r2dbcExecutor
+    r2dbcExecutor(slice)
       .selectOne[TestRow]("test")(
         connection =>
           connection.createStatement(
-            s"select * from ${settings.durableStateTableWithSchema} where persistence_id = '$persistenceId'"),
+            s"select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = '$persistenceId'"),
         row => {
           val payload = row.getPayload("state_payload")
           TestRow(
