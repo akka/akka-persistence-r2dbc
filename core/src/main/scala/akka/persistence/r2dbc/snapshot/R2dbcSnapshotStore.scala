@@ -60,9 +60,14 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
 
   private val executorProvider =
-    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
-  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)
-  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, executorProvider)
+    new R2dbcExecutorProvider(
+      system,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, system),
+      settings,
+      sharedConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
+  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(executorProvider)
+  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(executorProvider)
 
   def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =
     dao

@@ -60,9 +60,14 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 
   private val executorProvider =
-    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
-  private val journalDao = settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)
-  private val snapshotDao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)
+    new R2dbcExecutorProvider(
+      system,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, system),
+      settings,
+      sharedConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
+  private val journalDao = settings.connectionFactorySettings.dialect.createJournalDao(executorProvider)
+  private val snapshotDao = settings.connectionFactorySettings.dialect.createSnapshotDao(executorProvider)
 
   /**
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.

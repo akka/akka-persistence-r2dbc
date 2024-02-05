@@ -4,39 +4,37 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
-import scala.collection.immutable
 import java.time.Instant
 
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
+import io.r2dbc.spi.Statement
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
+import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.QueryDao
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
-import akka.persistence.Persistence
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
-import io.r2dbc.spi.Statement
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
-import akka.persistence.Persistence
-import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
 
 /**
  * INTERNAL API
@@ -50,12 +48,13 @@ private[r2dbc] object PostgresQueryDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
-    extends QueryDao {
-  import PostgresJournalDao.readMetadata
+private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) extends QueryDao {
+  protected val settings: R2dbcSettings = executorProvider.settings
+  protected val system: ActorSystem[_] = executorProvider.system
+  implicit protected val ec: ExecutionContext = executorProvider.ec
   import settings.codecSettings.JournalImplicits._
+
+  import PostgresJournalDao.readMetadata
 
   protected def log: Logger = PostgresQueryDao.log
   protected val persistenceExt: Persistence = Persistence(system)

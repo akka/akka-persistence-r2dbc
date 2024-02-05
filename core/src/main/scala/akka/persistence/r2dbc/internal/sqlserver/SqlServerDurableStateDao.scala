@@ -7,14 +7,11 @@ package akka.persistence.r2dbc.internal.sqlserver
 import java.time.Instant
 
 import scala.collection.immutable
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
-import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
@@ -39,11 +36,8 @@ private[r2dbc] object SqlServerDurableStateDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerDurableStateDao(
-    settings: R2dbcSettings,
-    executorProvider: R2dbcExecutorProvider,
-    dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
-    extends PostgresDurableStateDao(settings, executorProvider, dialect) {
+private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorProvider, dialect: Dialect)
+    extends PostgresDurableStateDao(executorProvider, dialect) {
   import settings.codecSettings.DurableStateImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")

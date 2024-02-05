@@ -392,9 +392,11 @@ class R2dbcExecutor(
  * INTERNAL API
  */
 @InternalStableApi class R2dbcExecutorProvider(
+    val system: ActorSystem[_],
+    val ec: ExecutionContext,
     val settings: R2dbcSettings,
     connectionFactoryBaseConfigPath: String,
-    log: Logger)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+    log: Logger) {
   private val connectionFactoryProvider = ConnectionFactoryProvider(system)
   private var cache = IntMap.empty[R2dbcExecutor]
 
@@ -409,7 +411,7 @@ class R2dbcExecutor(
           connectionFactory,
           log,
           settings.logDbCallsExceeding,
-          settings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+          settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
         // it's just a cache so no need for guarding concurrent updates or visibility
         cache = cache.updated(slice, executor)
         executor

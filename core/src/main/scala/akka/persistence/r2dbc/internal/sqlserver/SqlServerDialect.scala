@@ -6,6 +6,7 @@ package akka.persistence.r2dbc.internal.sqlserver
 
 import java.time.{ Duration => JDuration }
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
 import akka.actor.typed.ActorSystem
@@ -85,19 +86,18 @@ private[r2dbc] object SqlServerDialect extends Dialect {
         .build())
   }
 
-  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): JournalDao =
-    new SqlServerJournalDao(settings, executorProvider)(system.executionContext, system)
+  override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext =
+    system.executionContext
 
-  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): QueryDao =
-    new SqlServerQueryDao(settings, executorProvider)(system.executionContext, system)
+  override def createJournalDao(executorProvider: R2dbcExecutorProvider): JournalDao =
+    new SqlServerJournalDao(executorProvider)
 
-  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): SnapshotDao =
-    new SqlServerSnapshotDao(settings, executorProvider)(system.executionContext, system)
+  override def createQueryDao(executorProvider: R2dbcExecutorProvider): QueryDao =
+    new SqlServerQueryDao(executorProvider)
 
-  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): DurableStateDao =
-    new SqlServerDurableStateDao(settings, executorProvider, this)(system.executionContext, system)
+  override def createSnapshotDao(executorProvider: R2dbcExecutorProvider): SnapshotDao =
+    new SqlServerSnapshotDao(executorProvider)
+
+  override def createDurableStateDao(executorProvider: R2dbcExecutorProvider): DurableStateDao =
+    new SqlServerDurableStateDao(executorProvider, this)
 }

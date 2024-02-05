@@ -29,17 +29,15 @@ private[r2dbc] trait Dialect {
    */
   def adaptSettings(settings: R2dbcSettings): R2dbcSettings = settings
 
+  def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext
+
   def createConnectionFactory(config: Config): ConnectionFactory
 
-  def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): JournalDao
+  def createJournalDao(executorProvider: R2dbcExecutorProvider): JournalDao
 
-  def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): QueryDao
+  def createQueryDao(executorProvider: R2dbcExecutorProvider): QueryDao
 
-  def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): SnapshotDao
+  def createSnapshotDao(executorProvider: R2dbcExecutorProvider): SnapshotDao
 
-  def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): DurableStateDao
+  def createDurableStateDao(executorProvider: R2dbcExecutorProvider): DurableStateDao
 }

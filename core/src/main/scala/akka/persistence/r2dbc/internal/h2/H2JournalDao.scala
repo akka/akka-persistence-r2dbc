@@ -4,41 +4,37 @@
 
 package akka.persistence.r2dbc.internal.h2
 
-import akka.actor.typed.ActorSystem
-import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
-import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
-import io.r2dbc.spi.Statement
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import java.time.Instant
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
 import io.r2dbc.spi.Connection
+import io.r2dbc.spi.Statement
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
+import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
+import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
+import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class H2JournalDao(journalSettings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
-    extends PostgresJournalDao(journalSettings, executorProvider) {
+private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
+    extends PostgresJournalDao(executorProvider) {
+  import settings.codecSettings.JournalImplicits._
+
   import JournalDao.SerializedJournalRow
-  import journalSettings.codecSettings.JournalImplicits._
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2JournalDao])
   // always app timestamp (db is same process) monotonic increasing
-  require(journalSettings.useAppTimestamp)
-  require(journalSettings.dbTimestampMonotonicIncreasing)
+  require(settings.useAppTimestamp)
+  require(settings.dbTimestampMonotonicIncreasing)
 
   private def insertSql(slice: Int) = sql"INSERT INTO ${journalTable(slice)} " +
     "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +

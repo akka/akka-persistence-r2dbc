@@ -94,15 +94,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
   private val executorProvider =
-    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))(
-      typedSystem.executionContext,
-      typedSystem)
+    new R2dbcExecutorProvider(
+      typedSystem,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, typedSystem),
+      settings,
+      sharedConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
   private val journalDao =
-    settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)(typedSystem)
+    settings.connectionFactorySettings.dialect.createJournalDao(executorProvider)
   private val queryDao =
-    settings.connectionFactorySettings.dialect.createQueryDao(settings, executorProvider)(typedSystem)
+    settings.connectionFactorySettings.dialect.createQueryDao(executorProvider)
   private lazy val snapshotDao =
-    settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)(typedSystem)
+    settings.connectionFactorySettings.dialect.createSnapshotDao(executorProvider)
 
   private val filteredPayloadSerId = SerializationExtension(system).findSerializerFor(FilteredPayload).identifier
 

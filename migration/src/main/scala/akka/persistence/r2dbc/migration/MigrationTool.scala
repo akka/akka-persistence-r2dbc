@@ -126,18 +126,20 @@ class MigrationTool(system: ActorSystem[_]) {
   private val serialization: Serialization = SerializationExtension(system)
 
   private val targetExecutorProvider = new R2dbcExecutorProvider(
+    system,
+    targetR2dbcSettings.connectionFactorySettings.dialect.daoExecutionContext(targetR2dbcSettings, system),
     targetR2dbcSettings,
     targetPluginId + ".connection-factory",
     LoggerFactory.getLogger(getClass))
 
   private val targetJournalDao =
-    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetR2dbcSettings, targetExecutorProvider)
+    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetExecutorProvider)
   private val targetSnapshotDao =
     targetR2dbcSettings.connectionFactorySettings.dialect
-      .createSnapshotDao(targetR2dbcSettings, targetExecutorProvider)
+      .createSnapshotDao(targetExecutorProvider)
   private val targetDurableStateDao =
     targetR2dbcSettings.connectionFactorySettings.dialect
-      .createDurableStateDao(targetR2dbcSettings, targetExecutorProvider)
+      .createDurableStateDao(targetExecutorProvider)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 

@@ -6,24 +6,20 @@ package akka.persistence.r2dbc.internal.sqlserver
 
 import java.time.Instant
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
-import akka.actor.typed.ActorSystem
-import akka.annotation.InternalApi
-import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
-import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.annotation.InternalApi
+import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
+import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
 
 /**
  * INTERNAL API
@@ -38,10 +34,8 @@ private[r2dbc] object SqlServerQueryDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
-    extends PostgresQueryDao(settings, executorProvider) {
+private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
+    extends PostgresQueryDao(executorProvider) {
   import settings.codecSettings.JournalImplicits._
 
   override def sqlFalse = "0"

@@ -73,11 +73,14 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val persistenceExt = Persistence(system)
   // FIXME maybe this is using the wrong executionContext, H2Dialect is using another dispatcher?
   private val executorProvider =
-    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))(
-      typedSystem.executionContext,
-      typedSystem)
+    new R2dbcExecutorProvider(
+      typedSystem,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, typedSystem),
+      settings,
+      sharedConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
   private val stateDao =
-    settings.connectionFactorySettings.dialect.createDurableStateDao(settings, executorProvider)(typedSystem)
+    settings.connectionFactorySettings.dialect.createDurableStateDao(executorProvider)
   private val changeEventWriterUuid = UUID.randomUUID().toString
 
   private val pubSub: Option[PubSub] =

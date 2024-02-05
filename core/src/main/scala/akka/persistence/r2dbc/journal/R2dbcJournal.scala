@@ -95,9 +95,14 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
   log.debug("R2DBC journal starting up with dialect [{}]", settings.dialectName)
 
   private val executorProvider =
-    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
+    new R2dbcExecutorProvider(
+      system,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, system),
+      settings,
+      sharedConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
   private val journalDao =
-    settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)
+    settings.connectionFactorySettings.dialect.createJournalDao(executorProvider)
   private val query = PersistenceQuery(system).readJournalFor[R2dbcReadJournal](sharedConfigPath + ".query")
 
   private val pubSub: Option[PubSub] =
