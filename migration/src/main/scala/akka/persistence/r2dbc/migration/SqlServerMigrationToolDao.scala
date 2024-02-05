@@ -5,26 +5,12 @@
 package akka.persistence.r2dbc.migration
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.FiniteDuration
 
-import io.r2dbc.spi.ConnectionFactory
-import io.r2dbc.spi.Statement
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-import akka.persistence.r2dbc.internal.Sql.Interpolation
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
-
-/**
- * INTERNAL API
- */
-@InternalApi private[r2dbc] object SqlServerMigrationToolDao {
-  private val log = LoggerFactory.getLogger(classOf[SqlServerMigrationToolDao])
-
-}
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import io.r2dbc.spi.Statement
 
 /**
  * INTERNAL API
@@ -33,6 +19,8 @@ import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends MigrationToolDao(executorProvider) {
+
+  import settings.codecSettings.JournalImplicits._
 
   override protected def createMigrationProgressTableSql(): String = {
     sql"""
