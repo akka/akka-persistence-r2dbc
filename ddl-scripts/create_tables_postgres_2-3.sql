@@ -50,7 +50,25 @@ CREATE TABLE IF NOT EXISTS event_journal_3(
 CREATE INDEX IF NOT EXISTS event_journal_2_slice_idx ON event_journal_2(slice, entity_type, db_timestamp, seq_nr);
 CREATE INDEX IF NOT EXISTS event_journal_3_slice_idx ON event_journal_3(slice, entity_type, db_timestamp, seq_nr);
 
-CREATE TABLE IF NOT EXISTS snapshot(
+CREATE TABLE IF NOT EXISTS snapshot_2(
+  slice INT NOT NULL,
+  entity_type VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  seq_nr BIGINT NOT NULL,
+  db_timestamp timestamp with time zone,
+  write_timestamp BIGINT NOT NULL,
+  ser_id INTEGER NOT NULL,
+  ser_manifest VARCHAR(255) NOT NULL,
+  snapshot BYTEA NOT NULL,
+  tags TEXT ARRAY,
+  meta_ser_id INTEGER,
+  meta_ser_manifest VARCHAR(255),
+  meta_payload BYTEA,
+
+  PRIMARY KEY(persistence_id)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_3(
   slice INT NOT NULL,
   entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
@@ -69,9 +87,25 @@ CREATE TABLE IF NOT EXISTS snapshot(
 );
 
 -- `snapshot_slice_idx` is only needed if the slice based queries are used together with snapshot as starting point
-CREATE INDEX IF NOT EXISTS snapshot_slice_idx ON snapshot(slice, entity_type, db_timestamp);
+CREATE INDEX IF NOT EXISTS snapshot_2_slice_idx ON snapshot_2(slice, entity_type, db_timestamp);
+CREATE INDEX IF NOT EXISTS snapshot_3_slice_idx ON snapshot_3(slice, entity_type, db_timestamp);
 
-CREATE TABLE IF NOT EXISTS durable_state (
+CREATE TABLE IF NOT EXISTS durable_state_2 (
+  slice INT NOT NULL,
+  entity_type VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  revision BIGINT NOT NULL,
+  db_timestamp timestamp with time zone NOT NULL,
+
+  state_ser_id INTEGER NOT NULL,
+  state_ser_manifest VARCHAR(255),
+  state_payload BYTEA NOT NULL,
+  tags TEXT ARRAY,
+
+  PRIMARY KEY(persistence_id, revision)
+);
+
+CREATE TABLE IF NOT EXISTS durable_state_3 (
   slice INT NOT NULL,
   entity_type VARCHAR(255) NOT NULL,
   persistence_id VARCHAR(255) NOT NULL,
@@ -87,4 +121,5 @@ CREATE TABLE IF NOT EXISTS durable_state (
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp, revision);
+CREATE INDEX IF NOT EXISTS durable_state_2_slice_idx ON durable_state_2(slice, entity_type, db_timestamp, revision);
+CREATE INDEX IF NOT EXISTS durable_state_3_slice_idx ON durable_state_3(slice, entity_type, db_timestamp, revision);
