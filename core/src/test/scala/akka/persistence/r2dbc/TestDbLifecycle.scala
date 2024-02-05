@@ -32,9 +32,12 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
     R2dbcSettings(typedSystem.settings.config.getConfig(testConfigPath))
 
   lazy val r2dbcExecutorProvider: R2dbcExecutorProvider =
-    new R2dbcExecutorProvider(r2dbcSettings, testConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))(
-      typedSystem.executionContext,
-      typedSystem)
+    new R2dbcExecutorProvider(
+      typedSystem,
+      r2dbcSettings.connectionFactorySettings.dialect.daoExecutionContext(r2dbcSettings, typedSystem),
+      r2dbcSettings,
+      testConfigPath + ".connection-factory",
+      LoggerFactory.getLogger(getClass))
 
   def r2dbcExecutor(slice: Int): R2dbcExecutor =
     r2dbcExecutorProvider.executorFor(slice)

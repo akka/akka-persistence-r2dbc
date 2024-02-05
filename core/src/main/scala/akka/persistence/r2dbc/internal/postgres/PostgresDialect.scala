@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.internal.postgres
 import java.time.{ Duration => JDuration }
 import java.util.Locale
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
 import akka.actor.typed.ActorSystem
@@ -117,19 +118,18 @@ private[r2dbc] object PostgresDialect extends Dialect {
     ConnectionFactories.get(builder.build())
   }
 
-  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): JournalDao =
-    new PostgresJournalDao(settings, executorProvider)(system.executionContext, system)
+  override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext =
+    system.executionContext
 
-  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): SnapshotDao =
-    new PostgresSnapshotDao(settings, executorProvider)(system.executionContext, system)
+  override def createJournalDao(executorProvider: R2dbcExecutorProvider): JournalDao =
+    new PostgresJournalDao(executorProvider)
 
-  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): QueryDao =
-    new PostgresQueryDao(settings, executorProvider)(system.executionContext, system)
+  override def createSnapshotDao(executorProvider: R2dbcExecutorProvider): SnapshotDao =
+    new PostgresSnapshotDao(executorProvider)
 
-  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): DurableStateDao =
-    new PostgresDurableStateDao(settings, executorProvider, this)(system.executionContext, system)
+  override def createQueryDao(executorProvider: R2dbcExecutorProvider): QueryDao =
+    new PostgresQueryDao(executorProvider)
+
+  override def createDurableStateDao(executorProvider: R2dbcExecutorProvider): DurableStateDao =
+    new PostgresDurableStateDao(executorProvider, this)
 }

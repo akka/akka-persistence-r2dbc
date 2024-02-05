@@ -87,27 +87,23 @@ private[r2dbc] object H2Dialect extends Dialect {
     new H2ConnectionFactory(h2Config)
   }
 
-  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): JournalDao =
-    new H2JournalDao(settings, executorProvider)(ecForDaos(system, settings), system)
-
-  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): SnapshotDao =
-    new H2SnapshotDao(settings, executorProvider)(ecForDaos(system, settings), system)
-
-  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): QueryDao =
-    new H2QueryDao(settings, executorProvider)(ecForDaos(system, settings), system)
-
-  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-      system: ActorSystem[_]): DurableStateDao =
-    new H2DurableStateDao(settings, executorProvider, this)(ecForDaos(system, settings), system)
-
-  private def ecForDaos(system: ActorSystem[_], settings: R2dbcSettings): ExecutionContext = {
+  override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext = {
     // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
     system.dispatchers.lookup(
       DispatcherSelector.fromConfig(settings.connectionFactorySettings.config.getString("use-dispatcher")))
   }
+
+  override def createJournalDao(executorProvider: R2dbcExecutorProvider): JournalDao =
+    new H2JournalDao(executorProvider)
+
+  override def createSnapshotDao(executorProvider: R2dbcExecutorProvider): SnapshotDao =
+    new H2SnapshotDao(executorProvider)
+
+  override def createQueryDao(executorProvider: R2dbcExecutorProvider): QueryDao =
+    new H2QueryDao(executorProvider)
+
+  override def createDurableStateDao(executorProvider: R2dbcExecutorProvider): DurableStateDao =
+    new H2DurableStateDao(executorProvider, this)
 
   private def dbSchema(config: Config, createSliceIndexes: Boolean, additionalInit: String): String = {
     def optionalConfString(name: String): Option[String] = {

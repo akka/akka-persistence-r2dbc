@@ -4,6 +4,17 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import java.time.Instant
+
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+
+import io.r2dbc.spi.Connection
+import io.r2dbc.spi.Row
+import io.r2dbc.spi.Statement
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
@@ -11,28 +22,15 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
-import io.r2dbc.spi.Connection
-import io.r2dbc.spi.Row
-import io.r2dbc.spi.Statement
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.time.Instant
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-
-import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 
 /**
  * INTERNAL API
@@ -61,23 +59,23 @@ private[r2dbc] object PostgresJournalDao {
  * Class for doing db interaction outside of an actor to avoid mistakes in future callbacks
  */
 @InternalApi
-private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(
-    implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
-    extends JournalDao {
+private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider) extends JournalDao {
+  protected val settings: R2dbcSettings = executorProvider.settings
+  protected val system: ActorSystem[_] = executorProvider.system
+  implicit protected val ec: ExecutionContext = executorProvider.ec
+  import settings.codecSettings.JournalImplicits._
+
   import JournalDao.SerializedJournalRow
-  import journalSettings.codecSettings.JournalImplicits._
   protected def log: Logger = PostgresJournalDao.log
 
   protected val persistenceExt: Persistence = Persistence(system)
 
-  protected def journalTable(slice: Int): String = journalSettings.journalTableWithSchema(slice)
+  protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
 
   protected def insertEventWithParameterTimestampSql(slice: Int): String = {
     val table = journalTable(slice)
     val baseSql = insertEvenBaseSql(table)
-    if (journalSettings.dbTimestampMonotonicIncreasing)
+    if (settings.dbTimestampMonotonicIncreasing)
       sql"$baseSql ?) RETURNING db_timestamp"
     else
       sql"$baseSql GREATEST(?, ${timestampSubSelect(table)})) RETURNING db_timestamp"
@@ -86,7 +84,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, executor
   private def insertEventWithTransactionTimestampSql(slice: Int) = {
     val table = journalTable(slice)
     val baseSql = insertEvenBaseSql(table)
-    if (journalSettings.dbTimestampMonotonicIncreasing)
+    if (settings.dbTimestampMonotonicIncreasing)
       sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
     else
       sql"$baseSql GREATEST(CURRENT_TIMESTAMP, ${timestampSubSelect(table)})) RETURNING db_timestamp"
@@ -241,12 +239,12 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, executor
     }
 
     if (useTimestampFromDb) {
-      if (!journalSettings.dbTimestampMonotonicIncreasing)
+      if (!settings.dbTimestampMonotonicIncreasing)
         stmt
           .bind(13, write.persistenceId)
           .bind(14, previousSeqNr)
     } else {
-      if (journalSettings.dbTimestampMonotonicIncreasing)
+      if (settings.dbTimestampMonotonicIncreasing)
         stmt
           .bindTimestamp(13, write.dbTimestamp)
       else
@@ -365,7 +363,7 @@ private[r2dbc] class PostgresJournalDao(journalSettings: R2dbcSettings, executor
         })(ExecutionContexts.parasitic)
     }
 
-    val batchSize = journalSettings.cleanupSettings.eventsJournalDeleteBatchSize
+    val batchSize = settings.cleanupSettings.eventsJournalDeleteBatchSize
 
     def deleteInBatches(from: Long, maxTo: Long): Future[Unit] = {
       if (from + batchSize > maxTo) {

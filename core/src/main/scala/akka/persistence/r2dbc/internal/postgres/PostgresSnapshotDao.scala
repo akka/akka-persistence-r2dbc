@@ -10,7 +10,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
@@ -28,7 +27,6 @@ import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
@@ -50,10 +48,10 @@ private[r2dbc] object PostgresSnapshotDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
-    ec: ExecutionContext,
-    system: ActorSystem[_])
-    extends SnapshotDao {
+private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider) extends SnapshotDao {
+  protected val settings: R2dbcSettings = executorProvider.settings
+  protected val system: ActorSystem[_] = executorProvider.system
+  implicit protected val ec: ExecutionContext = executorProvider.ec
   import SnapshotDao._
   import settings.codecSettings.SnapshotImplicits._
 

@@ -16,7 +16,6 @@ import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
 import io.r2dbc.spi.Connection
-import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
@@ -79,11 +78,11 @@ private[r2dbc] object PostgresDurableStateDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresDurableStateDao(
-    settings: R2dbcSettings,
-    executorProvider: R2dbcExecutorProvider,
-    dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
+private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProvider, dialect: Dialect)
     extends DurableStateDao {
+  protected val settings: R2dbcSettings = executorProvider.settings
+  protected val system: ActorSystem[_] = executorProvider.system
+  implicit protected val ec: ExecutionContext = executorProvider.ec
   import DurableStateDao._
   import PostgresDurableStateDao._
   import settings.codecSettings.DurableStateImplicits._
@@ -93,7 +92,7 @@ private[r2dbc] class PostgresDurableStateDao(
   protected val r2dbcExecutor = executorProvider.executorFor(slice = 0) // FIXME support data partitions
 
   // used for change events
-  private lazy val journalDao: JournalDao = dialect.createJournalDao(settings, executorProvider)
+  private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
 
   private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
@@ -487,7 +486,7 @@ private[r2dbc] class PostgresDurableStateDao(
       handler: ChangeHandler[Any],
       connection: Connection,
       change: DurableStateChange[Any]): Future[Done] = {
-    val session = new R2dbcSession(connection)
+    val session = new R2dbcSession(connection)(ec, system)
 
     def excMessage(cause: Throwable): String = {
       val (changeType, revision) = change match {
