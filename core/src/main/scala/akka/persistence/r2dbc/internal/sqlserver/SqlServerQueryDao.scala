@@ -199,7 +199,7 @@ private[r2dbc] class SqlServerQueryDao(settings: R2dbcSettings, executorProvider
   }
 
   override protected def allPersistenceIdsSql(minSlice: Int): String = {
-    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} as sub  ORDER BY persistence_id"
+    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)}) as sub  ORDER BY persistence_id"
   }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
