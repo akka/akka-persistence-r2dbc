@@ -91,6 +91,9 @@ object R2dbcSettings {
       numberOfDatabases * (numberOfDataPartitions / numberOfDatabases) == numberOfDataPartitions,
       s"data-partition.number-of-databases [$numberOfDatabases] must be a whole number divisor of " +
       s"data-partition.number-of-partitions [$numberOfDataPartitions].")
+    require(
+      durableStateChangeHandlerClasses.isEmpty || numberOfDatabases == 1,
+      "Durable State ChangeHandler not supported with more than one data partition database.")
 
     val connectionFactorySettings =
       if (numberOfDatabases == 1) {
@@ -291,7 +294,7 @@ final class R2dbcSettings private (
     resolveAllTableNames(snapshotTableWithSchema(_))
 
   /**
-   * INTERNAL API: All journal tables and their the lower slice
+   * INTERNAL API: All durable state tables and their the lower slice
    */
   @InternalApi private[akka] val allDurableStateTablesWithSchema: Map[String, Int] =
     resolveAllTableNames(durableStateTableWithSchema(_))
