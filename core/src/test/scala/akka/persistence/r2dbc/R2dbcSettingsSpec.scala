@@ -139,6 +139,7 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       settings.durableStateTableWithSchema(slice = 767) shouldBe "s1.durable_state_2"
       settings.durableStateTableWithSchema(slice = 768) shouldBe "s1.durable_state_3"
       settings.durableStateTableWithSchema(slice = 1023) shouldBe "s1.durable_state_3"
+      settings.getDurableStateTableWithSchema("TestEntity", slice = 511) shouldBe "s1.durable_state_1"
     }
 
     "verify slice range within same data partition" in {

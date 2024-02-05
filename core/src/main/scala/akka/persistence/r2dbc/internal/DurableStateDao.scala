@@ -62,7 +62,11 @@ private[r2dbc] trait DurableStateDao extends BySliceQuery.Dao[DurableStateDao.Se
 
   def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed]
 
-  def persistenceIds(afterId: Option[String], limit: Long, table: String): Source[String, NotUsed]
+  def persistenceIds(
+      afterId: Option[String],
+      limit: Long,
+      table: String,
+      dataPartitionSlice: Int): Source[String, NotUsed]
 
   def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed]
 

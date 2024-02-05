@@ -140,7 +140,6 @@ class DurableStateStoreAdditionalColumnSpec
     exists(s"persistence_id = '$persistenceId' and col3 is null")
 
   "The R2DBC durable state store" should {
-    pendingIfMoreThanOneDataPartition() // FIXME
 
     "save and retrieve a value in custom table with additional columns" in {
       val entityType = "CustomEntity"

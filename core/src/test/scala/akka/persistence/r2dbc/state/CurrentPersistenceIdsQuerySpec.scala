@@ -58,27 +58,34 @@ class CurrentPersistenceIdsQuerySpec
         PersistenceId(entityTypes(entityTypeId - 1), "p" + zeros.drop(n.toString.length) + n)))
   }
 
-  private val customTable = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity")
   private val customEntityType = "CustomEntity"
   private val customPid1 = nextPid(customEntityType)
   private val customPid2 = nextPid(customEntityType)
 
-  private val createTable = if (r2dbcSettings.dialectName == "sqlserver") {
-    s"IF object_id('$customTable') is null SELECT * into $customTable from durable_state where persistence_id = ''"
-  } else {
-    s"create table if not exists $customTable as select * from durable_state where persistence_id = ''"
+  private def customTable(slice: Int) = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity", slice)
+
+  private def createTable(slice: Int) = {
+    if (r2dbcSettings.dialectName == "sqlserver") {
+      s"IF object_id('${customTable(slice)}') is null SELECT * into ${customTable(slice)} from ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+    } else {
+      s"create table if not exists ${customTable(slice)} as select * from ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+    }
   }
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()
 
-    Await.result(
-      r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTable)),
-      20.seconds)
-
-    Await.result(
-      r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $customTable")),
-      10.seconds)
+    r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
+      val dataPartitionSlice = sliceRange.min
+      Await.result(
+        r2dbcExecutor(dataPartitionSlice).executeDdl("beforeAll create durable_state_test")(
+          _.createStatement(createTable(dataPartitionSlice))),
+        20.seconds)
+      Await.result(
+        r2dbcExecutor(dataPartitionSlice).updateOne("beforeAll delete")(
+          _.createStatement(s"delete from ${customTable(dataPartitionSlice)}")),
+        10.seconds)
+    }
 
     val probe = createTestProbe[Done]()
     pids.foreach { pid =>
@@ -103,11 +110,13 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   "Durable State persistenceIds" should {
-    pendingIfMoreThanOneDataPartition() // FIXME
 
     "retrieve all ids" in {
       val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
-      result shouldBe pids.map(_.id)
+      if (r2dbcSettings.numberOfDataPartitions == 1)
+        result shouldBe pids.map(_.id)
+      else
+        result.sorted shouldBe pids.map(_.id).sorted
     }
 
     "retrieve ids afterId" in {
@@ -137,7 +146,10 @@ class CurrentPersistenceIdsQuerySpec
       createPidsInCustomTable()
       val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
       // note that custom tables always come afterwards, i.e. not strictly sorted on the pids (but that should be ok)
-      result shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2)
+      if (r2dbcSettings.numberOfDataPartitions == 1)
+        result shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2)
+      else
+        result.sorted shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2).sorted
     }
 
     "include pids from custom table in ids afterId" in {

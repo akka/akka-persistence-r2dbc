@@ -756,38 +756,53 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    if (settings.durableStateTableByEntityTypeWithSchema.isEmpty)
-      persistenceIds(afterId, limit, settings.durableStateTableWithSchema)
+    if (settings.durableStateTableByEntityTypeWithSchema.isEmpty && settings.numberOfDataPartitions == 1)
+      persistenceIds(afterId, limit, settings.durableStateTableWithSchema(slice = 0), 0)
     else {
       def readFromCustomTables(
           acc: immutable.IndexedSeq[String],
-          remainingTables: Vector[String]): Future[immutable.IndexedSeq[String]] = {
+          remainingEntityTypes: List[String],
+          dataPartitionSlice: Int): Future[immutable.IndexedSeq[String]] = {
         if (acc.size >= limit) {
           Future.successful(acc)
-        } else if (remainingTables.isEmpty) {
+        } else if (remainingEntityTypes.isEmpty) {
           Future.successful(acc)
         } else {
-          readPersistenceIds(afterId, limit, remainingTables.head).flatMap { ids =>
-            readFromCustomTables(acc ++ ids, remainingTables.tail)
+          val table = settings.getDurableStateTableWithSchema(remainingEntityTypes.head, dataPartitionSlice)
+          readPersistenceIds(afterId, limit, table, dataPartitionSlice).flatMap { ids =>
+            readFromCustomTables(acc ++ ids, remainingEntityTypes.tail, dataPartitionSlice)
           }
         }
       }
 
-      // FIXME data partition
-      val customTables = settings.durableStateTableByEntityTypeWithSchema.toVector.sortBy(_._1).map(_._2)
-      val ids = for {
-        fromDefaultTable <- readPersistenceIds(afterId, limit, settings.durableStateTableWithSchema)
-        fromCustomTables <- readFromCustomTables(Vector.empty, customTables)
-      } yield {
-        (fromDefaultTable ++ fromCustomTables).sorted
+      val entityTypes = settings.durableStateTableByEntityTypeWithSchema.keys.toList.sorted
+      val ids = {
+        val idsPerSliceRange =
+          settings.dataPartitionSliceRanges.map { sliceRange =>
+            for {
+              fromDefaultTable <- readPersistenceIds(
+                afterId,
+                limit,
+                settings.durableStateTableWithSchema(sliceRange.min),
+                sliceRange.min)
+              fromCustomTables <- readFromCustomTables(Vector.empty, entityTypes, sliceRange.min)
+            } yield {
+              (fromDefaultTable ++ fromCustomTables)
+            }
+          }
+        Future.sequence(idsPerSliceRange).map(_.flatten.sorted)
       }
 
       Source.futureSource(ids.map(Source(_))).take(limit).mapMaterializedValue(_ => NotUsed)
     }
   }
 
-  override def persistenceIds(afterId: Option[String], limit: Long, table: String): Source[String, NotUsed] = {
-    val result = readPersistenceIds(afterId, limit, table)
+  override def persistenceIds(
+      afterId: Option[String],
+      limit: Long,
+      table: String,
+      dataPartitionSlice: Int): Source[String, NotUsed] = {
+    val result = readPersistenceIds(afterId, limit, table, dataPartitionSlice)
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -801,8 +816,9 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   private def readPersistenceIds(
       afterId: Option[String],
       limit: Long,
-      table: String): Future[immutable.IndexedSeq[String]] = {
-    val executor = executorProvider.executorFor(slice = 0) // FIXME
+      table: String,
+      dataPartitionSlice: Int): Future[immutable.IndexedSeq[String]] = {
+    val executor = executorProvider.executorFor(dataPartitionSlice)
     val result = executor.select(s"select persistenceIds")(
       connection =>
         afterId match {
@@ -832,26 +848,38 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    val table = settings.getDurableStateTableWithSchema(entityType) // FIXME
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
-    val executor = executorProvider.executorFor(slice = 0) // FIXME
-    val result = executor.select(s"select persistenceIds by entity type")(
-      connection =>
-        afterId match {
-          case Some(after) =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(table))
-            bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, limit)
-          case None =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(table))
-            bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, limit)
+    val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
+    val results: immutable.IndexedSeq[Future[immutable.IndexedSeq[String]]] =
+      // query each data partition
+      settings.dataPartitionSliceRanges.map { sliceRange =>
+        val table = settings.getDurableStateTableWithSchema(entityType, sliceRange.min)
+        val executor = executorProvider.executorFor(sliceRange.min)
+        executor.select(s"select persistenceIds by entity type")(
+          connection =>
+            afterId match {
+              case Some(after) =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(table))
+                bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
 
-        },
-      row => row.get("persistence_id", classOf[String]))
+              case None =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(table))
+                bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
+            },
+          row => row.get("persistence_id", classOf[String]))
+      }
+
+    // Theoretically it could blow up with too many rows (> Int.MaxValue) when fetching from more than
+    // one data partition, but we have other places with a hard limit of a total number of persistenceIds less
+    // than Int.MaxValue.
+    val combined: Future[immutable.IndexedSeq[String]] =
+      if (results.size == 1) results.head // no data partitions
+      else Future.sequence(results).map(_.flatten.sorted.take(actualLimit))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
+      combined.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
 
-    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+    Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
   /**
