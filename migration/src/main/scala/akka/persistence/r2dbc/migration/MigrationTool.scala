@@ -158,7 +158,13 @@ class MigrationTool(system: ActorSystem[_]) {
   if (targetR2dbcSettings.dialectName == "h2") {
     log.error("Migrating to H2 using the migration tool not currently supported")
   }
-  private[r2dbc] val migrationDao = new MigrationToolDao(targetExecutorProvider)
+  //private[r2dbc] val migratioDao = new MigrationToolDao(targetExecutorProvider)
+  private[r2dbc] val migrationDao = {
+    targetR2dbcSettings.dialectName match {
+      case "sqlserver" => new SqlServerMigrationToolDao(targetExecutorProvider)
+      case _           => new MigrationToolDao(targetExecutorProvider)
+    }
+  }
 
   private lazy val createProgressTable: Future[Done] =
     migrationDao.createProgressTable()

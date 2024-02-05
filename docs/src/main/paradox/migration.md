@@ -38,7 +38,8 @@ re-run the full migration.
 It's recommended that you create the `migration_progress` table before running the migration tool, but
 if it doesn't exist the tool will try to create the table.
 
-```sql
+Postgres:
+: ```sql
 CREATE TABLE IF NOT EXISTS migration_progress(
   persistence_id VARCHAR(255) NOT NULL,
   event_seq_nr BIGINT,
@@ -46,6 +47,23 @@ CREATE TABLE IF NOT EXISTS migration_progress(
   state_revision  BIGINT,
   PRIMARY KEY(persistence_id)
 ```
+
+SQLServer:
+: ```sql
+IF object_id('migration_progress') is null
+  CREATE TABLE migration_progress(
+    persistence_id NVARCHAR(255) NOT NULL,
+    event_seq_nr BIGINT,
+    snapshot_seq_nr BIGINT,
+    state_revision  BIGINT,
+    PRIMARY KEY(persistence_id)
+```
+
+@@@ warning { .group-sqlserver }
+
+The SQL Server dialect is marked `experimental` and not yet production ready until various [issues](https://github.com/akka/akka-persistence-r2dbc/issues?q=is%3Aopen+label%3Asqlserver+label%3Abug) with the integration of the `r2dbc-mssql` plugin have been resolved.
+
+@@@
 
 ## Running
 
@@ -60,9 +78,13 @@ Durable State is not migrated by `MigrationTool.migrateAll`, instead you need to
 
 ## Configuration
 
-You need to provide configuration for the source persistence plugin and the target Rd2BC plugin in your `application.conf`. An example of such configuration for migration from Akka Persistence JDBC: 
+You need to provide configuration for the source persistence plugin and the target Rd2BC plugin in your `application.conf`. An example of such configuration for migration from Akka Persistence JDBC:
 
-@@snip [application-postgres.conf](/migration-tests/src/test/resources/application-postgres.conf)
+Postgres:
+: @@snip [application-postgres.conf](/migration-tests/src/test/resources/application-postgres-example.conf)
+
+SQLServer:
+: @@snip [application-sqlserver.conf](/migration-tests/src/test/resources/application-sqlserver-example.conf)
 
 @@@ note
 

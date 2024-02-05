@@ -21,25 +21,51 @@ import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 
 import akka.persistence.r2dbc.TestActors.DurableStatePersister
+import akka.persistence.r2dbc.migration.MigrationToolSpec.dialect
 
 object MigrationToolSpec {
-  val config: Config = ConfigFactory
-    .parseString("""
+
+  private val testConfig = TestConfig.config
+
+  private val dialect = testConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
+  private val dbProfile = if (dialect == "sqlserver") {
+    """
+      default {
+        profile = "slick.jdbc.SQLServerProfile$"
+        db {
+          url = "jdbc:sqlserver://"127.0.0.1":1433;databaseName=master;integratedSecurity=false;"
+          user = "SA"
+          password = "<YourStrong@Passw0rd>"
+          driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+          numThreads = 5
+          maxConnections = 5
+          minConnections = 1
+        }
+      }
+    """
+  } else {
+    """
+      default {
+        profile = "slick.jdbc.PostgresProfile$"
+        db {
+          host = "127.0.0.1"
+          url = "jdbc:postgresql://127.0.0.1:5432/postgres?reWriteBatchedInserts=true"
+          user = postgres
+          password = postgres
+          driver = "org.postgresql.Driver"
+          numThreads = 20
+          maxConnections = 20
+          minConnections = 5
+        }
+      }
+      """
+  }
+
+  private val config: Config = ConfigFactory
+    .parseString(s"""
     akka-persistence-jdbc {
       shared-databases {
-        default {
-          profile = "slick.jdbc.PostgresProfile$"
-          db {
-            host = "127.0.0.1"
-            url = "jdbc:postgresql://127.0.0.1:5432/postgres?reWriteBatchedInserts=true"
-            user = postgres
-            password = postgres
-            driver = "org.postgresql.Driver"
-            numThreads = 20
-            maxConnections = 20
-            minConnections = 5
-          }
-        }
+        $dbProfile
       }
     }
 
@@ -62,7 +88,8 @@ object MigrationToolSpec {
 
     akka.persistence.r2dbc.state.assert-single-writer = off
     """)
-    .withFallback(TestConfig.config)
+    .withFallback(testConfig)
+
 }
 
 class MigrationToolSpec
@@ -83,10 +110,89 @@ class MigrationToolSpec
 
   private val migration = new MigrationTool(system)
 
-  private val testEnabled: Boolean = {
-    // don't run this for Yugabyte since it is using akka-persistence-jdbc
-    system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect") == "postgres"
-  }
+  // don't run this for Yugabyte since it is using akka-persistence-jdbc
+  private val postgresTest = dialect == "postgres"
+  private val sqlServerTest = dialect == "sqlserver"
+  private val testEnabled = postgresTest || sqlServerTest
+
+  private val createJournalTablePostgres =
+    """CREATE TABLE IF NOT EXISTS jdbc_event_journal(
+      |  ordering BIGSERIAL,
+      |  persistence_id VARCHAR(255) NOT NULL,
+      |  sequence_number BIGINT NOT NULL,
+      |  deleted BOOLEAN DEFAULT FALSE NOT NULL,
+      |
+      |  writer VARCHAR(255) NOT NULL,
+      |  write_timestamp BIGINT,
+      |  adapter_manifest VARCHAR(255),
+      |
+      |  event_ser_id INTEGER NOT NULL,
+      |  event_ser_manifest VARCHAR(255) NOT NULL,
+      |  event_payload BYTEA NOT NULL,
+      |
+      |  meta_ser_id INTEGER,
+      |  meta_ser_manifest VARCHAR(255),
+      |  meta_payload BYTEA,
+      |
+      |  PRIMARY KEY(persistence_id, sequence_number)
+      |)""".stripMargin
+
+  private val createJournalTableSqlServer =
+    """IF object_id('jdbc_event_journal') is null
+      |CREATE TABLE "jdbc_event_journal" (
+      |    "ordering" BIGINT IDENTITY(1,1) NOT NULL,
+      |    "deleted" BIT DEFAULT 0 NOT NULL,
+      |    "persistence_id" NVARCHAR(255) NOT NULL,
+      |    "sequence_number" NUMERIC(10,0) NOT NULL,
+      |    "writer" NVARCHAR(255) NOT NULL,
+      |    "write_timestamp" BIGINT NOT NULL,
+      |    "adapter_manifest" NVARCHAR(MAX) NOT NULL,
+      |    "event_payload" VARBINARY(MAX) NOT NULL,
+      |    "event_ser_id" INTEGER NOT NULL,
+      |    "event_ser_manifest" NVARCHAR(MAX) NOT NULL,
+      |    "meta_payload" VARBINARY(MAX),
+      |    "meta_ser_id" INTEGER,
+      |    "meta_ser_manifest" NVARCHAR(MAX)
+      |    PRIMARY KEY ("persistence_id", "sequence_number")
+      |)""".stripMargin
+
+  private val createSnapshotTablePostgres =
+    """CREATE TABLE IF NOT EXISTS jdbc_snapshot (
+      |  persistence_id VARCHAR(255) NOT NULL,
+      |  sequence_number BIGINT NOT NULL,
+      |  created BIGINT NOT NULL,
+      |
+      |  snapshot_ser_id INTEGER NOT NULL,
+      |  snapshot_ser_manifest VARCHAR(255) NOT NULL,
+      |  snapshot_payload BYTEA NOT NULL,
+      |
+      |  meta_ser_id INTEGER,
+      |  meta_ser_manifest VARCHAR(255),
+      |  meta_payload BYTEA,
+      |
+      |  PRIMARY KEY(persistence_id, sequence_number)
+      |)""".stripMargin
+
+  private val createSnapshotTableSqlServer =
+    """IF object_id('jdbc_snapshot') is null
+      |CREATE TABLE "jdbc_snapshot" (
+      |    "persistence_id" NVARCHAR(255) NOT NULL,
+      |    "sequence_number" NUMERIC(10,0) NOT NULL,
+      |    "created" BIGINT NOT NULL,
+      |    "snapshot_ser_id" INTEGER NOT NULL,
+      |    "snapshot_ser_manifest" NVARCHAR(255) NOT NULL,
+      |    "snapshot_payload" VARBINARY(MAX) NOT NULL,
+      |    "meta_ser_id" INTEGER,
+      |    "meta_ser_manifest" NVARCHAR(255),
+      |    "meta_payload" VARBINARY(MAX),
+      |    PRIMARY KEY ("persistence_id", "sequence_number")
+      |  )
+      |""".stripMargin
+
+  private val createJournalTableSql =
+    if (dialect == "sqlserver") createJournalTableSqlServer else createJournalTablePostgres
+  private val createSnapshotTableSql =
+    if (dialect == "sqlserver") createSnapshotTableSqlServer else createSnapshotTablePostgres
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()
@@ -94,64 +200,33 @@ class MigrationToolSpec
     if (testEnabled) {
       Await.result(
         r2dbcExecutor.executeDdl("beforeAll create jdbc tables") { connection =>
-          connection.createStatement("""CREATE TABLE IF NOT EXISTS jdbc_event_journal(
-                                       |  ordering BIGSERIAL,
-                                       |  persistence_id VARCHAR(255) NOT NULL,
-                                       |  sequence_number BIGINT NOT NULL,
-                                       |  deleted BOOLEAN DEFAULT FALSE NOT NULL,
-                                       |
-                                       |  writer VARCHAR(255) NOT NULL,
-                                       |  write_timestamp BIGINT,
-                                       |  adapter_manifest VARCHAR(255),
-                                       |
-                                       |  event_ser_id INTEGER NOT NULL,
-                                       |  event_ser_manifest VARCHAR(255) NOT NULL,
-                                       |  event_payload BYTEA NOT NULL,
-                                       |
-                                       |  meta_ser_id INTEGER,
-                                       |  meta_ser_manifest VARCHAR(255),
-                                       |  meta_payload BYTEA,
-                                       |
-                                       |  PRIMARY KEY(persistence_id, sequence_number)
-                                       |)""".stripMargin)
+          connection.createStatement(createJournalTableSql)
         },
         10.seconds)
 
       Await.result(
         r2dbcExecutor.executeDdl("beforeAll create jdbc tables") { connection =>
-          connection.createStatement("""CREATE TABLE IF NOT EXISTS jdbc_snapshot (
-                                       |  persistence_id VARCHAR(255) NOT NULL,
-                                       |  sequence_number BIGINT NOT NULL,
-                                       |  created BIGINT NOT NULL,
-                                       |
-                                       |  snapshot_ser_id INTEGER NOT NULL,
-                                       |  snapshot_ser_manifest VARCHAR(255) NOT NULL,
-                                       |  snapshot_payload BYTEA NOT NULL,
-                                       |
-                                       |  meta_ser_id INTEGER,
-                                       |  meta_ser_manifest VARCHAR(255),
-                                       |  meta_payload BYTEA,
-                                       |
-                                       |  PRIMARY KEY(persistence_id, sequence_number)
-                                       |)""".stripMargin)
+          connection.createStatement(createSnapshotTableSql)
         },
         10.seconds)
 
-      Await.result(
-        r2dbcExecutor.executeDdl("beforeAll create jdbc tables") { connection =>
-          connection.createStatement("""CREATE TABLE IF NOT EXISTS jdbc_durable_state (
-                                       |  global_offset BIGSERIAL,
-                                       |  persistence_id VARCHAR(255) NOT NULL,
-                                       |  revision BIGINT NOT NULL,
-                                       |  state_payload BYTEA NOT NULL,
-                                       |  state_serial_id INTEGER NOT NULL,
-                                       |  state_serial_manifest VARCHAR(255),
-                                       |  tag VARCHAR,
-                                       |  state_timestamp BIGINT NOT NULL,
-                                       |  PRIMARY KEY(persistence_id)
-                                       |);""".stripMargin)
-        },
-        10.seconds)
+      if (postgresTest) {
+        Await.result(
+          r2dbcExecutor.executeDdl("beforeAll create jdbc tables") { connection =>
+            connection.createStatement("""CREATE TABLE IF NOT EXISTS jdbc_durable_state (
+                                         |  global_offset BIGSERIAL,
+                                         |  persistence_id VARCHAR(255) NOT NULL,
+                                         |  revision BIGINT NOT NULL,
+                                         |  state_payload BYTEA NOT NULL,
+                                         |  state_serial_id INTEGER NOT NULL,
+                                         |  state_serial_manifest VARCHAR(255),
+                                         |  tag VARCHAR,
+                                         |  state_timestamp BIGINT NOT NULL,
+                                         |  PRIMARY KEY(persistence_id)
+                                         |);""".stripMargin)
+          },
+          10.seconds)
+      }
 
       Await.result(
         r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_event_journal")),
@@ -159,9 +234,11 @@ class MigrationToolSpec
       Await.result(
         r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_snapshot")),
         10.seconds)
-      Await.result(
-        r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_durable_state")),
-        10.seconds)
+      if (postgresTest) {
+        Await.result(
+          r2dbcExecutor.updateOne("beforeAll delete jdbc")(_.createStatement("delete from jdbc_durable_state")),
+          10.seconds)
+      }
 
       Await.result(migration.migrationDao.createProgressTable(), 10.seconds)
       Await.result(
@@ -211,10 +288,10 @@ class MigrationToolSpec
     probe.expectMessage(Done)
   }
 
-  "MigrationTool" should {
+  "MigrationTool Events" should {
     if (!testEnabled) {
       info(
-        s"MigrationToolSpec not enabled for ${system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect")}")
+        s"MigrationToolSpec (Events) not enabled for ${system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect")}")
       pending
     }
 
@@ -321,6 +398,16 @@ class MigrationToolSpec
       }
     }
 
+  }
+
+  "MigrationTool State" should {
+
+    if (!postgresTest) {
+      info(
+        s"MigrationToolSpec (State) not enabled for ${system.settings.config.getString("akka.persistence.r2dbc.connection-factory.dialect")}")
+      pending
+    }
+
     "migrate durable state of one persistenceId" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
       persistDurableState(pid, "s-1")
@@ -373,6 +460,6 @@ class MigrationToolSpec
         assertDurableState(pid, s"s-$pid")
       }
     }
-
   }
+
 }
