@@ -52,18 +52,26 @@ class H2AdditionalInitForSchemaSpec
   private val store = DurableStateStoreRegistry(testKit.system)
     .durableStateStoreFor[R2dbcDurableStateStore[String]](R2dbcDurableStateStore.Identifier)
 
-  private def exists(whereCondition: String): Boolean =
-    r2dbcExecutor
+  private def exists(slice: Int, whereCondition: String): Boolean =
+    r2dbcExecutor(slice)
       .selectOne("count")(
-        _.createStatement(s"select count(*) from durable_state where $whereCondition"),
+        _.createStatement(
+          s"select count(*) from ${r2dbcSettings.durableStateTableWithSchema(slice)} where $whereCondition"),
         row => row.get(0, classOf[java.lang.Long]).longValue())
       .futureValue
       .contains(1)
 
-  private def existsMatchingCol1(persistenceId: String, columnValue: String): Boolean =
-    exists(s"persistence_id = '$persistenceId' and col1 = '$columnValue'")
+  private def existsMatchingCol1(persistenceId: String, columnValue: String): Boolean = {
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    exists(slice, s"persistence_id = '$persistenceId' and col1 = '$columnValue'")
+  }
 
   "The R2DBC durable state store" should {
+
+    // configured addition-init would have to alter the right data partition table(s), so keeping
+    // it simple and not testing with data partitions here
+    pendingIfMoreThanOneDataPartition()
+
     "save and retrieve a value in custom table with additional columns" in {
       val entityType = "CustomEntity"
       val persistenceId = nextPid(entityType)
