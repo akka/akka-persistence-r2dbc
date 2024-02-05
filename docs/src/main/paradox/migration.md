@@ -56,7 +56,7 @@ The migration tool can be run as main class `akka.persistence.r2dbc.migration.Mi
 
 Durable State is not migrated by `MigrationTool.migrateAll`, instead you need to use `MigrationTool.migrateDurableStates` for a given list of persistence ids.
 
-@@@ note
+@@@
 
 ## Configuration
 
