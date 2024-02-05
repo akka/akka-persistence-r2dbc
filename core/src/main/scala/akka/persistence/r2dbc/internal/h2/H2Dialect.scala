@@ -24,6 +24,7 @@ import java.util.Locale
 
 import scala.concurrent.ExecutionContext
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 
@@ -36,6 +37,8 @@ private[r2dbc] object H2Dialect extends Dialect {
   override def name: String = "h2"
 
   override def adaptSettings(settings: R2dbcSettings): R2dbcSettings = {
+    if (settings.numberOfDatabases > 1)
+      throw new IllegalArgumentException("H2 dialect doesn't support more than one data-partition.number-of-databases")
     val res = settings
       // app timestamp is db timestamp because same process
       .withUseAppTimestamp(true)
@@ -84,21 +87,21 @@ private[r2dbc] object H2Dialect extends Dialect {
     new H2ConnectionFactory(h2Config)
   }
 
-  override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): JournalDao =
-    new H2JournalDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2JournalDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): SnapshotDao =
-    new H2SnapshotDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2SnapshotDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): QueryDao =
-    new H2QueryDao(settings, connectionFactory)(ecForDaos(system, settings), system)
+    new H2QueryDao(settings, executorProvider)(ecForDaos(system, settings), system)
 
-  override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new H2DurableStateDao(settings, connectionFactory, this)(ecForDaos(system, settings), system)
+    new H2DurableStateDao(settings, executorProvider, this)(ecForDaos(system, settings), system)
 
   private def ecForDaos(system: ActorSystem[_], settings: R2dbcSettings): ExecutionContext = {
     // H2 R2DBC driver blocks in surprising places (Mono.toFuture in stmt.execute().asFuture())
@@ -113,8 +116,16 @@ private[r2dbc] object H2Dialect extends Dialect {
       else Some(s)
     }
     val schema = optionalConfString("schema")
+    val numberOfDataPartitions = config.getInt("number-of-partitions")
     val journalTable = config.getString("journal-table")
     val journalTableWithSchema = schema.map(_ + ".").getOrElse("") + journalTable
+    val allJournalTablesWithSchema =
+      if (numberOfDataPartitions == 1)
+        Vector(journalTableWithSchema)
+      else
+        (0 until numberOfDataPartitions).map { dataPartition =>
+          s"${journalTableWithSchema}_$dataPartition"
+        }
     val snapshotTable = config.getString("snapshot-table")
     val snapshotTableWithSchema = schema.map(_ + ".").getOrElse("") + snapshotTable
     val durableStateTable = config.getString("state-table")
@@ -123,17 +134,20 @@ private[r2dbc] object H2Dialect extends Dialect {
     implicit val queryAdapter: QueryAdapter = IdentityAdapter
 
     val sliceIndexes = if (createSliceIndexes) {
-      val sliceIndexWithSchema = journalTableWithSchema + "_slice_idx"
+      val journalSliceIndexes = allJournalTablesWithSchema.map { table =>
+        val sliceIndexWithSchema = table + "_slice_idx"
+        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp, seq_nr)"""
+      }
       val snapshotSliceIndexWithSchema = snapshotTableWithSchema + "_slice_idx"
       val durableStateSliceIndexWithSchema = durableStateTableWithSchema + "_slice_idx"
+      journalSliceIndexes ++
       Seq(
-        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $journalTableWithSchema(slice, entity_type, db_timestamp, seq_nr)""",
         sql"""CREATE INDEX IF NOT EXISTS $snapshotSliceIndexWithSchema ON $snapshotTableWithSchema(slice, entity_type, db_timestamp)""",
         sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
     } else Seq.empty[String]
 
-    (Seq(
-      sql"""CREATE TABLE IF NOT EXISTS $journalTableWithSchema (
+    val createJournalTables = allJournalTablesWithSchema.map { table =>
+      sql"""CREATE TABLE IF NOT EXISTS $table (
         slice INT NOT NULL,
         entity_type VARCHAR(255) NOT NULL,
         persistence_id VARCHAR(255) NOT NULL,
@@ -154,7 +168,11 @@ private[r2dbc] object H2Dialect extends Dialect {
         meta_payload BYTEA,
 
         PRIMARY KEY(persistence_id, seq_nr)
-      )""",
+      )"""
+    }
+
+    (createJournalTables ++
+    Seq(
       sql"""
         CREATE TABLE IF NOT EXISTS $snapshotTableWithSchema (
           slice INT NOT NULL,
@@ -188,7 +206,9 @@ private[r2dbc] object H2Dialect extends Dialect {
 
           PRIMARY KEY(persistence_id, revision)
         )
-      """) ++ sliceIndexes ++ (if (additionalInit.trim.nonEmpty) Seq(additionalInit) else Seq.empty[String]))
+      """) ++
+    sliceIndexes ++
+    (if (additionalInit.trim.nonEmpty) Seq(additionalInit) else Seq.empty[String]))
       .mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT
   }
 }

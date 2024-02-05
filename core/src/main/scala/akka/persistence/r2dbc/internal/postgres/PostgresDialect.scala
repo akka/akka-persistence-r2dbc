@@ -25,6 +25,8 @@ import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+
 /**
  * INTERNAL API
  */
@@ -115,19 +117,19 @@ private[r2dbc] object PostgresDialect extends Dialect {
     ConnectionFactories.get(builder.build())
   }
 
-  override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): JournalDao =
-    new PostgresJournalDao(settings, connectionFactory)(system.executionContext, system)
+    new PostgresJournalDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): SnapshotDao =
-    new PostgresSnapshotDao(settings, connectionFactory)(system.executionContext, system)
+    new PostgresSnapshotDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): QueryDao =
-    new PostgresQueryDao(settings, connectionFactory)(system.executionContext, system)
+    new PostgresQueryDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new PostgresDurableStateDao(settings, connectionFactory, this)(system.executionContext, system)
+    new PostgresDurableStateDao(settings, executorProvider, this)(system.executionContext, system)
 }

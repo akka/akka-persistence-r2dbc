@@ -13,7 +13,6 @@ import akka.actor.typed.ActorSystem
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
-import akka.persistence.r2dbc.internal.h2.H2Dialect
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect
 import akka.persistence.r2dbc.internal.postgres.YugabyteDialect
 import com.typesafe.config.Config
@@ -73,6 +72,8 @@ class R2dbcExecutorSpec
   }
 
   "R2dbcExecutor" should {
+    // when number-of-databases > 1 the test config above will not be used
+    pendingIfMoreThanOneDataPartition()
 
     "close connection when no response from update" in {
       pendingIfCannotBeTestedWithDialect()

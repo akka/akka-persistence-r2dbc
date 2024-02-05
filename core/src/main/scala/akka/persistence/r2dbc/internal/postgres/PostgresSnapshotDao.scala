@@ -29,6 +29,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
@@ -49,7 +50,7 @@ private[r2dbc] object PostgresSnapshotDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
     extends SnapshotDao {
@@ -60,11 +61,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
 
   protected val snapshotTable: String = settings.snapshotsTableWithSchema
 
-  protected val r2dbcExecutor = new R2dbcExecutor(
-    connectionFactory,
-    log,
-    settings.logDbCallsExceeding,
-    settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
+  protected val r2dbcExecutor = executorProvider.executorFor(slice = 0) // FIXME support data partitions
 
   protected def createUpsertSql: String = {
     // db_timestamp and tags columns were added in 1.2.0
@@ -342,7 +339,7 @@ private[r2dbc] class PostgresSnapshotDao(settings: R2dbcSettings, connectionFact
   /**
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
    */
-  override def currentDbTimestamp(): Future[Instant] = {
+  override def currentDbTimestamp(slice: Int): Future[Instant] = {
     r2dbcExecutor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),

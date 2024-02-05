@@ -11,6 +11,8 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 
+import org.slf4j.LoggerFactory
+
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
@@ -18,11 +20,8 @@ import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.SnapshotSelectionCriteria
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.SnapshotDao
-import org.slf4j.LoggerFactory
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * Scala API: Tool for deleting all events and/or snapshots for a given list of `persistenceIds` without using
@@ -60,10 +59,10 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
   private val sharedConfigPath = configPath.replaceAll("""\.cleanup$""", "")
   private val settings = R2dbcSettings(system.settings.config.getConfig(sharedConfigPath))
 
-  private val connectionFactory =
-    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val journalDao = settings.connectionFactorySettings.dialect.createJournalDao(settings, connectionFactory)
-  private val snapshotDao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
+  private val journalDao = settings.connectionFactorySettings.dialect.createJournalDao(settings, executorProvider)
+  private val snapshotDao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)
 
   /**
    * Delete all events before a sequenceNr for the given persistence id. Snapshots are not deleted.

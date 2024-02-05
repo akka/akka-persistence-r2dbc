@@ -63,6 +63,7 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   "Event Sourced currentPersistenceIds" should {
+
     "retrieve all ids" in {
       val result = query.currentPersistenceIds().runWith(Sink.seq).futureValue
       result shouldBe pids.map(_.id)

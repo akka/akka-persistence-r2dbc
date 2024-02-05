@@ -31,6 +31,23 @@ class PersistTagsSpec
   import settings.codecSettings.JournalImplicits.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
+  private def selectRows(table: String, minSlice: Int): IndexedSeq[Row] = {
+    r2dbcExecutor(minSlice)
+      .select[Row]("test")(
+        connection => connection.createStatement(s"select * from $table"),
+        row =>
+          Row(
+            pid = row.get("persistence_id", classOf[String]),
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+            row.getTags("tags")))
+      .futureValue
+  }
+
+  private def selectAllRows(): IndexedSeq[Row] =
+    r2dbcSettings.allJournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
+      selectRows(table, minSlice)
+    }
+
   "Persist tags" should {
 
     "be the same for events stored in same transaction" in {
@@ -53,16 +70,7 @@ class PersistTagsSpec
       }
       pingProbe.receiveMessages(entities.size, 20.seconds)
 
-      val rows =
-        r2dbcExecutor
-          .select[Row]("test")(
-            connection => connection.createStatement(s"select * from ${settings.journalTableWithSchema}"),
-            row =>
-              Row(
-                pid = row.get("persistence_id", classOf[String]),
-                seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-                row.getTags("tags")))
-          .futureValue
+      val rows = selectAllRows()
 
       rows.foreach { case Row(pid, _, tags) =>
         withClue(s"pid [$pid}]: ") {

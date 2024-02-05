@@ -18,6 +18,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -32,10 +33,10 @@ private[r2dbc] object SqlServerJournalDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresJournalDao(settings, connectionFactory) {
+    extends PostgresJournalDao(settings, executorProvider) {
   import settings.codecSettings.JournalImplicits._
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")
@@ -45,9 +46,9 @@ private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFact
 
   override def log = SqlServerJournalDao.log
 
-  override protected val insertEventWithParameterTimestampSql =
+  override protected def insertEventWithParameterTimestampSql(slice: Int) =
     sql"""
-      INSERT INTO $journalTable
+      INSERT INTO ${journalTable(slice)}
       (slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp)
       OUTPUT inserted.db_timestamp
       VALUES (@slice, @entityType, @persistenceId, @seqNr, @writer, @adapterManifest, @eventSerId, @eventSerManifest, @eventPayload, @tags, @metaSerId, @metaSerManifest, @metaSerPayload, @dbTimestamp)"""
@@ -55,5 +56,6 @@ private[r2dbc] class SqlServerJournalDao(settings: R2dbcSettings, connectionFact
   override protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement =
     stmt.bindTimestamp(getAndIncIndex(), InstantFactory.now())
 
-  override def insertDeleteMarkerSql(timestamp: String): String = super.insertDeleteMarkerSql("?")
+  override def insertDeleteMarkerSql(slice: Int, timestamp: String): String =
+    super.insertDeleteMarkerSql(slice, "?")
 }

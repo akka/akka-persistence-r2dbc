@@ -16,14 +16,16 @@ import scala.concurrent.ExecutionContext
 
 import io.r2dbc.spi.Row
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+private[r2dbc] final class H2SnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
     ec: ExecutionContext,
     system: ActorSystem[_])
-    extends PostgresSnapshotDao(settings, connectionFactory) {
+    extends PostgresSnapshotDao(settings, executorProvider) {
   import settings.codecSettings.SnapshotImplicits._
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2SnapshotDao])

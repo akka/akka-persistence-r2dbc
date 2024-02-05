@@ -6,7 +6,6 @@ package akka.persistence.r2dbc.internal.postgres
 
 import scala.concurrent.ExecutionContext
 
-import io.r2dbc.spi._
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -14,6 +13,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.Dialect
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
  * INTERNAL API
@@ -21,9 +21,9 @@ import akka.persistence.r2dbc.internal.Dialect
 @InternalApi
 private[r2dbc] final class YugabyteDurableStateDao(
     settings: R2dbcSettings,
-    connectionFactory: ConnectionFactory,
+    executorProvider: R2dbcExecutorProvider,
     dialect: Dialect)(implicit ec: ExecutionContext, system: ActorSystem[_])
-    extends PostgresDurableStateDao(settings, connectionFactory, dialect) {
+    extends PostgresDurableStateDao(settings, executorProvider, dialect) {
 
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[YugabyteDurableStateDao])
 

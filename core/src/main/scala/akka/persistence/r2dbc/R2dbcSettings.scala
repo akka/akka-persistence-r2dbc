@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc
 
+import scala.collection.immutable
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
@@ -26,18 +27,14 @@ import scala.concurrent.duration._
 @InternalStableApi
 object R2dbcSettings {
 
+  // must correspond to akka.persistence.Persistence.numberOfSlices
+  private val NumberOfSlices = 1024
+
   def apply(config: Config): R2dbcSettings = {
     if (config.hasPath("dialect")) {
       throw new IllegalArgumentException(
         "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
         "the old 'dialect' config entry must be removed, " +
-        "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
-    }
-    if (!config.hasPath("connection-factory.dialect")) {
-      throw new IllegalArgumentException(
-        "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
-        "to choose database dialect using the connection-factory block, " +
         "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
         "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
     }
@@ -77,7 +74,45 @@ object R2dbcSettings {
 
     val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
 
-    val connectionFactorySettings = ConnectionFactorySettings(config.getConfig("connection-factory"))
+    val numberOfDataPartitions = config.getInt("data-partition.number-of-partitions")
+    require(
+      1 <= numberOfDataPartitions && numberOfDataPartitions <= NumberOfSlices,
+      s"data-partition.number-of-partitions [$numberOfDataPartitions] must be between 1 and $NumberOfSlices")
+    require(
+      numberOfDataPartitions * (NumberOfSlices / numberOfDataPartitions) == NumberOfSlices,
+      s"data-partition.number-of-partitions [$numberOfDataPartitions] must be a whole number divisor of " +
+      s"numberOfSlices [$NumberOfSlices].")
+
+    val numberOfDatabases = config.getInt("data-partition.number-of-databases")
+    require(
+      1 <= numberOfDatabases && numberOfDatabases <= numberOfDataPartitions,
+      s"data-partition.number-of-databases [$numberOfDatabases] must be between 1 and $numberOfDataPartitions")
+    require(
+      numberOfDatabases * (numberOfDataPartitions / numberOfDatabases) == numberOfDataPartitions,
+      s"data-partition.number-of-databases [$numberOfDatabases] must be a whole number divisor of " +
+      s"data-partition.number-of-partitions [$numberOfDataPartitions].")
+
+    val connectionFactorySettings =
+      if (numberOfDatabases == 1) {
+        if (!config.hasPath("connection-factory.dialect")) {
+          throw new IllegalArgumentException(
+            "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
+            "to choose database dialect using the connection-factory block, " +
+            "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
+            "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+        }
+        Vector(ConnectionFactorySettings(config.getConfig("connection-factory")))
+      } else {
+        val rangeSize = numberOfDataPartitions / numberOfDatabases
+        (0 until numberOfDatabases).map { i =>
+          val configPropertyName = s"connection-factory-${i * rangeSize}-${i * rangeSize + rangeSize - 1}"
+          ConnectionFactorySettings(config.getConfig(configPropertyName))
+        }
+      }
+
+    require(
+      connectionFactorySettings.map(_.dialect.name).toSet.size == 1,
+      s"All dialects for the [${connectionFactorySettings.size}] database partitions must be the same.")
 
     val querySettings = new QuerySettings(config.getConfig("query"))
 
@@ -99,13 +134,13 @@ object R2dbcSettings {
       val durableStatePayloadCodec: PayloadCodec =
         if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
 
-      connectionFactorySettings.dialect.name match {
+      connectionFactorySettings.head.dialect.name match {
         case "sqlserver" =>
           new CodecSettings(
             journalPayloadCodec,
             snapshotPayloadCodec,
             durableStatePayloadCodec,
-            tagsCodec = new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.config),
+            tagsCodec = new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.head.config),
             timestampCodec = TimestampCodec.SqlServerTimestampCodec,
             queryAdapter = SqlServerQueryAdapter)
         case "h2" =>
@@ -144,7 +179,8 @@ object R2dbcSettings {
       durableStateTableByEntityType,
       durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses,
-      useAppTimestamp)
+      useAppTimestamp,
+      numberOfDataPartitions)
 
     // let the dialect trump settings that does not make sense for it
     settingsFromConfig.connectionFactorySettings.dialect.adaptSettings(settingsFromConfig)
@@ -154,6 +190,24 @@ object R2dbcSettings {
     import akka.util.ccompat.JavaConverters._
     cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
   }
+
+  /**
+   * The config paths for the connection factories that are used for the given number of data partitions and databases.
+   */
+  def connectionFactoryConfigPaths(
+      baseConfigPath: String,
+      numberOfDataPartitions: Int,
+      numberOfDatabases: Int): immutable.IndexedSeq[String] = {
+    if (numberOfDatabases == 1) {
+      Vector(baseConfigPath)
+    } else {
+      val rangeSize = numberOfDataPartitions / numberOfDatabases
+      (0 until numberOfDatabases).map { i =>
+        s"$baseConfigPath-${i * rangeSize}-${i * rangeSize + rangeSize - 1}"
+      }
+    }
+  }
+
 }
 
 /**
@@ -173,20 +227,73 @@ final class R2dbcSettings private (
     val cleanupSettings: CleanupSettings,
     /** INTERNAL API */
     @InternalApi private[akka] val codecSettings: CodecSettings,
-    _connectionFactorySettings: ConnectionFactorySettings,
+    _connectionFactorySettings: immutable.IndexedSeq[ConnectionFactorySettings],
     _durableStateTableByEntityType: Map[String, String],
     _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
     _durableStateChangeHandlerClasses: Map[String, String],
-    _useAppTimestamp: Boolean) {
+    _useAppTimestamp: Boolean,
+    val numberOfDataPartitions: Int) {
+  import R2dbcSettings.NumberOfSlices
 
+  /**
+   * The journal table and schema name without data partition suffix.
+   */
   val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
+
+  /**
+   * The journal table and schema name with data partition suffix for the given slice. When number-of-partitions is 1
+   * the table name is without suffix.
+   */
+  def journalTableWithSchema(slice: Int): String = {
+    if (numberOfDataPartitions == 1)
+      journalTableWithSchema
+    else
+      s"${journalTableWithSchema}_${dataPartition(slice)}"
+  }
+
   val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
   val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
 
   /**
+   * INTERNAL API: All journal tables and their the lower slice
+   */
+  @InternalApi private[akka] val allJournalTablesWithSchema: Map[String, Int] = {
+    (0 until NumberOfSlices).foldLeft(Map.empty[String, Int]) { case (acc, slice) =>
+      val table = journalTableWithSchema(slice)
+      if (acc.contains(table)) acc
+      else acc.updated(table, slice)
+    }
+  }
+
+  val numberOfDatabases: Int = _connectionFactorySettings.size
+
+  val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDataPartitions
+    (0 until numberOfDataPartitions).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
+  val connectionFactorSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDatabases
+    (0 until numberOfDatabases).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def isSliceRangeWithinSameDataPartition(minSlice: Int, maxSlice: Int): Boolean =
+    numberOfDataPartitions == 1 || dataPartition(minSlice) == dataPartition(maxSlice)
+
+  private def dataPartition(slice: Int): Int =
+    slice / (NumberOfSlices / numberOfDataPartitions)
+
+  /**
    * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
    */
-  def dialectName: String = _connectionFactorySettings.dialect.name
+  def dialectName: String = connectionFactorySettings.dialect.name
 
   def getDurableStateTable(entityType: String): String =
     _durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
@@ -235,7 +342,30 @@ final class R2dbcSettings private (
   /**
    * INTERNAL API
    */
-  @InternalApi private[akka] def connectionFactorySettings: ConnectionFactorySettings = _connectionFactorySettings
+  @InternalApi private[akka] def connectionFactorySettings: ConnectionFactorySettings =
+    connectionFactorySettings(0)
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def connectionFactorySettings(slice: Int): ConnectionFactorySettings = {
+    val rangeSize = numberOfDataPartitions / numberOfDatabases
+    val i = dataPartition(slice) / rangeSize
+    _connectionFactorySettings(i)
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def resolveConnectionFactoryConfigPath(baseConfigPath: String, slice: Int): String = {
+    if (numberOfDatabases == 1) {
+      baseConfigPath
+    } else {
+      val rangeSize = numberOfDataPartitions / numberOfDatabases
+      val i = dataPartition(slice) / rangeSize
+      s"$baseConfigPath-${i * rangeSize}-${i * rangeSize + rangeSize - 1}"
+    }
+  }
 
   private def copy(
       schema: Option[String] = schema,
@@ -249,12 +379,13 @@ final class R2dbcSettings private (
       dbTimestampMonotonicIncreasing: Boolean = dbTimestampMonotonicIncreasing,
       cleanupSettings: CleanupSettings = cleanupSettings,
       codecSettings: CodecSettings = codecSettings,
-      connectionFactorySettings: ConnectionFactorySettings = connectionFactorySettings,
+      connectionFactorySettings: immutable.IndexedSeq[ConnectionFactorySettings] = _connectionFactorySettings,
       durableStateTableByEntityType: Map[String, String] = _durableStateTableByEntityType,
       durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
         _durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses: Map[String, String] = _durableStateChangeHandlerClasses,
-      useAppTimestamp: Boolean = _useAppTimestamp): R2dbcSettings =
+      useAppTimestamp: Boolean = _useAppTimestamp,
+      numberOfDataPartitions: Int = numberOfDataPartitions): R2dbcSettings =
     new R2dbcSettings(
       schema,
       journalTable,
@@ -268,13 +399,14 @@ final class R2dbcSettings private (
       cleanupSettings,
       codecSettings,
       connectionFactorySettings,
-      _durableStateTableByEntityType,
-      _durableStateAdditionalColumnClasses,
-      _durableStateChangeHandlerClasses,
-      useAppTimestamp)
+      durableStateTableByEntityType,
+      durableStateAdditionalColumnClasses,
+      durableStateChangeHandlerClasses,
+      useAppTimestamp,
+      numberOfDataPartitions)
 
   override def toString =
-    s"R2dbcSettings(dialectName=$dialectName, schema=$schema, journalTable=$journalTable, snapshotsTable=$snapshotsTable, durableStateTable=$durableStateTable, logDbCallsExceeding=$logDbCallsExceeding, dbTimestampMonotonicIncreasing=$dbTimestampMonotonicIncreasing, useAppTimestamp=$useAppTimestamp)"
+    s"R2dbcSettings(dialectName=$dialectName, schema=$schema, journalTable=$journalTable, snapshotsTable=$snapshotsTable, durableStateTable=$durableStateTable, logDbCallsExceeding=$logDbCallsExceeding, dbTimestampMonotonicIncreasing=$dbTimestampMonotonicIncreasing, useAppTimestamp=$useAppTimestamp, numberOfDataPartitions=$numberOfDataPartitions)"
 }
 
 /**

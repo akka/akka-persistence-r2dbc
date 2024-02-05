@@ -15,6 +15,8 @@ import akka.persistence.r2dbc.internal.SnapshotDao
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+
 /**
  * INTERNAL API
  */
@@ -26,19 +28,19 @@ private[r2dbc] object YugabyteDialect extends Dialect {
   override def createConnectionFactory(config: Config): ConnectionFactory =
     PostgresDialect.createConnectionFactory(config)
 
-  override def createJournalDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createJournalDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): JournalDao =
-    new PostgresJournalDao(settings, connectionFactory)(system.executionContext, system)
+    new PostgresJournalDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createSnapshotDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createSnapshotDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): SnapshotDao =
-    new YugabyteSnapshotDao(settings, connectionFactory)(system.executionContext, system)
+    new YugabyteSnapshotDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createQueryDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createQueryDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): QueryDao =
-    new YugabyteQueryDao(settings, connectionFactory)(system.executionContext, system)
+    new YugabyteQueryDao(settings, executorProvider)(system.executionContext, system)
 
-  override def createDurableStateDao(settings: R2dbcSettings, connectionFactory: ConnectionFactory)(implicit
+  override def createDurableStateDao(settings: R2dbcSettings, executorProvider: R2dbcExecutorProvider)(implicit
       system: ActorSystem[_]): DurableStateDao =
-    new YugabyteDurableStateDao(settings, connectionFactory, this)(system.executionContext, system)
+    new YugabyteDurableStateDao(settings, executorProvider, this)(system.executionContext, system)
 }

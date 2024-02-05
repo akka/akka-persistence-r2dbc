@@ -92,6 +92,11 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
    * The stream is not completed when it reaches the end of the currently stored events, but it continues to push new
    * events when new events are persisted. Corresponding query that is completed when it reaches the end of the
    * currently stored events is provided by [[R2dbcReadJournal.currentEventsBySlices]].
+   *
+   * The slice range cannot span over more than one data partition, which in practise means that the number of
+   * Projection instances must be be greater than or equal to the number of data partitions. For example, with 4 data
+   * partitions the slice range (0 - 255) is allowed but not (0 - 511). Smaller slice range such as (0 - 127) is also
+   * allowed.
    */
   override def eventsBySlices[Event](
       entityType: String,

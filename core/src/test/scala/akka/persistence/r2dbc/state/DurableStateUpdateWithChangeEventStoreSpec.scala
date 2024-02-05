@@ -4,8 +4,6 @@
 
 package akka.persistence.r2dbc.state
 
-import org.scalatest.concurrent.ScalaFutures.convertScalaFuture
-
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -47,6 +45,8 @@ class DurableStateUpdateWithChangeEventStoreSpec
   private val tag = "TAG"
 
   "The R2DBC durable state store" should {
+    pendingIfMoreThanOneDataPartition() // FIXME
+
     "save additional change event" in {
       val entityType = nextEntityType()
       val persistenceId = PersistenceId(entityType, "my-persistenceId").id
@@ -176,37 +176,36 @@ class DurableStateUpdateWithChangeEventStoreSpec
       envelopes.size shouldBe 2
     }
 
-  }
+    "publish change event" in {
+      val entityType = nextEntityType()
+      val persistenceId = PersistenceId(entityType, "my-persistenceId").id
 
-  "publish change event" in {
-    val entityType = nextEntityType()
-    val persistenceId = PersistenceId(entityType, "my-persistenceId").id
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+      val topic = PubSub(system).eventTopic[String](entityType, slice)
+      val subscriberProbe = createTestProbe[EventEnvelope[String]]()
+      topic ! Topic.Subscribe(subscriberProbe.ref)
 
-    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
-    val topic = PubSub(system).eventTopic[String](entityType, slice)
-    val subscriberProbe = createTestProbe[EventEnvelope[String]]()
-    topic ! Topic.Subscribe(subscriberProbe.ref)
+      val value1 = "Genuinely Collaborative"
+      val value2 = "Open to Feedback"
 
-    val value1 = "Genuinely Collaborative"
-    val value2 = "Open to Feedback"
+      store.upsertObject(persistenceId, 1L, value1, tag, s"Changed to $value1").futureValue
+      store.upsertObject(persistenceId, 2L, value2, tag, s"Changed to $value2").futureValue
+      store.deleteObject(persistenceId, 3L, "Deleted").futureValue
 
-    store.upsertObject(persistenceId, 1L, value1, tag, s"Changed to $value1").futureValue
-    store.upsertObject(persistenceId, 2L, value2, tag, s"Changed to $value2").futureValue
-    store.deleteObject(persistenceId, 3L, "Deleted").futureValue
+      val env1 = subscriberProbe.receiveMessage()
+      env1.event shouldBe s"Changed to $value1"
+      env1.sequenceNr shouldBe 1L
+      env1.tags shouldBe Set(tag)
+      env1.source shouldBe EnvelopeOrigin.SourcePubSub
 
-    val env1 = subscriberProbe.receiveMessage()
-    env1.event shouldBe s"Changed to $value1"
-    env1.sequenceNr shouldBe 1L
-    env1.tags shouldBe Set(tag)
-    env1.source shouldBe EnvelopeOrigin.SourcePubSub
+      val env2 = subscriberProbe.receiveMessage()
+      env2.event shouldBe s"Changed to $value2"
+      env2.sequenceNr shouldBe 2L
 
-    val env2 = subscriberProbe.receiveMessage()
-    env2.event shouldBe s"Changed to $value2"
-    env2.sequenceNr shouldBe 2L
-
-    val env3 = subscriberProbe.receiveMessage()
-    env3.event shouldBe s"Deleted"
-    env3.sequenceNr shouldBe 3L
+      val env3 = subscriberProbe.receiveMessage()
+      env3.event shouldBe s"Deleted"
+      env3.sequenceNr shouldBe 3L
+    }
   }
 
 }

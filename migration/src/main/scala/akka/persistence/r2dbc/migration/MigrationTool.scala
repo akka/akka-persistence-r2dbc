@@ -6,7 +6,6 @@ package akka.persistence.r2dbc.migration
 
 import java.time.Instant
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
@@ -30,7 +29,6 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.scaladsl.CurrentEventsByPersistenceIdQuery
 import akka.persistence.query.scaladsl.CurrentPersistenceIdsQuery
 import akka.persistence.query.scaladsl.ReadJournal
-import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.SerializedEventMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao
@@ -49,6 +47,7 @@ import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.state.DurableStateStoreRegistry
 import akka.persistence.state.scaladsl.DurableStateStore
 import akka.persistence.state.scaladsl.GetObjectResult
@@ -126,16 +125,19 @@ class MigrationTool(system: ActorSystem[_]) {
 
   private val serialization: Serialization = SerializationExtension(system)
 
-  private val targetConnectionFactory = ConnectionFactoryProvider(system)
-    .connectionFactoryFor(targetPluginId + ".connection-factory")
+  private val targetExecutorProvider = new R2dbcExecutorProvider(
+    targetR2dbcSettings,
+    targetPluginId + ".connection-factory",
+    LoggerFactory.getLogger(getClass))
+
   private val targetJournalDao =
-    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetR2dbcSettings, targetConnectionFactory)
+    targetR2dbcSettings.connectionFactorySettings.dialect.createJournalDao(targetR2dbcSettings, targetExecutorProvider)
   private val targetSnapshotDao =
     targetR2dbcSettings.connectionFactorySettings.dialect
-      .createSnapshotDao(targetR2dbcSettings, targetConnectionFactory)
+      .createSnapshotDao(targetR2dbcSettings, targetExecutorProvider)
   private val targetDurableStateDao =
     targetR2dbcSettings.connectionFactorySettings.dialect
-      .createDurableStateDao(targetR2dbcSettings, targetConnectionFactory)
+      .createDurableStateDao(targetR2dbcSettings, targetExecutorProvider)
 
   private val targetBatch = migrationConfig.getInt("target.batch")
 
@@ -154,11 +156,7 @@ class MigrationTool(system: ActorSystem[_]) {
   if (targetR2dbcSettings.dialectName == "h2") {
     log.error("Migrating to H2 using the migration tool not currently supported")
   }
-  private[r2dbc] val migrationDao =
-    new MigrationToolDao(
-      targetConnectionFactory,
-      targetR2dbcSettings.logDbCallsExceeding,
-      targetR2dbcSettings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+  private[r2dbc] val migrationDao = new MigrationToolDao(targetExecutorProvider)
 
   private lazy val createProgressTable: Future[Done] =
     migrationDao.createProgressTable()

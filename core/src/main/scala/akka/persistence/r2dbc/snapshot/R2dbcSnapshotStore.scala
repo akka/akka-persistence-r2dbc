@@ -9,17 +9,18 @@ import java.time.Instant
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
-import akka.persistence.r2dbc.{ ConnectionFactoryProvider, R2dbcSettings }
+import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.snapshot.SnapshotStore
 import akka.serialization.{ Serialization, SerializationExtension }
 import com.typesafe.config.Config
 import scala.concurrent.{ ExecutionContext, Future }
 
+import org.slf4j.LoggerFactory
+
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
-import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.internal.JournalDao
-import akka.persistence.r2dbc.internal.SnapshotDao
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.persistence.typed.PersistenceId
@@ -58,10 +59,10 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   val settings = R2dbcSettings(context.system.settings.config.getConfig(sharedConfigPath))
   log.debug("R2DBC snapshot store starting up with dialect [{}]", settings.dialectName)
 
-  private val connectionFactory =
-    ConnectionFactoryProvider(system).connectionFactoryFor(sharedConfigPath + ".connection-factory")
-  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, connectionFactory)
-  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, connectionFactory)
+  private val executorProvider =
+    new R2dbcExecutorProvider(settings, sharedConfigPath + ".connection-factory", LoggerFactory.getLogger(getClass))
+  private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(settings, executorProvider)
+  private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(settings, executorProvider)
 
   def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =
     dao

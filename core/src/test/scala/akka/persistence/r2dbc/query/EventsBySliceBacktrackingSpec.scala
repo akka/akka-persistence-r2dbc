@@ -67,12 +67,12 @@ class EventsBySliceBacktrackingSpec
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
     log.debugN("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
     val insertEventSql = sql"""
-      INSERT INTO ${settings.journalTableWithSchema}
+      INSERT INTO ${settings.journalTableWithSchema(slice)}
       (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
       VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
     val entityType = PersistenceId.extractEntityType(persistenceId)
 
-    val result = r2dbcExecutor.updateOne("test writeEvent") { connection =>
+    val result = r2dbcExecutor(slice).updateOne("test writeEvent") { connection =>
       connection
         .createStatement(insertEventSql)
         .bind(0, slice)
@@ -89,6 +89,8 @@ class EventsBySliceBacktrackingSpec
   "eventsBySlices backtracking" should {
 
     "find old events with earlier timestamp" in {
+      pendingIfMoreThanOneDataPartition()
+
       // this scenario is handled by the backtracking query
       val entityType = nextEntityType()
       val pid1 = nextPid(entityType)
@@ -179,6 +181,8 @@ class EventsBySliceBacktrackingSpec
     }
 
     "emit from backtracking after first normal query" in {
+      pendingIfMoreThanOneDataPartition()
+
       val entityType = nextEntityType()
       val pid1 = nextPid(entityType)
       val pid2 = nextPid(entityType)
@@ -237,6 +241,8 @@ class EventsBySliceBacktrackingSpec
     }
 
     "predict backtracking filtered events based on latest seen counts" in {
+      pendingIfMoreThanOneDataPartition()
+
       val entityType = nextEntityType()
       val pid = nextPid(entityType)
       val slice = query.sliceForPersistenceId(pid)

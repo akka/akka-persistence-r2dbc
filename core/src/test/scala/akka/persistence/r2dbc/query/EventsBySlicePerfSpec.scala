@@ -131,6 +131,8 @@ class EventsBySlicePerfSpec
     }
 
     "write and read concurrently" in {
+      pendingIfMoreThanOneDataPartition()
+
       // increase these properties for "real" testing
       // also, remove LogCapturing and change logback log levels for "real" testing
       val numberOfEventsPerWriter = 20

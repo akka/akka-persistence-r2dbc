@@ -7,6 +7,7 @@ package akka.persistence.r2dbc.internal
 import java.util.function.BiConsumer
 
 import scala.collection.immutable
+import scala.collection.immutable.IntMap
 import scala.collection.mutable
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext
@@ -33,6 +34,9 @@ import org.reactivestreams.Publisher
 import org.slf4j.Logger
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+
+import akka.persistence.r2dbc.ConnectionFactoryProvider
+import akka.persistence.r2dbc.R2dbcSettings
 
 /**
  * INTERNAL API
@@ -382,4 +386,34 @@ class R2dbcExecutor(
     // throw by PooledConnection assertNotClosed, if connection closed after timeout
     Future.successful(Done)
   }
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalStableApi class R2dbcExecutorProvider(
+    val settings: R2dbcSettings,
+    connectionFactoryBaseConfigPath: String,
+    log: Logger)(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+  private val connectionFactoryProvider = ConnectionFactoryProvider(system)
+  private var cache = IntMap.empty[R2dbcExecutor]
+
+  def executorFor(slice: Int): R2dbcExecutor = {
+    cache.get(slice) match {
+      case Some(executor) => executor
+      case None =>
+        val connectionFactoryConfigPath =
+          settings.resolveConnectionFactoryConfigPath(connectionFactoryBaseConfigPath, slice)
+        val connectionFactory = connectionFactoryProvider.connectionFactoryFor(connectionFactoryConfigPath)
+        val executor = new R2dbcExecutor(
+          connectionFactory,
+          log,
+          settings.logDbCallsExceeding,
+          settings.connectionFactorySettings.poolSettings.closeCallsExceeding)
+        // it's just a cache so no need for guarding concurrent updates or visibility
+        cache = cache.updated(slice, executor)
+        executor
+    }
+  }
+
 }
