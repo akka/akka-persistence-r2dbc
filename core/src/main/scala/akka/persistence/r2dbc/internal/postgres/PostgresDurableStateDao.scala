@@ -107,18 +107,15 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def durableStateTable(entityType: String, slice: Int): String =
-    settings.getDurableStateTableWithSchema(entityType, slice)
-
   protected def selectStateSql(slice: Int, entityType: String): String = {
-    val stateTable = durableStateTable(entityType, slice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     sql"""
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
     FROM $stateTable WHERE persistence_id = ?"""
   }
 
   protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = durableStateTable(entityType, minSlice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
     sql"""
      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
      FROM $stateTable
@@ -136,7 +133,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = durableStateTable(entityType, slice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     val additionalCols = additionalInsertColumns(additionalBindings)
     val additionalParams = additionalInsertParameters(additionalBindings)
     sql"""
@@ -183,7 +180,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
       currentTimestamp: String = "CURRENT_TIMESTAMP"): String = {
 
-    val stateTable = durableStateTable(entityType, slice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
 
     val timestamp =
       if (settings.dbTimestampMonotonicIncreasing)
@@ -223,7 +220,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   protected def hardDeleteStateSql(entityType: String, slice: Int): String = {
-    val stateTable = durableStateTable(entityType, slice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     sql"DELETE from $stateTable WHERE persistence_id = ?"
   }
 
@@ -267,7 +264,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       minSlice: Int,
       maxSlice: Int): String = {
 
-    val stateTable = durableStateTable(entityType, minSlice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""

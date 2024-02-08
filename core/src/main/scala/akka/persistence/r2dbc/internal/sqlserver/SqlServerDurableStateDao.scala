@@ -48,7 +48,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
       slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = durableStateTable(entityType, slice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     val additionalCols = additionalInsertColumns(additionalBindings)
     val additionalParams = additionalInsertParameters(additionalBindings)
     sql"""
@@ -69,7 +69,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
     super.updateStateSql(slice, entityType, updateTags, additionalBindings, currentTimestamp = "?")
 
   override def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = durableStateTable(entityType, minSlice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
     val subQuery =
       s"""
@@ -126,7 +126,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
         s"AND db_timestamp < DATEADD(ms, -${behindCurrentTime.toMillis}, @now)"
       else ""
 
-    val stateTable = durableStateTable(entityType, minSlice)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < @until" else ""
