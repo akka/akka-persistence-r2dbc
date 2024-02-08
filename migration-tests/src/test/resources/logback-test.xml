@@ -8,14 +8,17 @@
     </appender>
 
 
+    <appender name="CapturingAppender" class="akka.actor.testkit.typed.internal.CapturingAppender"/>
 <!--    <logger name="akka.persistence.r2dbc.migration.MigrationTool" level="DEBUG" />-->
 
-<!--    <logger name="akka.persistence.r2dbc" level="DEBUG" />-->
+    <logger name="akka.persistence.r2dbc" level="DEBUG" />
 <!--    <logger name="io.r2dbc.postgresql.QUERY" level="DEBUG" />-->
+<!--        <logger name="io.r2dbc.mssql.QUERY" level="DEBUG" />-->
 <!--    <logger name="io.r2dbc.pool" level="DEBUG" />-->
 
     <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="CapturingAppender"/>
+<!--        <appender-ref ref="STDOUT"/>-->
     </root>
 
 </configuration>

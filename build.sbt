@@ -160,7 +160,7 @@ lazy val docs = project
       "scaladoc.akka.base_url" -> s"https://doc.akka.io/api/akka/${Dependencies.AkkaVersionInDocs}/",
       "javadoc.akka.base_url" -> s"https://doc.akka.io/japi/akka/${Dependencies.AkkaVersionInDocs}/",
       "scaladoc.com.typesafe.config.base_url" -> s"https://lightbend.github.io/config/latest/api/",
-      "sqlserver.version" -> Dependencies.SqlServerVersion),
+      "sqlserver.version" -> Dependencies.SqlServerR2dbcVersion),
     ApidocPlugin.autoImport.apidocRootPackage := "akka",
     apidocRootPackage := "akka",
     resolvers += Resolver.jcenterRepo,

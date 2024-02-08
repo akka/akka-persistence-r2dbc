@@ -15,7 +15,8 @@ object Dependencies {
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.2.224"
   val R2dbcH2Version = "1.0.0.RELEASE"
-  val SqlServerVersion = "1.0.2.RELEASE"
+  val SqlServerR2dbcVersion = "1.0.2.RELEASE"
+  val SqlServerJdbcVersion = "7.4.1.jre8"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -30,7 +31,7 @@ object Dependencies {
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
 
-    val r2dbcSqlServer = "io.r2dbc" % "r2dbc-mssql" % SqlServerVersion % Provided // ApacheV2
+    val r2dbcSqlServer = "io.r2dbc" % "r2dbc-mssql" % SqlServerR2dbcVersion % Provided // ApacheV2
   }
 
   object TestDeps {
@@ -72,6 +73,7 @@ object Dependencies {
   val migrationTests =
     Seq(
       "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
+      "com.microsoft.sqlserver" % "mssql-jdbc" % SqlServerJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,
       TestDeps.scalaTest,
