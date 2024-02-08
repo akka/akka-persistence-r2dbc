@@ -85,8 +85,6 @@ class DurableStateStoreAdditionalColumnSpec
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
-    super.beforeAll()
-
     r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
       val dataPartitionSlice = sliceRange.min
       Await.result(
@@ -110,6 +108,8 @@ class DurableStateStoreAdditionalColumnSpec
           _.createStatement(s"delete from ${customTable(dataPartitionSlice)}")),
         10.seconds)
     }
+
+    super.beforeAll()
   }
 
   private val store = DurableStateStoreRegistry(testKit.system)

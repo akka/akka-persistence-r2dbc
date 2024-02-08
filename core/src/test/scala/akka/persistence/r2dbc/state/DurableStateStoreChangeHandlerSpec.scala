@@ -117,13 +117,13 @@ class DurableStateStoreChangeHandlerSpec
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
-    super.beforeAll()
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTableSql)),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $anotherTable")),
       10.seconds)
+    super.beforeAll()
   }
 
   private val store = DurableStateStoreRegistry(testKit.system)

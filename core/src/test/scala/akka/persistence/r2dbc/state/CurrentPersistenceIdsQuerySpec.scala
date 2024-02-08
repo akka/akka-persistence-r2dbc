@@ -73,8 +73,6 @@ class CurrentPersistenceIdsQuerySpec
   }
 
   override protected def beforeAll(): Unit = {
-    super.beforeAll()
-
     r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
       val dataPartitionSlice = sliceRange.min
       Await.result(
@@ -85,6 +83,8 @@ class CurrentPersistenceIdsQuerySpec
         r2dbcExecutor(dataPartitionSlice).updateOne("beforeAll delete")(
           _.createStatement(s"delete from ${customTable(dataPartitionSlice)}")),
         10.seconds)
+
+      super.beforeAll()
     }
 
     val probe = createTestProbe[Done]()
