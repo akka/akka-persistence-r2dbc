@@ -309,19 +309,27 @@ final class R2dbcSettings private (
   /**
    * INTERNAL API: All journal tables and their the lower slice
    */
-  @InternalApi private[akka] val allJournalTablesWithSchema: Map[String, Int] =
+  @InternalApi private[akka] lazy val allJournalTablesWithSchema: Map[String, Int] =
     resolveAllTableNames(journalTableWithSchema(_))
 
   /**
    * INTERNAL API: All snapshot tables and their the lower slice
    */
-  @InternalApi private[akka] val allSnapshotTablesWithSchema: Map[String, Int] =
+  @InternalApi private[akka] lazy val allSnapshotTablesWithSchema: Map[String, Int] =
     resolveAllTableNames(snapshotTableWithSchema(_))
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
+  _durableStateTableByEntityType.map { case (entityType, table) =>
+    entityType -> (schema.map(_ + ".").getOrElse("") + table)
+  }
 
   /**
    * INTERNAL API: All durable state tables and their the lower slice
    */
-  @InternalApi private[akka] val allDurableStateTablesWithSchema: Map[String, Int] = {
+  @InternalApi private[akka] lazy val allDurableStateTablesWithSchema: Map[String, Int] = {
     val defaultTables = resolveAllTableNames(durableStateTableWithSchema(_))
     val entityTypes = _durableStateTableByEntityType.keys
     entityTypes.foldLeft(defaultTables) { case (acc, entityType) =>
@@ -383,14 +391,6 @@ final class R2dbcSettings private (
    */
   @InternalApi private[akka] def withUseAppTimestamp(useAppTimestamp: Boolean): R2dbcSettings =
     copy(useAppTimestamp = useAppTimestamp)
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
-    _durableStateTableByEntityType.map { case (entityType, table) =>
-      entityType -> (schema.map(_ + ".").getOrElse("") + table)
-    }
 
   /**
    * INTERNAL API
