@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.internal
 
 import scala.annotation.varargs
+import scala.collection.immutable.IntMap
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
@@ -78,6 +79,31 @@ object Sql {
       sql.trim
     } else {
       sql.trim.split('\n').map(_.trim).mkString(" ")
+    }
+  }
+
+  final class Cache {
+    private var entriesPerSlice: IntMap[Map[Any, String]] = IntMap.empty
+
+    def get(slice: Int, key: Any)(orCreate: => String): String = {
+
+      def createEntry(entries: Map[Any, String]): String = {
+        // it's just a cache so no need for guarding concurrent updates
+        val entry = orCreate
+        val newEntries = entries.updated(key, entry)
+        entriesPerSlice = entriesPerSlice.updated(slice, newEntries)
+        entry
+      }
+
+      entriesPerSlice.get(slice) match {
+        case Some(entries) =>
+          entries.get(key) match {
+            case Some(value) => value
+            case None        => createEntry(entries)
+          }
+        case None =>
+          createEntry(Map.empty)
+      }
     }
   }
 
