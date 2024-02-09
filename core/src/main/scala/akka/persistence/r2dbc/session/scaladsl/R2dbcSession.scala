@@ -41,7 +41,6 @@ object R2dbcSession {
         .connectionFactorySettingsFor(connectionFactoryConfigPath)
         .poolSettings
         .closeCallsExceeding
-    // FIXME support data partition?
     val r2dbcExecutor =
       new R2dbcExecutor(connectionFactory, log, logDbCallsDisabled, closeCallsExceeding)(
         system.executionContext,

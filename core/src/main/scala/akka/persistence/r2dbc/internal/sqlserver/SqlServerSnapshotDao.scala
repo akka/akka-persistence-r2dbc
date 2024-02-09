@@ -42,7 +42,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
 
   override def log: Logger = SqlServerSnapshotDao.log
 
-  override def selectSql(criteria: SnapshotSelectionCriteria): String = {
+  override def selectSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
     val maxSeqNrCondition =
       if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= @maxSeqNr"
       else ""
@@ -62,23 +62,23 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
     if (settings.querySettings.startFromSnapshotEnabled)
       sql"""
         SELECT TOP(1) slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
-        FROM $snapshotTable
+        FROM ${snapshotTable(slice)}
         WHERE persistence_id = @persistenceId
         $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
         """
     else
       sql"""
       SELECT TOP (1) slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM $snapshotTable
+      FROM ${snapshotTable(slice)}
       WHERE persistence_id = @persistenceId
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
       """
   }
 
-  override protected def createUpsertSql: String = {
+  override protected def upsertSql(slice: Int): String = {
     if (settings.querySettings.startFromSnapshotEnabled)
       sql"""
-        UPDATE $snapshotTable SET
+        UPDATE ${snapshotTable(slice)} SET
           seq_nr = @seqNr,
           db_timestamp = @dbTimestamp,
           write_timestamp = @writeTimestamp,
@@ -91,13 +91,13 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
           meta_ser_manifest = @metaSerManifest
         where persistence_id = @persistenceId
         if @@ROWCOUNT = 0
-          INSERT INTO $snapshotTable
+          INSERT INTO ${snapshotTable(slice)}
              (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
              VALUES (@slice, @entityType, @persistenceId, @seqNr, @writeTimestamp, @snapshot, @serId, @serManifest, @metaPayload, @metaSerId, @metaSerManifest, @dbTimestamp, @tags)
           """
     else
       sql"""
-      UPDATE $snapshotTable SET
+      UPDATE ${snapshotTable(slice)} SET
         seq_nr = @seqNr,
         write_timestamp = @writeTimestamp,
         snapshot = @snapshot,
@@ -109,7 +109,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
         tags = @tags
       where persistence_id = @persistenceId
       if @@ROWCOUNT = 0
-        INSERT INTO $snapshotTable
+        INSERT INTO ${snapshotTable(slice)}
           (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, tags)
           VALUES (@slice, @entityType, @persistenceId, @seqNr, @writeTimestamp, @snapshot, @serId, @serManifest, @metaPayload, @metaSerId, @metaSerManifest, @tags)
         """
@@ -163,13 +163,12 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
   }
 
   override protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
 
     // group by column alias (bucket) needs a sub query
     val subQuery =
       s"""
           select TOP(@limit) CAST(DATEDIFF(s,'1970-01-01 00:00:00',db_timestamp) AS BIGINT) / 10 AS bucket
-          FROM $stateTable
+          FROM ${snapshotTable(minSlice)}
           WHERE entity_type = @entityType
           AND ${sliceCondition(minSlice, maxSlice)}
           AND db_timestamp >= @fromTimestamp AND db_timestamp <= @toTimestamp
@@ -194,7 +193,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
   override protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String =
     sql"""
       SELECT TOP(@bufferSize) slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM $snapshotTable
+      FROM ${snapshotTable(minSlice)}
       WHERE entity_type = @entityType
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= @fromTimestamp

@@ -42,7 +42,6 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   def r2dbcExecutor(slice: Int): R2dbcExecutor =
     r2dbcExecutorProvider.executorFor(slice)
 
-  // FIXME maybe remove, and always use the r2dbcExecutorProvider with explicit slice
   lazy val r2dbcExecutor: R2dbcExecutor =
     r2dbcExecutor(slice = 0)
 
@@ -59,16 +58,18 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
           r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
           10.seconds)
       }
-      Await.result(
-        r2dbcExecutor.updateOne("beforeAll delete")(
-          _.createStatement(s"delete from ${r2dbcSettings.snapshotsTableWithSchema}")),
-        10.seconds)
-      Await.result(
-        r2dbcExecutor.updateOne("beforeAll delete")(
-          _.createStatement(s"delete from ${r2dbcSettings.durableStateTableWithSchema}")),
-        10.seconds)
+      r2dbcSettings.allSnapshotTablesWithSchema.foreach { case (table, minSlice) =>
+        Await.result(
+          r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
+          10.seconds)
+      }
+      r2dbcSettings.allDurableStateTablesWithSchema.foreach { case (table, minSlice) =>
+        Await.result(
+          r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
+          10.seconds)
+      }
     } catch {
-      case NonFatal(ex) => throw new RuntimeException(s"Test db cleanup failed", ex)
+      case NonFatal(ex) => throw new RuntimeException(s"Test db creation failed", ex)
     }
     super.beforeAll()
   }

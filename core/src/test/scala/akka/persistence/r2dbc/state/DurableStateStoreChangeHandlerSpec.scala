@@ -8,6 +8,7 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -28,6 +29,7 @@ import akka.persistence.state.scaladsl.GetObjectResult
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
@@ -57,6 +59,9 @@ object DurableStateStoreChangeHandlerSpec {
         "JavadslCustomEntity" = "$javaDslcustomEntity"
       }
     }
+    # ChangeHandler not supported for number-of-databases > 1.
+    # Test is pending for that, but must override to be able to "start" test.
+    akka.persistence.r2dbc.data-partition.number-of-databases = 1
     """)
     .withFallback(testConfig)
 
@@ -112,13 +117,13 @@ class DurableStateStoreChangeHandlerSpec
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
-    super.beforeAll()
     Await.result(
       r2dbcExecutor.executeDdl("beforeAll create durable_state_test")(_.createStatement(createTableSql)),
       20.seconds)
     Await.result(
       r2dbcExecutor.updateOne("beforeAll delete")(_.createStatement(s"delete from $anotherTable")),
       10.seconds)
+    super.beforeAll()
   }
 
   private val store = DurableStateStoreRegistry(testKit.system)
@@ -138,6 +143,8 @@ class DurableStateStoreChangeHandlerSpec
       .getOrElse(0L)
 
   "The R2DBC durable state store change handler" should {
+    // ChangeHandler not supported for number-of-databases > 1
+    pendingIfMoreThanOneDataPartition()
 
     "be invoked for first revision" in {
       val entityType = "CustomEntity"

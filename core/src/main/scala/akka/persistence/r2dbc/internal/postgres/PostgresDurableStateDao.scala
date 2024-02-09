@@ -89,7 +89,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   protected def log: Logger = PostgresDurableStateDao.log
 
   private val persistenceExt = Persistence(system)
-  protected val r2dbcExecutor = executorProvider.executorFor(slice = 0) // FIXME support data partitions
 
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
@@ -108,15 +107,15 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def selectStateSql(entityType: String): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+  protected def selectStateSql(slice: Int, entityType: String): String = {
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     sql"""
     SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
     FROM $stateTable WHERE persistence_id = ?"""
   }
 
   protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
     sql"""
      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
      FROM $stateTable
@@ -131,9 +130,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   protected def insertStateSql(
+      slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     val additionalCols = additionalInsertColumns(additionalBindings)
     val additionalParams = additionalInsertParameters(additionalBindings)
     sql"""
@@ -174,12 +174,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   protected def updateStateSql(
+      slice: Int,
       entityType: String,
       updateTags: Boolean,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
       currentTimestamp: String = "CURRENT_TIMESTAMP"): String = {
 
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
 
     val timestamp =
       if (settings.dbTimestampMonotonicIncreasing)
@@ -218,8 +219,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def hardDeleteStateSql(entityType: String): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+  protected def hardDeleteStateSql(entityType: String, slice: Int): String = {
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
     sql"DELETE from $stateTable WHERE persistence_id = ?"
   }
 
@@ -262,7 +263,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType)
+
+    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
     def maxDbTimestampParamCondition =
       if (maxDbTimestampParam) s"AND db_timestamp < ?" else ""
@@ -287,10 +289,12 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
   override def readState(persistenceId: String): Future[Option[SerializedStateRow]] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
-    r2dbcExecutor.selectOne(s"select [$persistenceId]")(
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    executor.selectOne(s"select [$persistenceId]")(
       connection =>
         connection
-          .createStatement(selectStateSql(entityType))
+          .createStatement(selectStateSql(slice, entityType))
           .bind(0, persistenceId),
       row =>
         SerializedStateRow(
@@ -338,6 +342,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       value: Any,
       changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     require(state.revision > 0)
+    val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
+    val executor = executorProvider.executorFor(slice)
 
     def bindTags(stmt: Statement, i: Int): Statement = {
       if (state.tags.isEmpty)
@@ -376,10 +382,9 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       }
 
       if (state.revision == 1) {
-        val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
         def insertStatement(connection: Connection): Statement = {
           val stmt = connection
-            .createStatement(insertStateSql(entityType, additionalBindings))
+            .createStatement(insertStateSql(slice, entityType, additionalBindings))
             .bind(idx.next(), slice)
             .bind(idx.next(), entityType)
             .bind(idx.next(), state.persistenceId)
@@ -403,10 +408,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
         if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
           val updatedRows = recoverDataIntegrityViolation(
-            r2dbcExecutor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
+            executor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
           updatedRows.map(_ -> None)
         } else
-          r2dbcExecutor.withConnection(s"insert [${state.persistenceId}]") { connection =>
+          executor.withConnection(s"insert [${state.persistenceId}]") { connection =>
             for {
               updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
               changeEventTimestamp <- writeChangeEventAndCallChangeHandler(
@@ -422,7 +427,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
         def updateStatement(connection: Connection): Statement = {
           val stmt = connection
-            .createStatement(updateStateSql(entityType, updateTags = true, additionalBindings))
+            .createStatement(updateStateSql(slice, entityType, updateTags = true, additionalBindings))
             .bind(idx.next(), state.revision)
             .bind(idx.next(), state.serId)
             .bind(idx.next(), state.serManifest)
@@ -454,10 +459,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
         }
 
         if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
-          val updatedRows = r2dbcExecutor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
+          val updatedRows = executor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
           updatedRows.map(_ -> None)
         } else
-          r2dbcExecutor.withConnection(s"update [${state.persistenceId}]") { connection =>
+          executor.withConnection(s"update [${state.persistenceId}]") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
               changeEventTimestamp <- writeChangeEventAndCallChangeHandler(
@@ -511,6 +516,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       hardDeleteState(persistenceId)
         .map(_ => None)(ExecutionContexts.parasitic)
     } else {
+      val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+      val executor = executorProvider.executorFor(slice)
       val result: Future[(Long, Option[Instant])] = {
         val entityType = PersistenceId.extractEntityType(persistenceId)
         def change =
@@ -521,7 +528,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           def insertDeleteMarkerStatement(connection: Connection): Statement = {
             val stmt = connection
               .createStatement(
-                insertStateSql(entityType, Vector.empty)
+                insertStateSql(slice, entityType, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
               .bind(0, slice)
               .bind(1, entityType)
@@ -541,7 +548,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
                 s"Insert delete marker with revision 1 failed: durable state for persistence id [$persistenceId] already exists"))
             }
 
-          r2dbcExecutor.withConnection(s"insert delete marker [$persistenceId]") { connection =>
+          executor.withConnection(s"insert delete marker [$persistenceId]") { connection =>
             for {
               updatedRows <- recoverDataIntegrityViolation(
                 R2dbcExecutor.updateOneInTx(insertDeleteMarkerStatement(connection)))
@@ -562,7 +569,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
             val stmt = connection
               .createStatement(
-                updateStateSql(entityType, updateTags = false, Vector.empty)
+                updateStateSql(slice, entityType, updateTags = false, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
               .bind(idx.next(), revision)
               .bind(idx.next(), 0)
@@ -592,7 +599,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
             }
           }
 
-          r2dbcExecutor.withConnection(s"delete [$persistenceId]") { connection =>
+          executor.withConnection(s"delete [$persistenceId]") { connection =>
             for {
               updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
               changeEventTimestamp <- writeChangeEventAndCallChangeHandler(
@@ -621,16 +628,18 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
   private def hardDeleteState(persistenceId: String): Future[Done] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
 
     val changeHandler = changeHandlers.get(entityType)
     val changeHandlerHint = changeHandler.map(_ => " with change handler").getOrElse("")
 
     val result =
-      r2dbcExecutor.withConnection(s"hard delete [$persistenceId]$changeHandlerHint") { connection =>
+      executor.withConnection(s"hard delete [$persistenceId]$changeHandlerHint") { connection =>
         for {
           updatedRows <- R2dbcExecutor.updateOneInTx(
             connection
-              .createStatement(hardDeleteStateSql(entityType))
+              .createStatement(hardDeleteStateSql(entityType, slice))
               .bind(0, persistenceId))
           _ <- {
             val change = new DeletedDurableState[Any](persistenceId, 0L, NoOffset, EmptyDbTimestamp.toEpochMilli)
@@ -646,7 +655,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
-    r2dbcExecutor
+    val executor = executorProvider.executorFor(slice)
+    executor
       .selectOne("select current db timestamp")(
         connection => connection.createStatement(currentDbTimestampSql),
         row => row.getTimestamp("db_timestamp"))
@@ -685,7 +695,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedStateRow, NotUsed] = {
-    val result = r2dbcExecutor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
+    if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
+      throw new IllegalArgumentException(
+        s"Slice range [$minSlice-$maxSlice] spans over more than one " +
+        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+
+    val executor = executorProvider.executorFor(minSlice)
+    val result = executor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection
           .createStatement(
@@ -737,37 +753,53 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    if (settings.durableStateTableByEntityTypeWithSchema.isEmpty)
-      persistenceIds(afterId, limit, settings.durableStateTableWithSchema)
+    if (settings.durableStateTableByEntityTypeWithSchema.isEmpty && settings.numberOfDataPartitions == 1)
+      persistenceIds(afterId, limit, settings.durableStateTableWithSchema(slice = 0), 0)
     else {
       def readFromCustomTables(
           acc: immutable.IndexedSeq[String],
-          remainingTables: Vector[String]): Future[immutable.IndexedSeq[String]] = {
+          remainingEntityTypes: List[String],
+          dataPartitionSlice: Int): Future[immutable.IndexedSeq[String]] = {
         if (acc.size >= limit) {
           Future.successful(acc)
-        } else if (remainingTables.isEmpty) {
+        } else if (remainingEntityTypes.isEmpty) {
           Future.successful(acc)
         } else {
-          readPersistenceIds(afterId, limit, remainingTables.head).flatMap { ids =>
-            readFromCustomTables(acc ++ ids, remainingTables.tail)
+          val table = settings.getDurableStateTableWithSchema(remainingEntityTypes.head, dataPartitionSlice)
+          readPersistenceIds(afterId, limit, table, dataPartitionSlice).flatMap { ids =>
+            readFromCustomTables(acc ++ ids, remainingEntityTypes.tail, dataPartitionSlice)
           }
         }
       }
 
-      val customTables = settings.durableStateTableByEntityTypeWithSchema.toVector.sortBy(_._1).map(_._2)
-      val ids = for {
-        fromDefaultTable <- readPersistenceIds(afterId, limit, settings.durableStateTableWithSchema)
-        fromCustomTables <- readFromCustomTables(Vector.empty, customTables)
-      } yield {
-        (fromDefaultTable ++ fromCustomTables).sorted
+      val entityTypes = settings.durableStateTableByEntityTypeWithSchema.keys.toList.sorted
+      val ids = {
+        val idsPerSliceRange =
+          settings.dataPartitionSliceRanges.map { sliceRange =>
+            for {
+              fromDefaultTable <- readPersistenceIds(
+                afterId,
+                limit,
+                settings.durableStateTableWithSchema(sliceRange.min),
+                sliceRange.min)
+              fromCustomTables <- readFromCustomTables(Vector.empty, entityTypes, sliceRange.min)
+            } yield {
+              (fromDefaultTable ++ fromCustomTables)
+            }
+          }
+        Future.sequence(idsPerSliceRange).map(_.flatten.sorted)
       }
 
       Source.futureSource(ids.map(Source(_))).take(limit).mapMaterializedValue(_ => NotUsed)
     }
   }
 
-  override def persistenceIds(afterId: Option[String], limit: Long, table: String): Source[String, NotUsed] = {
-    val result = readPersistenceIds(afterId, limit, table)
+  override def persistenceIds(
+      afterId: Option[String],
+      limit: Long,
+      table: String,
+      dataPartitionSlice: Int): Source[String, NotUsed] = {
+    val result = readPersistenceIds(afterId, limit, table, dataPartitionSlice)
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -781,8 +813,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   private def readPersistenceIds(
       afterId: Option[String],
       limit: Long,
-      table: String): Future[immutable.IndexedSeq[String]] = {
-    val result = r2dbcExecutor.select(s"select persistenceIds")(
+      table: String,
+      dataPartitionSlice: Int): Future[immutable.IndexedSeq[String]] = {
+    val executor = executorProvider.executorFor(dataPartitionSlice)
+    val result = executor.select(s"select persistenceIds")(
       connection =>
         afterId match {
           case Some(after) =>
@@ -811,25 +845,38 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
-    val table = settings.getDurableStateTableWithSchema(entityType)
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
-    val result = r2dbcExecutor.select(s"select persistenceIds by entity type")(
-      connection =>
-        afterId match {
-          case Some(after) =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(table))
-            bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, limit)
-          case None =>
-            val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(table))
-            bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, limit)
+    val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
+    val results: immutable.IndexedSeq[Future[immutable.IndexedSeq[String]]] =
+      // query each data partition
+      settings.dataPartitionSliceRanges.map { sliceRange =>
+        val table = settings.getDurableStateTableWithSchema(entityType, sliceRange.min)
+        val executor = executorProvider.executorFor(sliceRange.min)
+        executor.select(s"select persistenceIds by entity type")(
+          connection =>
+            afterId match {
+              case Some(after) =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(table))
+                bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
 
-        },
-      row => row.get("persistence_id", classOf[String]))
+              case None =>
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(table))
+                bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
+            },
+          row => row.get("persistence_id", classOf[String]))
+      }
+
+    // Theoretically it could blow up with too many rows (> Int.MaxValue) when fetching from more than
+    // one data partition, but we have other places with a hard limit of a total number of persistenceIds less
+    // than Int.MaxValue.
+    val combined: Future[immutable.IndexedSeq[String]] =
+      if (results.size == 1) results.head // no data partitions
+      else Future.sequence(results).map(_.flatten.sorted.take(actualLimit))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
+      combined.foreach(rows => log.debug("Read [{}] persistence ids by entity type [{}]", rows.size, entityType))
 
-    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+    Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
   /**
@@ -868,7 +915,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       }
     }
 
-    val result = r2dbcExecutor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+    val executor = executorProvider.executorFor(minSlice)
+    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
         val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
         bindSelectBucketSql(stmt, entityType, fromTimestamp, toTimestamp, limit)

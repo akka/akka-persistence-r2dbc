@@ -91,6 +91,9 @@ object R2dbcSettings {
       numberOfDatabases * (numberOfDataPartitions / numberOfDatabases) == numberOfDataPartitions,
       s"data-partition.number-of-databases [$numberOfDatabases] must be a whole number divisor of " +
       s"data-partition.number-of-partitions [$numberOfDataPartitions].")
+    require(
+      durableStateChangeHandlerClasses.isEmpty || numberOfDatabases == 1,
+      "Durable State ChangeHandler not supported with more than one data partition database.")
 
     val connectionFactorySettings =
       if (numberOfDatabases == 1) {
@@ -235,36 +238,6 @@ final class R2dbcSettings private (
     val numberOfDataPartitions: Int) {
   import R2dbcSettings.NumberOfSlices
 
-  /**
-   * The journal table and schema name without data partition suffix.
-   */
-  val journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
-
-  /**
-   * The journal table and schema name with data partition suffix for the given slice. When number-of-partitions is 1
-   * the table name is without suffix.
-   */
-  def journalTableWithSchema(slice: Int): String = {
-    if (numberOfDataPartitions == 1)
-      journalTableWithSchema
-    else
-      s"${journalTableWithSchema}_${dataPartition(slice)}"
-  }
-
-  val snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
-  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
-
-  /**
-   * INTERNAL API: All journal tables and their the lower slice
-   */
-  @InternalApi private[akka] val allJournalTablesWithSchema: Map[String, Int] = {
-    (0 until NumberOfSlices).foldLeft(Map.empty[String, Int]) { case (acc, slice) =>
-      val table = journalTableWithSchema(slice)
-      if (acc.contains(table)) acc
-      else acc.updated(table, slice)
-    }
-  }
-
   val numberOfDatabases: Int = _connectionFactorySettings.size
 
   val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
@@ -280,6 +253,97 @@ final class R2dbcSettings private (
       (i * rangeSize until i * rangeSize + rangeSize)
     }.toVector
   }
+
+  private val _journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
+
+  /**
+   * The journal table and schema name without data partition suffix.
+   */
+  @deprecated("Use journalTableWithSchema(slice)", "1.2.2")
+  val journalTableWithSchema: String = _journalTableWithSchema
+
+  /**
+   * The journal table and schema name with data partition suffix for the given slice. When number-of-partitions is 1
+   * the table name is without suffix.
+   */
+  def journalTableWithSchema(slice: Int): String =
+    resolveTableName(_journalTableWithSchema, slice)
+
+  private val _snapshotsTableWithSchema: String = schema.map(_ + ".").getOrElse("") + snapshotsTable
+
+  /**
+   * The snapshot table and schema name without data partition suffix.
+   */
+  @deprecated("Use snapshotTableWithSchema(slice)", "1.2.2")
+  val snapshotsTableWithSchema: String = _snapshotsTableWithSchema
+
+  /**
+   * The snapshot table and schema name with data partition suffix for the given slice. When number-of-partitions is 1
+   * the table name is without suffix.
+   */
+  def snapshotTableWithSchema(slice: Int): String =
+    resolveTableName(_snapshotsTableWithSchema, slice)
+
+  private val _durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  /**
+   * The durable state table and schema name without data partition suffix.
+   */
+  @deprecated("Use durableStateTableWithSchema(slice)", "1.2.2")
+  val durableStateTableWithSchema: String = schema.map(_ + ".").getOrElse("") + durableStateTable
+
+  /**
+   * The durable state table and schema name with data partition suffix for the given slice. When number-of-partitions
+   * is 1 the table name is without suffix.
+   */
+  def durableStateTableWithSchema(slice: Int): String =
+    resolveTableName(_durableStateTableWithSchema, slice)
+
+  private def resolveTableName(table: String, slice: Int): String = {
+    if (numberOfDataPartitions == 1)
+      table
+    else
+      s"${table}_${dataPartition(slice)}"
+  }
+
+  /**
+   * INTERNAL API: All journal tables and their the lower slice
+   */
+  @InternalApi private[akka] lazy val allJournalTablesWithSchema: Map[String, Int] =
+    resolveAllTableNames(journalTableWithSchema(_))
+
+  /**
+   * INTERNAL API: All snapshot tables and their the lower slice
+   */
+  @InternalApi private[akka] lazy val allSnapshotTablesWithSchema: Map[String, Int] =
+    resolveAllTableNames(snapshotTableWithSchema(_))
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
+    _durableStateTableByEntityType.map { case (entityType, table) =>
+      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+    }
+
+  /**
+   * INTERNAL API: All durable state tables and their the lower slice
+   */
+  @InternalApi private[akka] lazy val allDurableStateTablesWithSchema: Map[String, Int] = {
+    val defaultTables = resolveAllTableNames(durableStateTableWithSchema(_))
+    val entityTypes = _durableStateTableByEntityType.keys
+    entityTypes.foldLeft(defaultTables) { case (acc, entityType) =>
+      val entityTypeTables = resolveAllTableNames(slice => getDurableStateTableWithSchema(entityType, slice))
+      acc ++ entityTypeTables
+    }
+  }
+
+  private def resolveAllTableNames(tableForSlice: Int => String): Map[String, Int] =
+    dataPartitionSliceRanges.foldLeft(Map.empty[String, Int]) { case (acc, sliceRange) =>
+      val table = tableForSlice(sliceRange.min)
+      if (acc.contains(table)) acc
+      else acc.updated(table, sliceRange.min)
+    }
 
   /**
    * INTERNAL API
@@ -298,8 +362,22 @@ final class R2dbcSettings private (
   def getDurableStateTable(entityType: String): String =
     _durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
 
+  /**
+   * The durable state table and schema name for the `entityType` without data partition suffix.
+   */
+  @deprecated("Use getDurableStateTableWithSchema(entityType, slice)", "1.2.2")
   def getDurableStateTableWithSchema(entityType: String): String =
-    durableStateTableByEntityTypeWithSchema.getOrElse(entityType, durableStateTableWithSchema)
+    durableStateTableByEntityTypeWithSchema.getOrElse(entityType, _durableStateTableWithSchema)
+
+  /**
+   * The durable state table and schema name for the `entityType` with data partition suffix for the given slice. When
+   * number-of-partitions is 1 the table name is without suffix.
+   */
+  def getDurableStateTableWithSchema(entityType: String, slice: Int): String =
+    durableStateTableByEntityTypeWithSchema.get(entityType) match {
+      case None        => durableStateTableWithSchema(slice)
+      case Some(table) => resolveTableName(table, slice)
+    }
 
   /**
    * INTERNAL API
@@ -313,14 +391,6 @@ final class R2dbcSettings private (
    */
   @InternalApi private[akka] def withUseAppTimestamp(useAppTimestamp: Boolean): R2dbcSettings =
     copy(useAppTimestamp = useAppTimestamp)
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
-    _durableStateTableByEntityType.map { case (entityType, table) =>
-      entityType -> (schema.map(_ + ".").getOrElse("") + table)
-    }
 
   /**
    * INTERNAL API

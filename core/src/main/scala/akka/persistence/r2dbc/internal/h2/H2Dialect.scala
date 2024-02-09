@@ -124,8 +124,22 @@ private[r2dbc] object H2Dialect extends Dialect {
         }
     val snapshotTable = config.getString("snapshot-table")
     val snapshotTableWithSchema = schema.map(_ + ".").getOrElse("") + snapshotTable
+    val allSnapshotTablesWithSchema =
+      if (numberOfDataPartitions == 1)
+        Vector(snapshotTableWithSchema)
+      else
+        (0 until numberOfDataPartitions).map { dataPartition =>
+          s"${snapshotTableWithSchema}_$dataPartition"
+        }
     val durableStateTable = config.getString("state-table")
     val durableStateTableWithSchema = schema.map(_ + ".").getOrElse("") + durableStateTable
+    val allDurableStateTablesWithSchema =
+      if (numberOfDataPartitions == 1)
+        Vector(durableStateTableWithSchema)
+      else
+        (0 until numberOfDataPartitions).map { dataPartition =>
+          s"${durableStateTableWithSchema}_$dataPartition"
+        }
 
     implicit val queryAdapter: QueryAdapter = IdentityAdapter
 
@@ -134,12 +148,17 @@ private[r2dbc] object H2Dialect extends Dialect {
         val sliceIndexWithSchema = table + "_slice_idx"
         sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp, seq_nr)"""
       }
-      val snapshotSliceIndexWithSchema = snapshotTableWithSchema + "_slice_idx"
-      val durableStateSliceIndexWithSchema = durableStateTableWithSchema + "_slice_idx"
+      val snapshotSliceIndexes = allSnapshotTablesWithSchema.map { table =>
+        val sliceIndexWithSchema = table + "_slice_idx"
+        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp)"""
+      }
+      val durableStateSliceIndexes = allDurableStateTablesWithSchema.map { table =>
+        val sliceIndexWithSchema = table + "_slice_idx"
+        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp, revision)"""
+      }
       journalSliceIndexes ++
-      Seq(
-        sql"""CREATE INDEX IF NOT EXISTS $snapshotSliceIndexWithSchema ON $snapshotTableWithSchema(slice, entity_type, db_timestamp)""",
-        sql"""CREATE INDEX IF NOT EXISTS $durableStateSliceIndexWithSchema ON durable_state(slice, entity_type, db_timestamp, revision)""")
+      snapshotSliceIndexes ++
+      durableStateSliceIndexes
     } else Seq.empty[String]
 
     val createJournalTables = allJournalTablesWithSchema.map { table =>
@@ -166,11 +185,9 @@ private[r2dbc] object H2Dialect extends Dialect {
         PRIMARY KEY(persistence_id, seq_nr)
       )"""
     }
-
-    (createJournalTables ++
-    Seq(
+    val createSnapshotTables = allSnapshotTablesWithSchema.map { table =>
       sql"""
-        CREATE TABLE IF NOT EXISTS $snapshotTableWithSchema (
+        CREATE TABLE IF NOT EXISTS $table (
           slice INT NOT NULL,
           entity_type VARCHAR(255) NOT NULL,
           persistence_id VARCHAR(255) NOT NULL,
@@ -186,9 +203,11 @@ private[r2dbc] object H2Dialect extends Dialect {
           meta_payload BYTEA,
 
           PRIMARY KEY(persistence_id)
-        )""",
+        )"""
+    }
+    val createDurableStateTables = allDurableStateTablesWithSchema.map { table =>
       sql"""
-        CREATE TABLE IF NOT EXISTS $durableStateTableWithSchema (
+        CREATE TABLE IF NOT EXISTS $table (
           slice INT NOT NULL,
           entity_type VARCHAR(255) NOT NULL,
           persistence_id VARCHAR(255) NOT NULL,
@@ -202,7 +221,12 @@ private[r2dbc] object H2Dialect extends Dialect {
 
           PRIMARY KEY(persistence_id, revision)
         )
-      """) ++
+      """
+    }
+
+    (createJournalTables ++
+    createSnapshotTables ++
+    createDurableStateTables ++
     sliceIndexes ++
     (if (additionalInit.trim.nonEmpty) Seq(additionalInit) else Seq.empty[String]))
       .mkString(";") // r2dbc h2 driver replaces with '\;' as needed for INIT

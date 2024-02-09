@@ -46,6 +46,7 @@ import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.stream.scaladsl.Concat
 
 object R2dbcDurableStateStore {
   val Identifier = "akka.persistence.r2dbc.state"
@@ -71,7 +72,6 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   private val typedSystem = system.toTyped
   private val serialization = SerializationExtension(system)
   private val persistenceExt = Persistence(system)
-  // FIXME maybe this is using the wrong executionContext, H2Dialect is using another dispatcher?
   private val executorProvider =
     new R2dbcExecutorProvider(
       typedSystem,
@@ -346,7 +346,9 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
       state.copy(rowCount = state.rowCount + 1, latestPid = pid)
 
-    def nextQuery(state: PersistenceIdsQueryState): (PersistenceIdsQueryState, Option[Source[String, NotUsed]]) = {
+    def nextQuery(
+        state: PersistenceIdsQueryState,
+        dataPartitionSlice: Int): (PersistenceIdsQueryState, Option[Source[String, NotUsed]]) = {
       def next(newState: PersistenceIdsQueryState) = {
         val newState2 = newState.copy(rowCount = 0, queryCount = newState.queryCount + 1)
 
@@ -361,7 +363,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
 
         newState2 -> Some(
           stateDao
-            .persistenceIds(afterPid, persistenceIdsBufferSize, newState.tables.head))
+            .persistenceIds(afterPid, persistenceIdsBufferSize, newState.tables.head, dataPartitionSlice))
       }
 
       if (state.queryCount == 0L || state.rowCount >= persistenceIdsBufferSize) {
@@ -380,15 +382,27 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       }
     }
 
-    val customTables = settings.durableStateTableByEntityTypeWithSchema.toList.sortBy(_._1).map(_._2)
-    val tables = settings.durableStateTableWithSchema :: customTables
+    val entityTypes = settings.durableStateTableByEntityTypeWithSchema.keys.toList.sorted
 
-    ContinuousQuery[PersistenceIdsQueryState, String](
-      initialState = PersistenceIdsQueryState(0, 0, "", tables),
-      updateState = updateState,
-      delayNextQuery = _ => None,
-      nextQuery = state => nextQuery(state))
+    val queries: immutable.IndexedSeq[Source[String, NotUsed]] =
+      settings.dataPartitionSliceRanges.map { sliceRange =>
+        val tables =
+          settings.durableStateTableWithSchema(sliceRange.min) ::
+          entityTypes.map(settings.getDurableStateTableWithSchema(_, sliceRange.min))
+
+        ContinuousQuery[PersistenceIdsQueryState, String](
+          initialState = PersistenceIdsQueryState(0, 0, "", tables),
+          updateState = updateState,
+          delayNextQuery = _ => None,
+          nextQuery = state => nextQuery(state, sliceRange.min))
+          .mapMaterializedValue(_ => NotUsed)
+
+      }
+
+    Source
+      .combine(queries)(Concat(_))
       .mapMaterializedValue(_ => NotUsed)
+
   }
 
 }

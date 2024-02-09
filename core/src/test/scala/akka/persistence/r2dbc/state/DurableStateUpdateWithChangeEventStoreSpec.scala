@@ -45,7 +45,6 @@ class DurableStateUpdateWithChangeEventStoreSpec
   private val tag = "TAG"
 
   "The R2DBC durable state store" should {
-    pendingIfMoreThanOneDataPartition() // FIXME
 
     "save additional change event" in {
       val entityType = nextEntityType()
