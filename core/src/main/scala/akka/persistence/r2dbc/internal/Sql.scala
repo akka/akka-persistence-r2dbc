@@ -82,7 +82,32 @@ object Sql {
     }
   }
 
-  final class Cache {
+  object Cache {
+    def apply(dataPartitionsEnabled: Boolean): Cache =
+      if (dataPartitionsEnabled) new CacheBySlice
+      else new CacheIgnoringSlice
+  }
+
+  sealed trait Cache {
+    def get(slice: Int, key: Any)(orCreate: => String): String
+  }
+
+  private final class CacheIgnoringSlice extends Cache {
+    private var entries: Map[Any, String] = Map.empty
+
+    def get(slice: Int, key: Any)(orCreate: => String): String = {
+      entries.get(key) match {
+        case Some(value) => value
+        case None        =>
+          // it's just a cache so no need for guarding concurrent updates
+          val entry = orCreate
+          entries = entries.updated(key, entry)
+          entry
+      }
+    }
+  }
+
+  private final class CacheBySlice extends Cache {
     private var entriesPerSlice: IntMap[Map[Any, String]] = IntMap.empty
 
     def get(slice: Int, key: Any)(orCreate: => String): String = {

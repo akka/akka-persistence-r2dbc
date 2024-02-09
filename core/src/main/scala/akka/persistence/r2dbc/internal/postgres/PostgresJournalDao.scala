@@ -71,7 +71,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
 
   protected val persistenceExt: Persistence = Persistence(system)
 
-  private val sqlCache = new Sql.Cache
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
   protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
 
