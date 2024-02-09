@@ -238,6 +238,22 @@ final class R2dbcSettings private (
     val numberOfDataPartitions: Int) {
   import R2dbcSettings.NumberOfSlices
 
+  val numberOfDatabases: Int = _connectionFactorySettings.size
+
+  val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDataPartitions
+    (0 until numberOfDataPartitions).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
+  val connectionFactorSliceRanges: immutable.IndexedSeq[Range] = {
+    val rangeSize = NumberOfSlices / numberOfDatabases
+    (0 until numberOfDatabases).map { i =>
+      (i * rangeSize until i * rangeSize + rangeSize)
+    }.toVector
+  }
+
   private val _journalTableWithSchema: String = schema.map(_ + ".").getOrElse("") + journalTable
 
   /**
@@ -320,22 +336,6 @@ final class R2dbcSettings private (
       if (acc.contains(table)) acc
       else acc.updated(table, sliceRange.min)
     }
-
-  val numberOfDatabases: Int = _connectionFactorySettings.size
-
-  val dataPartitionSliceRanges: immutable.IndexedSeq[Range] = {
-    val rangeSize = NumberOfSlices / numberOfDataPartitions
-    (0 until numberOfDataPartitions).map { i =>
-      (i * rangeSize until i * rangeSize + rangeSize)
-    }.toVector
-  }
-
-  val connectionFactorSliceRanges: immutable.IndexedSeq[Range] = {
-    val rangeSize = NumberOfSlices / numberOfDatabases
-    (0 until numberOfDatabases).map { i =>
-      (i * rangeSize until i * rangeSize + rangeSize)
-    }.toVector
-  }
 
   /**
    * INTERNAL API
