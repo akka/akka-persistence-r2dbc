@@ -42,7 +42,6 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   def r2dbcExecutor(slice: Int): R2dbcExecutor =
     r2dbcExecutorProvider.executorFor(slice)
 
-  // FIXME maybe remove, and always use the r2dbcExecutorProvider with explicit slice
   lazy val r2dbcExecutor: R2dbcExecutor =
     r2dbcExecutor(slice = 0)
 

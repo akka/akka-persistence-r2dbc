@@ -322,9 +322,9 @@ final class R2dbcSettings private (
    * INTERNAL API
    */
   @InternalApi private[akka] val durableStateTableByEntityTypeWithSchema: Map[String, String] =
-  _durableStateTableByEntityType.map { case (entityType, table) =>
-    entityType -> (schema.map(_ + ".").getOrElse("") + table)
-  }
+    _durableStateTableByEntityType.map { case (entityType, table) =>
+      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+    }
 
   /**
    * INTERNAL API: All durable state tables and their the lower slice

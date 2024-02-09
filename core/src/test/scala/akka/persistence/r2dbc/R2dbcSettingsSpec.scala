@@ -177,10 +177,6 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
           akka.persistence.r2dbc.connection-factory-0-0.host = hostA
           akka.persistence.r2dbc.connection-factory-1-1 = ${akka.persistence.r2dbc.postgres}
           akka.persistence.r2dbc.connection-factory-1-1.host = hostB
-
-          # FIXME maybe we should support a convenience syntax for this case:
-          # akka.persistence.r2dbc.connection-factory-0 = ${akka.persistence.r2dbc.postgres}
-          # akka.persistence.r2dbc.connection-factory-1 = ${akka.persistence.r2dbc.postgres}
           """)
         .withFallback(ConfigFactory.load("application-postgres.conf"))
         .resolve()
