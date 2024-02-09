@@ -7,7 +7,7 @@ durable state can be split up over multiple tables and physical backend database
 The data is partitioned by the slices that are used for @ref[`eventsBySlices`](query.md#eventsbyslices) and
 @extref:[Projections](akka-projection:r2dbc.html). You can configure how many data partitions that are needed.
 A data partition corresponds to a separate database table. For example, 4 data partitions means that slice range
-(0 to 255) maps to data partition 0, (256 to 511) to data partition 1, (512 to 767) to data partition 3,
+(0 to 255) maps to data partition 0, (256 to 511) to data partition 1, (512 to 767) to data partition 2,
 and (768 to 1023) to data partition 3.
 
 Number of data partitions must be between 1 and 1024 and a whole number divisor of 1024 (number of slices), e.g.
