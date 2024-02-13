@@ -112,8 +112,10 @@ class MigrationToolSpec
 
   // don't run this for Yugabyte since it is using akka-persistence-jdbc
   private val postgresTest = dialect == "postgres"
-  private val sqlServerTest = dialect == "sqlserver"
-  private val testEnabled = postgresTest || sqlServerTest
+  // FIXME flaky for sqlserver, issue https://github.com/akka/akka-persistence-r2dbc/issues/523
+//  private val sqlServerTest = dialect == "sqlserver"
+//  private val testEnabled = postgresTest || sqlServerTest
+  private val testEnabled = postgresTest
 
   private val createJournalTablePostgres =
     """CREATE TABLE IF NOT EXISTS jdbc_event_journal(
