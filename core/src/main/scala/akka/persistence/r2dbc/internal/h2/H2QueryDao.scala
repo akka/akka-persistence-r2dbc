@@ -29,6 +29,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
+    // not caching, too many combinations
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""

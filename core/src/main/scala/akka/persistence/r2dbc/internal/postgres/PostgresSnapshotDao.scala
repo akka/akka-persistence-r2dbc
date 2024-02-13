@@ -30,6 +30,7 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
@@ -58,14 +59,17 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
 
   protected def log: Logger = PostgresSnapshotDao.log
 
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   protected val persistenceExt: Persistence = Persistence(system)
 
   protected def snapshotTable(slice: Int): String = settings.snapshotTableWithSchema(slice)
 
   protected def upsertSql(slice: Int): String = {
-    // db_timestamp and tags columns were added in 1.2.0
-    if (settings.querySettings.startFromSnapshotEnabled)
-      sql"""
+    sqlCache.get(slice, "upsertSql") {
+      // db_timestamp and tags columns were added in 1.2.0
+      if (settings.querySettings.startFromSnapshotEnabled)
+        sql"""
         INSERT INTO ${snapshotTable(slice)}
         (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -81,58 +85,68 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
           meta_payload = excluded.meta_payload,
           meta_ser_id = excluded.meta_ser_id,
           meta_ser_manifest = excluded.meta_ser_manifest"""
-    else
-      sql"""
-      INSERT INTO ${snapshotTable(slice)}
-      (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (persistence_id)
-      DO UPDATE SET
-        seq_nr = excluded.seq_nr,
-        write_timestamp = excluded.write_timestamp,
-        snapshot = excluded.snapshot,
-        ser_id = excluded.ser_id,
-        ser_manifest = excluded.ser_manifest,
-        meta_payload = excluded.meta_payload,
-        meta_ser_id = excluded.meta_ser_id,
-        meta_ser_manifest = excluded.meta_ser_manifest"""
+      else
+        sql"""
+        INSERT INTO ${snapshotTable(slice)}
+        (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (persistence_id)
+        DO UPDATE SET
+          seq_nr = excluded.seq_nr,
+          write_timestamp = excluded.write_timestamp,
+          snapshot = excluded.snapshot,
+          ser_id = excluded.ser_id,
+          ser_manifest = excluded.ser_manifest,
+          meta_payload = excluded.meta_payload,
+          meta_ser_id = excluded.meta_ser_id,
+          meta_ser_manifest = excluded.meta_ser_manifest"""
+    }
   }
 
   protected def selectSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
-    val maxSeqNrCondition =
-      if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
-      else ""
+    def createSql = {
+      val maxSeqNrCondition =
+        if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
+        else ""
 
-    val minSeqNrCondition =
-      if (criteria.minSequenceNr > 0L) " AND seq_nr >= ?"
-      else ""
+      val minSeqNrCondition =
+        if (criteria.minSequenceNr > 0L) " AND seq_nr >= ?"
+        else ""
 
-    val maxTimestampCondition =
-      if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= ?"
-      else ""
+      val maxTimestampCondition =
+        if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= ?"
+        else ""
 
-    val minTimestampCondition =
-      if (criteria.minTimestamp != 0L) " AND write_timestamp >= ?"
-      else ""
+      val minTimestampCondition =
+        if (criteria.minTimestamp != 0L) " AND write_timestamp >= ?"
+        else ""
 
-    // db_timestamp and tags columns were added in 1.2.0
-    if (settings.querySettings.startFromSnapshotEnabled)
-      sql"""
+      // db_timestamp and tags columns were added in 1.2.0
+      if (settings.querySettings.startFromSnapshotEnabled)
+        sql"""
         SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
         FROM ${snapshotTable(slice)}
         WHERE persistence_id = ?
         $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
         LIMIT 1"""
+      else
+        sql"""
+        SELECT slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+        FROM ${snapshotTable(slice)}
+        WHERE persistence_id = ?
+        $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
+        LIMIT 1"""
+    }
+
+    if (criteria == SnapshotSelectionCriteria.Latest)
+      sqlCache.get(slice, "selectSql-latest")(createSql) // normal case
     else
-      sql"""
-      SELECT slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM ${snapshotTable(slice)}
-      WHERE persistence_id = ?
-      $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
-      LIMIT 1"""
+      createSql // no cache
   }
 
   private def deleteSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
+    // not caching, too many combinations
+
     val maxSeqNrCondition =
       if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= ?"
       else ""
@@ -158,9 +172,9 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   private val currentDbTimestampSql =
     sql"SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
-  protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String = {
-
-    sql"""
+  protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"snapshotsBySlicesRangeSql-$minSlice-$maxSlice") {
+      sql"""
       SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
       FROM ${snapshotTable(minSlice)}
       WHERE entity_type = ?
@@ -168,18 +182,19 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       AND db_timestamp >= ?
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
-  }
+    }
 
-  protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    sql"""
-     SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-     FROM ${snapshotTable(minSlice)}
-     WHERE entity_type = ?
-     AND ${sliceCondition(minSlice, maxSlice)}
-     AND db_timestamp >= ? AND db_timestamp <= ?
-     GROUP BY bucket ORDER BY bucket LIMIT ?
-     """
-  }
+  protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+      sql"""
+       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+       FROM ${snapshotTable(minSlice)}
+       WHERE entity_type = ?
+       AND ${sliceCondition(minSlice, maxSlice)}
+       AND db_timestamp >= ? AND db_timestamp <= ?
+       GROUP BY bucket ORDER BY bucket LIMIT ?
+       """
+    }
 
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
@@ -439,7 +454,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
 
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
-        val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
+        val stmt = connection.createStatement(selectBucketsSql(minSlice, maxSlice))
         bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
       },
       row => {

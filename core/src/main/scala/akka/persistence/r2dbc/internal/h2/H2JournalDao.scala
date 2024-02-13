@@ -18,6 +18,7 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
@@ -36,9 +37,14 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
   require(settings.useAppTimestamp)
   require(settings.dbTimestampMonotonicIncreasing)
 
-  private def insertSql(slice: Int) = sql"INSERT INTO ${journalTable(slice)} " +
-    "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
+  private def insertSql(slice: Int) =
+    sqlCache.get(slice, "insertSql") {
+      sql"INSERT INTO ${journalTable(slice)} " +
+      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    }
 
   /**
    * All events must be for the same persistenceId.

@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql
 
 /**
  * INTERNAL API
@@ -42,19 +43,28 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
 
   require(settings.useAppTimestamp, "SqlServer requires akka.persistence.r2dbc.use-app-timestamp=on")
 
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   override def log: Logger = SqlServerDurableStateDao.log
 
   override protected def insertStateSql(
       slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
-    val additionalCols = additionalInsertColumns(additionalBindings)
-    val additionalParams = additionalInsertParameters(additionalBindings)
-    sql"""
+    def createSql = {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
+      val additionalCols = additionalInsertColumns(additionalBindings)
+      val additionalParams = additionalInsertParameters(additionalBindings)
+      sql"""
       INSERT INTO $stateTable
       (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags$additionalCols, db_timestamp)
       VALUES (@slice, @entityType, @persistenceId, @revision, @stateSerId, @stateSerManifest, @statePayload, @tags$additionalParams, @now)"""
+    }
+
+    if (additionalBindings.isEmpty)
+      sqlCache.get(slice, s"insertStateSql-$entityType")(createSql)
+    else
+      createSql // no cache
   }
 
   /**
@@ -69,20 +79,22 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
     super.updateStateSql(slice, entityType, updateTags, additionalBindings, currentTimestamp = "?")
 
   override def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
+    sqlCache.get(minSlice, s"selectBucketsSql-$entityType-$minSlice-$maxSlice") {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
-    val subQuery =
-      s"""
+      val subQuery =
+        s"""
           select TOP(@limit) CAST(DATEDIFF(s,'1970-01-01 00:00:00',db_timestamp) AS BIGINT) / 10 AS bucket
           FROM $stateTable
           WHERE entity_type = @entityType
           AND ${sliceCondition(minSlice, maxSlice)}
           AND db_timestamp >= @fromTimestamp AND db_timestamp <= @toTimestamp
          """
-    sql"""
-     SELECT bucket,  count(*) as count from ($subQuery) as sub
-     GROUP BY bucket ORDER BY bucket
-     """
+      sql"""
+       SELECT bucket,  count(*) as count from ($subQuery) as sub
+       GROUP BY bucket ORDER BY bucket
+       """
+    }
   }
 
   override def bindSelectBucketSql(
@@ -120,6 +132,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
+    // not caching, too many combinations
 
     val behindCurrentTimeIntervalCondition: String =
       if (behindCurrentTime > Duration.Zero)
@@ -142,19 +155,21 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
         "SELECT TOP(@limit) persistence_id, revision, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
     sql"""
-  $selectColumns
-  FROM $stateTable
-  WHERE entity_type = @entityType
-  AND ${sliceCondition(minSlice, maxSlice)}
-  AND db_timestamp >= @fromTimestamp $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
-  ORDER BY db_timestamp, revision"""
+    $selectColumns
+    FROM $stateTable
+    WHERE entity_type = @entityType
+    AND ${sliceCondition(minSlice, maxSlice)}
+    AND db_timestamp >= @fromTimestamp $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+    ORDER BY db_timestamp, revision"""
   }
 
   override protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement =
     stmt.bindTimestamp(getAndIncIndex(), InstantFactory.now())
 
-  override protected def persistenceIdsForEntityTypeAfterSql(table: String): String =
+  override protected def persistenceIdsForEntityTypeAfterSql(table: String): String = {
+    // not worth caching
     sql"SELECT TOP(@limit) persistence_id from $table WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @after ORDER BY persistence_id"
+  }
 
   override protected def bindPersistenceIdsForEntityTypeAfterSql(
       stmt: Statement,
@@ -178,14 +193,20 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
       .bind("@persistenceIdLike", entityType + likeStmtPostfix)
   }
 
-  override protected def persistenceIdsForEntityTypeSql(table: String): String =
+  override protected def persistenceIdsForEntityTypeSql(table: String): String = {
+    // not worth caching
     sql"SELECT TOP(@limit) persistence_id from $table WHERE persistence_id LIKE @persistenceIdLike ORDER BY persistence_id"
+  }
 
-  override protected def allPersistenceIdsSql(table: String): String =
+  override protected def allPersistenceIdsSql(table: String): String = {
+    // not worth caching
     sql"SELECT TOP(@limit) persistence_id from $table ORDER BY persistence_id"
+  }
 
-  override protected def allPersistenceIdsAfterSql(table: String): String =
+  override protected def allPersistenceIdsAfterSql(table: String): String = {
+    // not worth caching
     sql"SELECT TOP(@limit) persistence_id from $table WHERE persistence_id > @persistenceId ORDER BY persistence_id"
+  }
 
   override def bindAllPersistenceIdsAfterSql(stmt: Statement, after: String, limit: Long): Statement = stmt
     .bind("@persistenceId", after)

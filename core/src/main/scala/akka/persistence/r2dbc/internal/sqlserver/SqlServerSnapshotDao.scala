@@ -18,6 +18,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotMetadata
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
@@ -42,42 +43,53 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
 
   override def log: Logger = SqlServerSnapshotDao.log
 
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   override def selectSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
-    val maxSeqNrCondition =
-      if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= @maxSeqNr"
-      else ""
+    def createSql = {
+      val maxSeqNrCondition =
+        if (criteria.maxSequenceNr != Long.MaxValue) " AND seq_nr <= @maxSeqNr"
+        else ""
 
-    val minSeqNrCondition =
-      if (criteria.minSequenceNr > 0L) " AND seq_nr >= @minSeqNr"
-      else ""
+      val minSeqNrCondition =
+        if (criteria.minSequenceNr > 0L) " AND seq_nr >= @minSeqNr"
+        else ""
 
-    val maxTimestampCondition =
-      if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= @maxTimestamp"
-      else ""
+      val maxTimestampCondition =
+        if (criteria.maxTimestamp != Long.MaxValue) " AND write_timestamp <= @maxTimestamp"
+        else ""
 
-    val minTimestampCondition =
-      if (criteria.minTimestamp != 0L) " AND write_timestamp >= @minTimestamp"
-      else ""
+      val minTimestampCondition =
+        if (criteria.minTimestamp != 0L) " AND write_timestamp >= @minTimestamp"
+        else ""
 
-    if (settings.querySettings.startFromSnapshotEnabled)
-      sql"""
+      if (settings.querySettings.startFromSnapshotEnabled)
+        sql"""
         SELECT TOP(1) slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
         FROM ${snapshotTable(slice)}
         WHERE persistence_id = @persistenceId
         $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
         """
+      else
+        sql"""
+        SELECT TOP (1) slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
+        FROM ${snapshotTable(slice)}
+        WHERE persistence_id = @persistenceId
+        $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
+        """
+    }
+
+    if (criteria == SnapshotSelectionCriteria.Latest)
+      sqlCache.get(slice, "selectSql-latest")(createSql) // normal case
     else
-      sql"""
-      SELECT TOP (1) slice, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM ${snapshotTable(slice)}
-      WHERE persistence_id = @persistenceId
-      $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition
-      """
+      createSql // no cache
+
   }
 
-  override protected def upsertSql(slice: Int): String = {
-    if (settings.querySettings.startFromSnapshotEnabled)
-      sql"""
+  override protected def upsertSql(slice: Int): String =
+    sqlCache.get(slice, "upsertSql") {
+      if (settings.querySettings.startFromSnapshotEnabled)
+        sql"""
         UPDATE ${snapshotTable(slice)} SET
           seq_nr = @seqNr,
           db_timestamp = @dbTimestamp,
@@ -95,25 +107,25 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
              (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, db_timestamp, tags)
              VALUES (@slice, @entityType, @persistenceId, @seqNr, @writeTimestamp, @snapshot, @serId, @serManifest, @metaPayload, @metaSerId, @metaSerManifest, @dbTimestamp, @tags)
           """
-    else
-      sql"""
-      UPDATE ${snapshotTable(slice)} SET
-        seq_nr = @seqNr,
-        write_timestamp = @writeTimestamp,
-        snapshot = @snapshot,
-        ser_id = @serId,
-        ser_manifest = @serManifest,
-        meta_payload = @metaPayload,
-        meta_ser_id = @metaSerId,
-        meta_ser_manifest = @metaSerManifest,
-        tags = @tags
-      where persistence_id = @persistenceId
-      if @@ROWCOUNT = 0
-        INSERT INTO ${snapshotTable(slice)}
-          (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, tags)
-          VALUES (@slice, @entityType, @persistenceId, @seqNr, @writeTimestamp, @snapshot, @serId, @serManifest, @metaPayload, @metaSerId, @metaSerManifest, @tags)
-        """
-  }
+      else
+        sql"""
+        UPDATE ${snapshotTable(slice)} SET
+          seq_nr = @seqNr,
+          write_timestamp = @writeTimestamp,
+          snapshot = @snapshot,
+          ser_id = @serId,
+          ser_manifest = @serManifest,
+          meta_payload = @metaPayload,
+          meta_ser_id = @metaSerId,
+          meta_ser_manifest = @metaSerManifest,
+          tags = @tags
+        where persistence_id = @persistenceId
+        if @@ROWCOUNT = 0
+          INSERT INTO ${snapshotTable(slice)}
+            (slice, entity_type, persistence_id, seq_nr, write_timestamp, snapshot, ser_id, ser_manifest, meta_payload, meta_ser_id, meta_ser_manifest, tags)
+            VALUES (@slice, @entityType, @persistenceId, @seqNr, @writeTimestamp, @snapshot, @serId, @serManifest, @metaPayload, @metaSerId, @metaSerManifest, @tags)
+          """
+    }
 
   override protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {
     statement
@@ -162,22 +174,22 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
       .bindTimestamp("@toTimestamp", toTimestamp)
   }
 
-  override protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-
-    // group by column alias (bucket) needs a sub query
-    val subQuery =
-      s"""
+  override protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+      // group by column alias (bucket) needs a sub query
+      val subQuery =
+        s"""
           select TOP(@limit) CAST(DATEDIFF(s,'1970-01-01 00:00:00',db_timestamp) AS BIGINT) / 10 AS bucket
           FROM ${snapshotTable(minSlice)}
           WHERE entity_type = @entityType
           AND ${sliceCondition(minSlice, maxSlice)}
           AND db_timestamp >= @fromTimestamp AND db_timestamp <= @toTimestamp
          """
-    sql"""
-     SELECT bucket,  count(*) as count from ($subQuery) as sub
-     GROUP BY bucket ORDER BY bucket
-     """
-  }
+      sql"""
+       SELECT bucket,  count(*) as count from ($subQuery) as sub
+       GROUP BY bucket ORDER BY bucket
+       """
+    }
 
   override protected def bindSnapshotsBySlicesRangeSql(
       stmt: Statement,
@@ -191,7 +203,8 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
   }
 
   override protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String =
-    sql"""
+    sqlCache.get(minSlice, s"snapshotsBySlicesRangeSql-$minSlice-$maxSlice") {
+      sql"""
       SELECT TOP(@bufferSize) slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
       FROM ${snapshotTable(minSlice)}
       WHERE entity_type = @entityType
@@ -199,6 +212,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
       AND db_timestamp >= @fromTimestamp
       ORDER BY db_timestamp, seq_nr
       """
+    }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
 
