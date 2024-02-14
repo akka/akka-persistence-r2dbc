@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
@@ -42,15 +43,19 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
 
   // def because of order of initialization
   override def log = SqlServerQueryDao.log
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   override protected def sqlDbTimestamp = "SYSUTCDATETIME()"
 
-  override protected def selectEventsSql(slice: Int) =
-    sql"""
+  override protected def selectEventsSql(slice: Int): String =
+    sqlCache.get(slice, "selectEventsSql") {
+      sql"""
       SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       from ${journalTable(slice)}
       WHERE persistence_id = @persistenceId AND seq_nr >= @from AND seq_nr <= @to
       AND deleted = $sqlFalse
       ORDER BY seq_nr"""
+    }
 
   /**
    * custom binding because the first param in the query is @limit (or '0' when using positional binding)
@@ -70,8 +75,9 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@from", fromSequenceNr)
       .bind("@to", toSequenceNr)
 
-  override protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
-    sql"""
+  override protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+      sql"""
         SELECT TOP(@limit) bucket, count(*) as count from
          (select DATEDIFF(s,'1970-01-01 00:00:00', db_timestamp)/10 as bucket
           FROM ${journalTable(minSlice)}
@@ -81,7 +87,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
           AND deleted = $sqlFalse) as sub
         GROUP BY bucket ORDER BY bucket
         """
-  }
+    }
 
   override protected def bindSelectBucketsSql(
       stmt: Statement,
@@ -102,6 +108,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
+    // not caching, too many combinations
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= @until" else ""
@@ -141,12 +148,13 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
     stmt
   }
 
-  override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String = {
-    sql"""
+  override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
+      sql"""
          SELECT TOP(@limit) persistence_id FROM (
           SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
-  }
+    }
 
   override protected def bindPersistenceIdsForEntityTypeAfterSql(
       stmt: Statement,
@@ -160,12 +168,13 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@persistenceId", afterPersistenceId)
   }
 
-  override protected def persistenceIdsForEntityTypeSql(minSlice: Int): String = {
-    sql"""
+  override protected def persistenceIdsForEntityTypeSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
+      sql"""
          SELECT TOP(@limit) persistence_id FROM (
           SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike
          ) as sub ORDER BY persistence_id"""
-  }
+    }
 
   override protected def bindPersistenceIdsForEntityTypeSql(
       stmt: Statement,
@@ -185,16 +194,18 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@limit", limit)
       .bind("@persistenceId", afterPersistenceId)
   }
-  override protected def allPersistenceIdsAfterSql(minSlice: Int): String = {
-    sql"""
+  override protected def allPersistenceIdsAfterSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "allPersistenceIdsAfterSql") {
+      sql"""
          SELECT TOP(@limit) persistence_id FROM (
           SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
-  }
+    }
 
-  override protected def allPersistenceIdsSql(minSlice: Int): String = {
-    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)}) as sub  ORDER BY persistence_id"
-  }
+  override protected def allPersistenceIdsSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "allPersistenceIdsSql") {
+      sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)}) as sub  ORDER BY persistence_id"
+    }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
 

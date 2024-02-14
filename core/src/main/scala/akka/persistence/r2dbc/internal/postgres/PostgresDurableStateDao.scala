@@ -47,6 +47,7 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
@@ -90,6 +91,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
   private val persistenceExt = Persistence(system)
 
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
 
@@ -107,24 +110,26 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def selectStateSql(slice: Int, entityType: String): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
-    sql"""
-    SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
-    FROM $stateTable WHERE persistence_id = ?"""
-  }
+  protected def selectStateSql(slice: Int, entityType: String): String =
+    sqlCache.get(slice, s"selectStateSql-$entityType") {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
+      sql"""
+      SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
+      FROM $stateTable WHERE persistence_id = ?"""
+    }
 
-  protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
-    sql"""
-     SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-     FROM $stateTable
-     WHERE entity_type = ?
-     AND ${sliceCondition(minSlice, maxSlice)}
-     AND db_timestamp >= ? AND db_timestamp <= ?
-     GROUP BY bucket ORDER BY bucket LIMIT ?
-     """
-  }
+  protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-$entityType-$minSlice-$maxSlice") {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
+      sql"""
+       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+       FROM $stateTable
+       WHERE entity_type = ?
+       AND ${sliceCondition(minSlice, maxSlice)}
+       AND db_timestamp >= ? AND db_timestamp <= ?
+       GROUP BY bucket ORDER BY bucket LIMIT ?
+       """
+    }
 
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
@@ -133,13 +138,20 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       slice: Int,
       entityType: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
-    val additionalCols = additionalInsertColumns(additionalBindings)
-    val additionalParams = additionalInsertParameters(additionalBindings)
-    sql"""
-    INSERT INTO $stateTable
-    (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags$additionalCols, db_timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?$additionalParams, CURRENT_TIMESTAMP)"""
+    def createSql = {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
+      val additionalCols = additionalInsertColumns(additionalBindings)
+      val additionalParams = additionalInsertParameters(additionalBindings)
+      sql"""
+      INSERT INTO $stateTable
+      (slice, entity_type, persistence_id, revision, state_ser_id, state_ser_manifest, state_payload, tags$additionalCols, db_timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?$additionalParams, CURRENT_TIMESTAMP)"""
+    }
+
+    if (additionalBindings.isEmpty)
+      sqlCache.get(slice, s"insertStateSql-$entityType")(createSql)
+    else
+      createSql // no cache
   }
 
   protected def additionalInsertColumns(
@@ -179,28 +191,35 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       updateTags: Boolean,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
       currentTimestamp: String = "CURRENT_TIMESTAMP"): String = {
+    def createSql = {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
 
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
+      val timestamp =
+        if (settings.dbTimestampMonotonicIncreasing)
+          currentTimestamp
+        else
+          "GREATEST(CURRENT_TIMESTAMP, " +
+          s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
 
-    val timestamp =
-      if (settings.dbTimestampMonotonicIncreasing)
-        currentTimestamp
-      else
-        "GREATEST(CURRENT_TIMESTAMP, " +
-        s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
+      val revisionCondition =
+        if (settings.durableStateAssertSingleWriter) " AND revision = ?"
+        else ""
 
-    val revisionCondition =
-      if (settings.durableStateAssertSingleWriter) " AND revision = ?"
-      else ""
+      val tags = if (updateTags) ", tags = ?" else ""
 
-    val tags = if (updateTags) ", tags = ?" else ""
-
-    val additionalParams = additionalUpdateParameters(additionalBindings)
-    sql"""
+      val additionalParams = additionalUpdateParameters(additionalBindings)
+      sql"""
       UPDATE $stateTable
       SET revision = ?, state_ser_id = ?, state_ser_manifest = ?, state_payload = ?$tags$additionalParams, db_timestamp = $timestamp
       WHERE persistence_id = ?
       $revisionCondition"""
+    }
+
+    if (additionalBindings.isEmpty)
+      // timestamp param doesn't have to be part of cache key because it's just different for different dialects
+      sqlCache.get(slice, s"updateStateSql-$entityType-$updateTags")(createSql)
+    else
+      createSql // no cache
   }
 
   protected def additionalUpdateParameters(
@@ -220,21 +239,29 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   protected def hardDeleteStateSql(entityType: String, slice: Int): String = {
-    val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
-    sql"DELETE from $stateTable WHERE persistence_id = ?"
+    sqlCache.get(slice, s"hardDeleteStateSql-$entityType") {
+      val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
+      sql"DELETE from $stateTable WHERE persistence_id = ?"
+    }
   }
 
   private val currentDbTimestampSql =
     sql"SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
-  protected def allPersistenceIdsSql(table: String): String =
+  protected def allPersistenceIdsSql(table: String): String = {
+    // not worth caching
     sql"SELECT persistence_id from $table ORDER BY persistence_id LIMIT ?"
+  }
 
-  protected def persistenceIdsForEntityTypeSql(table: String): String =
+  protected def persistenceIdsForEntityTypeSql(table: String): String = {
+    // not worth caching
     sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+  }
 
-  protected def allPersistenceIdsAfterSql(table: String): String =
+  protected def allPersistenceIdsAfterSql(table: String): String = {
+    // not worth caching
     sql"SELECT persistence_id from $table WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  }
 
   protected def bindPersistenceIdsForEntityTypeAfterSql(
       stmt: Statement,
@@ -248,8 +275,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       .bind(2, limit)
   }
 
-  protected def persistenceIdsForEntityTypeAfterSql(table: String): String =
+  protected def persistenceIdsForEntityTypeAfterSql(table: String): String = {
+    // not worth caching
     sql"SELECT persistence_id from $table WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  }
 
   protected def behindCurrentTimeIntervalConditionFor(behindCurrentTime: FiniteDuration): String =
     if (behindCurrentTime > Duration.Zero)
@@ -263,6 +292,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
+    // not caching, too many combinations
 
     val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 

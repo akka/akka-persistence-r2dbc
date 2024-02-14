@@ -28,6 +28,7 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
@@ -58,6 +59,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
 
   protected def log: Logger = PostgresQueryDao.log
   protected val persistenceExt: Persistence = Persistence(system)
+  private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
+
   protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
 
   protected def sqlFalse: String = "false"
@@ -71,6 +74,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
+    // not caching, too many combinations
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
@@ -101,8 +105,9 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
-  protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String = {
-    sql"""
+  protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+      sql"""
       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
@@ -111,29 +116,41 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       AND deleted = false
       GROUP BY bucket ORDER BY bucket LIMIT ?
       """
-  }
+    }
 
-  protected def selectTimestampOfEventSql(slice: Int) = sql"""
-    SELECT db_timestamp FROM ${journalTable(slice)}
-    WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+  protected def selectTimestampOfEventSql(slice: Int): String =
+    sqlCache.get(slice, "selectTimestampOfEventSql") {
+      sql"""
+      SELECT db_timestamp FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+    }
 
-  protected def selectOneEventSql(slice: Int) = sql"""
-    SELECT slice, entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    FROM ${journalTable(slice)}
-    WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+  protected def selectOneEventSql(slice: Int): String =
+    sqlCache.get(slice, "selectOneEventSql") {
+      sql"""
+      SELECT slice, entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+    }
 
-  protected def selectOneEventWithoutPayloadSql(slice: Int) = sql"""
-    SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    FROM ${journalTable(slice)}
-    WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+  protected def selectOneEventWithoutPayloadSql(slice: Int): String =
+    sqlCache.get(slice, "selectOneEventWithoutPayloadSql") {
+      sql"""
+      SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+    }
 
-  protected def selectEventsSql(slice: Int) = sql"""
-    SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-    from ${journalTable(slice)}
-    WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
-    AND deleted = false
-    ORDER BY seq_nr
-    LIMIT ?"""
+  protected def selectEventsSql(slice: Int): String =
+    sqlCache.get(slice, "selectEventsSql") {
+      sql"""
+      SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      from ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
+      AND deleted = false
+      ORDER BY seq_nr
+      LIMIT ?"""
+    }
 
   protected def bindSelectEventsSql(
       stmt: Statement,
@@ -146,18 +163,25 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     .bind(2, toSequenceNr)
     .bind(3, settings.querySettings.bufferSize)
 
-  protected def allPersistenceIdsSql(minSlice: Int) = {
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} ORDER BY persistence_id LIMIT ?"
-  }
+  protected def allPersistenceIdsSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "allPersistenceIdsSql") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} ORDER BY persistence_id LIMIT ?"
+    }
 
-  protected def persistenceIdsForEntityTypeSql(minSlice: Int) =
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+  protected def persistenceIdsForEntityTypeSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+    }
 
-  protected def allPersistenceIdsAfterSql(minSlice: Int) =
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  protected def allPersistenceIdsAfterSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "allPersistenceIdsAfterSql") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
+    }
 
-  protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int) =
-    sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
+    sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+    }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
