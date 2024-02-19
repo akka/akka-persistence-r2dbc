@@ -16,7 +16,7 @@ object Dependencies {
   val H2Version = "2.2.224"
   val R2dbcH2Version = "1.0.0.RELEASE"
   val SqlServerR2dbcVersion = "1.0.2.RELEASE"
-  val SqlServerJdbcVersion = "7.4.1.jre8"
+  val SqlServerJdbcVersion = "7.4.1.jre12"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
