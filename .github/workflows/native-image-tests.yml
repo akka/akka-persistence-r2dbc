@@ -47,12 +47,12 @@ jobs:
         run: |-
           sbt "publishLocal"
 
-      #- name: Akka Persistence R2DBC native image test app build
-      #  run: |-
-      #    cd native-image-tests/
-      #    sbt nativeImage -Dakka.http.version=`cat ~/.version`
+      - name: Akka Persistence R2DBC native image test app build
+        run: |-
+          cd native-image-tests/
+          sbt nativeImage -Dakka.r2dbc.version=`cat ~/.version`
           # run the binary
-      #    target/native-image/native-image-tests
+          target/native-image/native-image-tests
 
       - name: Email on failure
         if: ${{ failure() }}
