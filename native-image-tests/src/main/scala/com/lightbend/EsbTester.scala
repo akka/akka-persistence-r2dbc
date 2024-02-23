@@ -12,7 +12,6 @@ import akka.persistence.typed.scaladsl.Effect
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
 import akka.serialization.jackson.JsonSerializable
 import com.fasterxml.jackson.annotation.JsonCreator
-import com.fasterxml.jackson.annotation.JsonProperty
 
 import scala.concurrent.duration.DurationInt
 
@@ -20,16 +19,14 @@ object EventSourcedCounter {
   sealed trait Command extends JsonSerializable
 
   final case class Increase(amount: Int, replyTo: ActorRef[StatusReply[Increased]]) extends Command
-  @JsonCreator
-  final case class GetValue(replyTo: ActorRef[StatusReply[GetValueResponse]]) extends Command
+  final case class GetValue @JsonCreator() (replyTo: ActorRef[StatusReply[GetValueResponse]]) extends Command
   final case class GetValueResponse(value: Int)
 
   sealed trait Event extends JsonSerializable
 
-  // FIXME why doesn't @JsonCreator work as usual? is it something missing from the akka jackson feature?
-  final case class Increased(@JsonProperty("amount") amount: Int) extends Event
+  final case class Increased @JsonCreator() (amount: Int) extends Event
 
-  final case class State(@JsonProperty("value") value: Int) extends JsonSerializable
+  final case class State @JsonCreator() (value: Int) extends JsonSerializable
 
   def apply(id: String): Behavior[Command] = EventSourcedBehavior[Command, Event, State](
     PersistenceId("EventSourcedHelloWorld", id),
