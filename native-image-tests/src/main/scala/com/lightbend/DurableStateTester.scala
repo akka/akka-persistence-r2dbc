@@ -10,7 +10,6 @@ import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.state.scaladsl.DurableStateBehavior
 import akka.persistence.typed.state.scaladsl.Effect
 import akka.serialization.jackson.JsonSerializable
-import com.fasterxml.jackson.annotation.JsonCreator
 
 import scala.concurrent.duration.DurationInt
 
@@ -18,12 +17,11 @@ object DurableStateCounter {
   sealed trait Command extends JsonSerializable
   final case class Increase(amount: Int, replyTo: ActorRef[Increased]) extends Command
 
-  // FIXME why doesn't @JsonCreator work as usual? is it something missing from the jackson feature?
-  final case class GetState @JsonCreator() (replyTo: ActorRef[State]) extends Command
+  final case class GetState(replyTo: ActorRef[State]) extends Command
 
-  final case class Increased @JsonCreator() (newValue: Int) extends JsonSerializable
+  final case class Increased(newValue: Int) extends JsonSerializable
 
-  final case class State @JsonCreator() (value: Int) extends JsonSerializable
+  final case class State(value: Int) extends JsonSerializable
   def apply(id: String): Behavior[Command] =
     DurableStateBehavior[Command, State](
       PersistenceId("DSCounter", id),
