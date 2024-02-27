@@ -1,7 +1,7 @@
 # Building Native Images
 
-Building native images with Akka HTTP is supported out of the box for the event sourced journal, snapshot store and 
-durable state store and databases:
+Building native images with Akka Persistence R2DBC is supported out of the box for the event sourced journal, snapshot store and 
+durable state store with the following databases:
 
 * H2 (inmem and file)
 * Postgres
