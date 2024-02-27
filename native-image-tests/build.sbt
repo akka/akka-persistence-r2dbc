@@ -6,13 +6,9 @@ scalaVersion := "2.13.12"
 
 resolvers += "Akka library repository".at("https://repo.akka.io/maven")
 
-lazy val akkaVersion = sys.props.getOrElse("akka.version", "2.9.1")
-lazy val akkaR2dbcVersion = sys.props.getOrElse("akka.r2dbc.version", "1.2.2")
+lazy val akkaVersion = sys.props.getOrElse("akka.version", "2.9.2")
+lazy val akkaR2dbcVersion = sys.props.getOrElse("akka.r2dbc.version", "1.2.3")
 
-// Run in a separate JVM, to make sure sbt waits until all threads have
-// finished before returning.
-// If you want to keep the application running while executing other
-// sbt tasks, consider https://github.com/spray/sbt-revolver/
 fork := true
 
 // GraalVM native image build
