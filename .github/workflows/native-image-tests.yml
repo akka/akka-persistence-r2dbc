@@ -47,12 +47,30 @@ jobs:
         run: |-
           sbt "publishLocal"
 
-      #- name: Akka Persistence R2DBC native image test app build
-      #  run: |-
-      #    cd native-image-tests/
-      #    sbt nativeImage -Dakka.http.version=`cat ~/.version`
-          # run the binary
-      #    target/native-image/native-image-tests
+      - name: Akka Persistence R2DBC native image test app build
+        run: |-
+          cd native-image-tests/
+          sbt nativeImage -Dakka.r2dbc.version=`cat ~/.version`
+
+      - name: Akka Persistence native image H2 inmem
+        run: |-
+          cd native-image-tests/
+          target/native-image/native-image-tests
+
+      - name: Akka Persistence native image H2 file
+        run: |-
+          cd native-image-tests/
+          target/native-image/native-image-tests -Dconfig.resource=application-h2-file.conf
+
+      - name: Start Postgres DB
+        run: |-
+          docker compose -f docker/docker-compose-postgres.yml up --wait
+          docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+
+      - name: Akka Persistence native image H2
+        run: |-
+          cd native-image-tests/
+          target/native-image/native-image-tests -Dconfig.resource=application-postgres.conf
 
       - name: Email on failure
         if: ${{ failure() }}

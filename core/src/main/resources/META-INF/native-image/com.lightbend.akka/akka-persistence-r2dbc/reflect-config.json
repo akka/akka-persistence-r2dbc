@@ -1,0 +1,53 @@
+[
+  {
+    "name": "akka.persistence.r2dbc.journal.R2dbcJournal",
+    "methods": [
+      {
+        "name": "<init>",
+        "parameterTypes": [
+          "com.typesafe.config.Config",
+          "java.lang.String"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "akka.persistence.r2dbc.query.R2dbcReadJournalProvider",
+    "methods": [
+      {
+        "name": "<init>",
+        "parameterTypes": [
+          "akka.actor.ExtendedActorSystem",
+          "com.typesafe.config.Config",
+          "java.lang.String"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "akka.persistence.r2dbc.snapshot.R2dbcSnapshotStore",
+    "methods": [
+      {
+        "name": "<init>",
+        "parameterTypes": [
+          "com.typesafe.config.Config",
+          "java.lang.String"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "akka.persistence.r2dbc.state.R2dbcDurableStateStoreProvider",
+    "methods": [
+      {
+        "name": "<init>",
+        "parameterTypes": [
+          "akka.actor.ExtendedActorSystem",
+          "com.typesafe.config.Config",
+          "java.lang.String"
+        ]
+      }
+    ]
+  }
+
+]
