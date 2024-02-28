@@ -41,7 +41,7 @@ jobs:
       - name: Gather version
         # some cleanup of the sbt output to get the version sbt will use when publishing below
         run: |-
-          sbt "akka-persistence-r2dbc/version" --batch --no-colors | tail -n 1 | cut -f 2 -d ' ' | tr -d '\n' > ~/.version
+          sbt "core/version" --batch --no-colors | tail -n 1 | cut -f 2 -d ' ' | tr -d '\n' > ~/.version
           echo [$(cat ~/.version)]
           # useful for debugging: hexdump -c ~/.version
 
