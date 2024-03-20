@@ -30,7 +30,7 @@ import akka.persistence.r2dbc.internal.postgres.PostgresSnapshotDao
  */
 @InternalApi
 private[r2dbc] object SqlServerSnapshotDao {
-  private def log: Logger = LoggerFactory.getLogger(classOf[SqlServerSnapshotDao])
+  private val log: Logger = LoggerFactory.getLogger(classOf[SqlServerSnapshotDao])
 }
 
 /**
