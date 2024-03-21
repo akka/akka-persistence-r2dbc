@@ -38,7 +38,7 @@ inThisBuild(
 
 def common: Seq[Setting[_]] =
   Seq(
-    crossScalaVersions := Dependencies.Scala2Versions,
+    crossScalaVersions := Dependencies.ScalaVersions,
     scalaVersion := Dependencies.Scala213,
     crossVersion := CrossVersion.binary,
     scalafmtOnCompile := true,
@@ -91,7 +91,6 @@ def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.g
 
 lazy val core = (project in file("core"))
   .settings(common)
-  .settings(Scala3.settings)
   .settings(name := "akka-persistence-r2dbc", libraryDependencies ++= Dependencies.core)
   .enablePlugins(AutomateHeaderPlugin)
   .disablePlugins(CiReleasePlugin)
