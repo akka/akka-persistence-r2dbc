@@ -21,7 +21,7 @@ import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
  */
 @InternalApi
 private[r2dbc] object SqlServerJournalDao {
-  private def log: Logger = LoggerFactory.getLogger(classOf[SqlServerJournalDao])
+  private val log: Logger = LoggerFactory.getLogger(classOf[SqlServerJournalDao])
   val TRUE = "1"
 }
 
