@@ -27,7 +27,7 @@ import akka.persistence.r2dbc.internal.postgres.PostgresQueryDao
  */
 @InternalApi
 private[r2dbc] object SqlServerQueryDao {
-  private def log: Logger = LoggerFactory.getLogger(classOf[SqlServerQueryDao])
+  private val log: Logger = LoggerFactory.getLogger(classOf[SqlServerQueryDao])
 
 }
 

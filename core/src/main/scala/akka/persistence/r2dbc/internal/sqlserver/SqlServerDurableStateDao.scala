@@ -30,7 +30,7 @@ import akka.persistence.r2dbc.internal.Sql
  */
 @InternalApi
 private[r2dbc] object SqlServerDurableStateDao {
-  private def log: Logger = LoggerFactory.getLogger(classOf[SqlServerDurableStateDao])
+  private val log: Logger = LoggerFactory.getLogger(classOf[SqlServerDurableStateDao])
 }
 
 /**
