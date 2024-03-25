@@ -171,6 +171,9 @@ Postgres JSONB:
 Yugabyte:
 : @@snip [create_tables.sql](/ddl-scripts/create_tables_yugabyte.sql)
 
+SQLServer:
+: @@snip [create_tables.sql](/ddl-scripts/create_tables_sqlserver.sql)
+
 The ddl script can be run in Docker with:
 
 Postgres:
@@ -183,6 +186,11 @@ Yugabyte:
 docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
 ```
 
+SQLServer:
+: ```
+docker exec -i sqlserver-db /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P '<YourStrong@Passw0rd>' -d master < ddl-scripts/create_tables_sqlserver.sql
+```
+
 ### Dropping the schema
 
 Postgres:
@@ -190,6 +198,9 @@ Postgres:
 
 Yugabyte:
 : @@snip [drop_tables.sql](/ddl-scripts/drop_tables_postgres.sql)
+
+SQLServer:
+: @@snip [drop_tables.sql](/ddl-scripts/drop_tables_sqlserver.sql)
 
 ### Local testing in process with H2
 
