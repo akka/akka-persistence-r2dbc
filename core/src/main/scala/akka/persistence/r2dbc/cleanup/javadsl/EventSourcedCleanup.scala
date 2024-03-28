@@ -17,11 +17,13 @@ import akka.annotation.ApiMayChange
 import akka.persistence.r2dbc.cleanup.scaladsl
 
 /**
- * Java API: Tool for deleting all events and/or snapshots for a given list of `persistenceIds` without using persistent
- * actors. It's important that the actors with corresponding `persistenceId` are not running at the same time as using
- * the tool.
+ * Java API: Tool for deleting events and/or snapshots for a given list of `persistenceIds` without using persistent
+ * actors.
  *
- * WARNING: deleting events is generally discouraged in event sourced systems.
+ * When running an operation with `EventSourcedCleanup` that deletes all events for a persistence id, the actor with
+ * that persistence id must not be running! If the actor is restarted it would in that case be recovered to the wrong
+ * state since the stored events have been deleted. Delete events before snapshot can still be used while the actor is
+ * running.
  *
  * If `resetSequenceNumber` is `true` then the creating entity with the same `persistenceId` will start from 0.
  * Otherwise it will continue from the latest highest used sequence number.
