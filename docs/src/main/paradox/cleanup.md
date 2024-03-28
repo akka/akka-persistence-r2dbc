@@ -2,15 +2,9 @@
 
 ## Event Sourced cleanup tool
 
-@@@ warning
-
-When running any operation with `EventSourcedCleanup` for a persistence id, the actor with that persistence id must
-not be running!
-
-@@@
-
 If possible, it is best to keep all events in an event sourced system. That way new @extref:[Akka Projection R2DBC](akka-projection:r2dbc.html)
-can be re-built.
+can be re-built. A @ref[Projection can also start or continue from a snapshot](./query.md#eventsbyslicesstartingfromsnapshots),
+and then events can be deleted before the snapshot. 
 
 In some cases keeping all events is not possible or must be removed for regulatory reasons, such as compliance with
 GDPR. `EventSourcedBehavior`s can automatically snapshot state and delete events as described in the
@@ -32,6 +26,15 @@ not emit further events after that and typically stop itself if it receives more
 * Delete events before snapshot for one or many persistence ids
 * Delete events before a timestamp
 
+@@@ warning
+
+When running an operation with `EventSourcedCleanup` that deletes all events for a persistence id,
+the actor with that persistence id must not be running! If the actor is restarted it would in that
+case be recovered to the wrong state since the stored events have been deleted. Delete events before
+snapshot can still be used while the actor is running.
+
+@@@
+
 The cleanup tool can be combined with the @ref[query plugin](./query.md) which has a query to get all persistence ids.
 
 Java
@@ -42,15 +45,16 @@ Scala
 
 ## Durable State cleanup tool
 
-@@@ warning
-
-When running any operation with `DurableStateCleanup` for a persistence id, the actor with that persistence id must
-not be running!
-
-@@@
-
 @apidoc[DurableStateCleanup] operations include:
 
 * Delete state for one or many persistence ids
+
+@@@ warning
+
+When running any operation with `DurableStateCleanup` for a persistence id, the actor with that persistence id must
+not be running! If the actor is restarted it would in that case be recovered to the wrong state since the stored state
+hase been deleted.
+
+@@@
 
 The cleanup tool can be combined with the @ref[query plugin](./query.md) which has a query to get all persistence ids.
