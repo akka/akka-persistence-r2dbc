@@ -9,6 +9,8 @@ idempotent result. Full rolling update when switching database or Persistence pl
 you can migrate most of the data while the system is online and then have a short full shutdown while
 migrating the remaining data that was written after the previous online migration.
 
+The migration tool is intended to run as a separate, standalone application and should not be part of the same jvm process the main application is running under.
+
 ## Dependencies
 
 The Akka dependencies are available from Akka's library repository. To access them there, you need to configure the URL for this repository.
@@ -73,6 +75,8 @@ The migration tool can be run as main class `akka.persistence.r2dbc.migration.Mi
 @@@ note
 
 Durable State is not migrated by `MigrationTool.migrateAll`, instead you need to use `MigrationTool.migrateDurableStates` for a given list of persistence ids.
+
+This list can be retrieved by using `currentPersistenceIds` of @ref:[Durable state queries](./query.md#durable-state-queries). 
 
 @@@
 
