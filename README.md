@@ -1,5 +1,7 @@
 # R2DBC Plugin for Akka Persistence
 
+The Akka family of projects is managed by teams at [Lightbend](https://lightbend.com/) with help from the community.
+
 [Akka Persistence](https://doc.akka.io/docs/akka/current/scala/persistence.html) journal and snapshot 
 store for SQL datbases with RD2BC connectivity. 
 
@@ -13,5 +15,5 @@ This library is ready to be used in production, APIs are stable, and the Lightbe
 
 ## License
 
-Akka Persistence R2DBC is licensed under the Business Source License 1.1, see LICENSE.
+Akka is licensed under the Business Source License 1.1, please see the [Akka License FAQ](https://www.lightbend.com/akka/license-faq).
 
