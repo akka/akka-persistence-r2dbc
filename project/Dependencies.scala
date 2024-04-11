@@ -26,7 +26,7 @@ object Dependencies {
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.1.RELEASE" // ApacheV2
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.4.RELEASE" // ApacheV2
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.5.RELEASE" // ApacheV2
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
