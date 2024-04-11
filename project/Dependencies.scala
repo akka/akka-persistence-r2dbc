@@ -72,7 +72,9 @@ object Dependencies {
 
   val migrationTests =
     Seq(
-      "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
+      ("com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test)
+        // Unsupported SLF4J 2 transitively pulled in by Slick 3.5.0
+        .exclude("org.slf4j", "slf4j-api"),
       "com.microsoft.sqlserver" % "mssql-jdbc" % SqlServerJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,
