@@ -70,7 +70,7 @@ jobs:
           docker compose -f docker/docker-compose-postgres.yml up --wait
           docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
 
-      - name: Akka Persistence native image H2
+      - name: Akka Persistence native image Postgres
         run: |-
           cd native-image-tests/
           target/native-image/native-image-tests -Dconfig.resource=application-postgres.conf
