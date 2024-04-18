@@ -53,7 +53,8 @@ private[r2dbc] trait DurableStateDao extends BySliceQuery.Dao[DurableStateDao.Se
   def upsertState(
       state: SerializedStateRow,
       value: Any,
-      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]]
+      changeEvent: Option[SerializedJournalRow],
+      insertRevisionOverride: Boolean = false): Future[Option[Instant]]
 
   def deleteState(
       persistenceId: String,

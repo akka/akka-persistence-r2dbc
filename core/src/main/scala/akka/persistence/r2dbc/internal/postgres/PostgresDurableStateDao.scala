@@ -370,7 +370,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   override def upsertState(
       state: SerializedStateRow,
       value: Any,
-      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
+      changeEvent: Option[SerializedJournalRow],
+      insertRevisionOverride: Boolean = false): Future[Option[Instant]] = {
     require(state.revision > 0)
     val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
     val executor = executorProvider.executorFor(slice)
@@ -411,7 +412,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           columns.map(c => EvaluatedAdditionalColumnBindings(c, c.bind(upsert)))
       }
 
-      if (state.revision == 1) {
+      if (state.revision == 1 || (settings.migration && insertRevisionOverride)) {
         def insertStatement(connection: Connection): Statement = {
           val stmt = connection
             .createStatement(insertStateSql(slice, entityType, additionalBindings))
@@ -506,13 +507,18 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       }
     }
 
-    result.map { case (updatedRows, changeEventTimestamp) =>
-      if (updatedRows != 1)
-        throw new IllegalStateException(
-          s"Update failed: durable state for persistence id [${state.persistenceId}] could not be updated to revision [${state.revision}]")
-      else {
+    result.flatMap { case (updatedRows, changeEventTimestamp) =>
+      if (updatedRows != 1) {
+        if (settings.migration) {
+          // during migration,
+          upsertState(state, value, changeEvent, insertRevisionOverride = true)
+        } else {
+          throw new IllegalStateException(
+            s"Update failed: durable state for persistence id [${state.persistenceId}] could not be updated to revision [${state.revision}]")
+        }
+      } else {
         log.debug("Updated durable state for persistenceId [{}] to revision [{}]", state.persistenceId, state.revision)
-        changeEventTimestamp
+        Future.successful(changeEventTimestamp)
       }
     }
   }

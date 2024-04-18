@@ -73,6 +73,7 @@ object R2dbcSettings {
       configToMap(config.getConfig("state.change-handler"))
 
     val durableStateAssertSingleWriter: Boolean = config.getBoolean("state.assert-single-writer")
+    val migration: Boolean = config.hasPath("migration")
 
     val numberOfDataPartitions = config.getInt("data-partition.number-of-partitions")
     require(
@@ -173,6 +174,7 @@ object R2dbcSettings {
       snapshotsTable,
       durableStateTable,
       durableStateAssertSingleWriter,
+      migration,
       logDbCallsExceeding,
       querySettings,
       dbTimestampMonotonicIncreasing,
@@ -224,6 +226,7 @@ final class R2dbcSettings private (
     val snapshotsTable: String,
     val durableStateTable: String,
     val durableStateAssertSingleWriter: Boolean,
+    val migration: Boolean,
     val logDbCallsExceeding: FiniteDuration,
     val querySettings: QuerySettings,
     val dbTimestampMonotonicIncreasing: Boolean,
@@ -444,6 +447,7 @@ final class R2dbcSettings private (
       snapshotsTable: String = snapshotsTable,
       durableStateTable: String = durableStateTable,
       durableStateAssertSingleWriter: Boolean = durableStateAssertSingleWriter,
+      migration: Boolean = migration,
       logDbCallsExceeding: FiniteDuration = logDbCallsExceeding,
       querySettings: QuerySettings = querySettings,
       dbTimestampMonotonicIncreasing: Boolean = dbTimestampMonotonicIncreasing,
@@ -463,6 +467,7 @@ final class R2dbcSettings private (
       snapshotsTable,
       durableStateTable,
       durableStateAssertSingleWriter,
+      migration,
       logDbCallsExceeding,
       querySettings,
       dbTimestampMonotonicIncreasing,
