@@ -34,7 +34,7 @@ import io.r2dbc.spi.Statement
             )"""
   }
 
-  override def baseUpsertSql(column: String): String = {
+  override def baseUpsertMigrationProgressSql(column: String): String = {
     sql"""
          UPDATE migration_progress SET
            $column = @bindColumn

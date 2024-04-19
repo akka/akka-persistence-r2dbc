@@ -89,14 +89,14 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   import settings.codecSettings.DurableStateImplicits._
   protected def log: Logger = PostgresDurableStateDao.log
 
-  private val persistenceExt = Persistence(system)
+  protected val persistenceExt = Persistence(system)
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
 
-  private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
+  protected lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
       val instances = columnClasses.map(fqcn => AdditionalColumnFactory.create(system, fqcn))
       entityType -> instances
@@ -375,59 +375,14 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
     val executor = executorProvider.executorFor(slice)
 
-    def bindTags(stmt: Statement, i: Int): Statement = {
-      if (state.tags.isEmpty)
-        stmt.bindTagsNull(i)
-      else
-        stmt.bindTags(i, state.tags)
-    }
-
-    val idx = Iterator.range(0, Int.MaxValue)
-
-    def bindAdditionalColumns(
-        stmt: Statement,
-        additionalBindings: IndexedSeq[EvaluatedAdditionalColumnBindings]): Statement = {
-      additionalBindings.foreach {
-        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindValue(v)) =>
-          stmt.bind(idx.next(), v)
-        case EvaluatedAdditionalColumnBindings(col, AdditionalColumn.BindNull) =>
-          stmt.bindNull(idx.next(), col.fieldClass)
-        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
-      }
-      stmt
-    }
-
     def change =
       new UpdatedDurableState[Any](state.persistenceId, state.revision, value, NoOffset, EmptyDbTimestamp.toEpochMilli)
 
     val entityType = PersistenceId.extractEntityType(state.persistenceId)
 
     val result: Future[(Long, Option[Instant])] = {
-      val additionalBindings = additionalColumns.get(entityType) match {
-        case None => Vector.empty[EvaluatedAdditionalColumnBindings]
-        case Some(columns) =>
-          val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
-          val upsert = AdditionalColumn.Upsert(state.persistenceId, entityType, slice, state.revision, value)
-          columns.map(c => EvaluatedAdditionalColumnBindings(c, c.bind(upsert)))
-      }
 
       if (state.revision == 1) {
-        def insertStatement(connection: Connection): Statement = {
-          val stmt = connection
-            .createStatement(insertStateSql(slice, entityType, additionalBindings))
-            .bind(idx.next(), slice)
-            .bind(idx.next(), entityType)
-            .bind(idx.next(), state.persistenceId)
-            .bind(idx.next(), state.revision)
-            .bind(idx.next(), state.serId)
-            .bind(idx.next(), state.serManifest)
-            .bindPayloadOption(idx.next(), state.payload)
-          bindTags(stmt, idx.next())
-          bindAdditionalColumns(stmt, additionalBindings)
-
-          bindTimestampNow(stmt, idx.next)
-          stmt
-        }
 
         def recoverDataIntegrityViolation[A](f: Future[A]): Future[A] =
           f.recoverWith { case _: R2dbcDataIntegrityViolationException =>
@@ -438,12 +393,15 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
         if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
           val updatedRows = recoverDataIntegrityViolation(
-            executor.updateOne(s"insert [${state.persistenceId}]")(insertStatement))
+            executor.updateOne(s"insert [${state.persistenceId}]") { connection =>
+              insertStatement(entityType, state, value, slice, connection)
+            })
           updatedRows.map(_ -> None)
         } else
           executor.withConnection(s"insert [${state.persistenceId}]") { connection =>
             for {
-              updatedRows <- recoverDataIntegrityViolation(R2dbcExecutor.updateOneInTx(insertStatement(connection)))
+              updatedRows <- recoverDataIntegrityViolation(
+                R2dbcExecutor.updateOneInTx(insertStatement(entityType, state, value, slice, connection)))
               changeEventTimestamp <- writeChangeEventAndCallChangeHandler(
                 connection,
                 updatedRows,
@@ -455,46 +413,16 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       } else {
         val previousRevision = state.revision - 1
 
-        def updateStatement(connection: Connection): Statement = {
-          val stmt = connection
-            .createStatement(updateStateSql(slice, entityType, updateTags = true, additionalBindings))
-            .bind(idx.next(), state.revision)
-            .bind(idx.next(), state.serId)
-            .bind(idx.next(), state.serManifest)
-            .bindPayloadOption(idx.next(), state.payload)
-          bindTags(stmt, idx.next())
-          bindAdditionalColumns(stmt, additionalBindings)
-
-          bindTimestampNow(stmt, idx.next)
-
-          if (settings.dbTimestampMonotonicIncreasing) {
-            if (settings.durableStateAssertSingleWriter)
-              stmt
-                .bind(idx.next(), state.persistenceId)
-                .bind(idx.next(), previousRevision)
-            else
-              stmt
-                .bind(idx.next(), state.persistenceId)
-          } else {
-            stmt
-              .bind(idx.next(), state.persistenceId)
-              .bind(idx.next(), previousRevision)
-              .bind(idx.next(), state.persistenceId)
-
-            if (settings.durableStateAssertSingleWriter)
-              stmt.bind(idx.next(), previousRevision)
-            else
-              stmt
-          }
-        }
-
         if (!changeHandlers.contains(entityType) && changeEvent.isEmpty) {
-          val updatedRows = executor.updateOne(s"update [${state.persistenceId}]")(updateStatement)
+          val updatedRows = executor.updateOne(s"update [${state.persistenceId}]") { connection =>
+            updateStatement(entityType, state, value, slice, connection, previousRevision)
+          }
           updatedRows.map(_ -> None)
         } else
           executor.withConnection(s"update [${state.persistenceId}]") { connection =>
             for {
-              updatedRows <- R2dbcExecutor.updateOneInTx(updateStatement(connection))
+              updatedRows <- R2dbcExecutor.updateOneInTx(
+                updateStatement(entityType, state, value, slice, connection, previousRevision))
               changeEventTimestamp <- writeChangeEventAndCallChangeHandler(
                 connection,
                 updatedRows,
@@ -963,4 +891,102 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     result
 
   }
+
+  private def additionalBindings(
+      entityType: String,
+      state: SerializedStateRow,
+      value: Any): immutable.IndexedSeq[EvaluatedAdditionalColumnBindings] = additionalColumns.get(entityType) match {
+    case None => Vector.empty[EvaluatedAdditionalColumnBindings]
+    case Some(columns) =>
+      val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
+      val upsert = AdditionalColumn.Upsert(state.persistenceId, entityType, slice, state.revision, value)
+      columns.map(c => EvaluatedAdditionalColumnBindings(c, c.bind(upsert)))
+  }
+
+  private def bindTags(state: SerializedStateRow, stmt: Statement, i: Int): Statement = {
+    if (state.tags.isEmpty)
+      stmt.bindTagsNull(i)
+    else
+      stmt.bindTags(i, state.tags)
+  }
+
+  private def bindAdditionalColumns(
+      stmt: Statement,
+      additionalBindings: IndexedSeq[EvaluatedAdditionalColumnBindings],
+      nextIndex: () => Int): Statement = {
+    additionalBindings.foreach {
+      case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindValue(v)) =>
+        stmt.bind(nextIndex(), v)
+      case EvaluatedAdditionalColumnBindings(col, AdditionalColumn.BindNull) =>
+        stmt.bindNull(nextIndex(), col.fieldClass)
+      case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
+    }
+    stmt
+  }
+
+  protected def updateStatement(
+      entityType: String,
+      state: SerializedStateRow,
+      value: Any,
+      slice: Int,
+      connection: Connection,
+      previousRevision: Long): Statement = {
+    val idx = Iterator.range(0, Int.MaxValue)
+    val bindings = additionalBindings(entityType, state, value)
+    val stmt = connection
+      .createStatement(updateStateSql(slice, entityType, updateTags = true, bindings))
+      .bind(idx.next(), state.revision)
+      .bind(idx.next(), state.serId)
+      .bind(idx.next(), state.serManifest)
+      .bindPayloadOption(idx.next(), state.payload)
+    bindTags(state, stmt, idx.next())
+    bindAdditionalColumns(stmt, bindings, idx.next)
+
+    bindTimestampNow(stmt, idx.next)
+
+    if (settings.dbTimestampMonotonicIncreasing) {
+      if (settings.durableStateAssertSingleWriter)
+        stmt
+          .bind(idx.next(), state.persistenceId)
+          .bind(idx.next(), previousRevision)
+      else
+        stmt
+          .bind(idx.next(), state.persistenceId)
+    } else {
+      stmt
+        .bind(idx.next(), state.persistenceId)
+        .bind(idx.next(), previousRevision)
+        .bind(idx.next(), state.persistenceId)
+
+      if (settings.durableStateAssertSingleWriter)
+        stmt.bind(idx.next(), previousRevision)
+      else
+        stmt
+    }
+  }
+
+  protected def insertStatement(
+      entityType: String,
+      state: SerializedStateRow,
+      value: Any,
+      slice: Int,
+      connection: Connection): Statement = {
+    val idx = Iterator.range(0, Int.MaxValue)
+    val bindings = additionalBindings(entityType, state, value)
+    val stmt = connection
+      .createStatement(insertStateSql(slice, entityType, bindings))
+      .bind(idx.next(), slice)
+      .bind(idx.next(), entityType)
+      .bind(idx.next(), state.persistenceId)
+      .bind(idx.next(), state.revision)
+      .bind(idx.next(), state.serId)
+      .bind(idx.next(), state.serManifest)
+      .bindPayloadOption(idx.next(), state.payload)
+    bindTags(state, stmt, idx.next())
+    bindAdditionalColumns(stmt, bindings, idx.next)
+
+    bindTimestampNow(stmt, idx.next)
+    stmt
+  }
+
 }
