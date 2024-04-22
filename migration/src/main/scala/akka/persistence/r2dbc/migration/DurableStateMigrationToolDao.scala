@@ -44,7 +44,7 @@ import akka.persistence.typed.PersistenceId
       slice: Int,
       entityType: String) = {
     r2dbcExecutor
-      .updateOne(s"update state [${newRow.persistenceId}] for migration") { connection =>
+      .updateOne(s"insert state [${newRow.persistenceId}] for migration") { connection =>
         insertStatement(entityType, newRow, newValue, slice, connection)
       }
       .map(_ => Done)(ExecutionContexts.parasitic)
