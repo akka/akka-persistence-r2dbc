@@ -96,7 +96,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
 
-  protected lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
+  private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
     settings.durableStateAdditionalColumnClasses.map { case (entityType, columnClasses) =>
       val instances = columnClasses.map(fqcn => AdditionalColumnFactory.create(system, fqcn))
       entityType -> instances
