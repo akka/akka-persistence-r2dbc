@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_payload JSONB NOT NULL,
   tags TEXT ARRAY,
 
-  PRIMARY KEY(persistence_id, revision)
+  PRIMARY KEY(persistence_id,)
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
