@@ -375,13 +375,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
     val executor = executorProvider.executorFor(slice)
 
-    def bindTags(stmt: Statement, i: Int): Statement = {
-      if (state.tags.isEmpty)
-        stmt.bindTagsNull(i)
-      else
-        stmt.bindTags(i, state.tags)
-    }
-
     val idx = Iterator.range(0, Int.MaxValue)
 
     def bindAdditionalColumns(
@@ -422,7 +415,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
             .bind(idx.next(), state.serId)
             .bind(idx.next(), state.serManifest)
             .bindPayloadOption(idx.next(), state.payload)
-          bindTags(stmt, idx.next())
+          bindTags(state, stmt, idx.next())
           bindAdditionalColumns(stmt, additionalBindings)
 
           bindTimestampNow(stmt, idx.next)
@@ -462,7 +455,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
             .bind(idx.next(), state.serId)
             .bind(idx.next(), state.serManifest)
             .bindPayloadOption(idx.next(), state.payload)
-          bindTags(stmt, idx.next())
+          bindTags(state, stmt, idx.next())
           bindAdditionalColumns(stmt, additionalBindings)
 
           bindTimestampNow(stmt, idx.next)
@@ -515,6 +508,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
         changeEventTimestamp
       }
     }
+  }
+
+  protected def bindTags(state: SerializedStateRow, stmt: Statement, i: Int): Statement = {
+    if (state.tags.isEmpty)
+      stmt.bindTagsNull(i)
+    else
+      stmt.bindTags(i, state.tags)
   }
 
   private def processChange(

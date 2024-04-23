@@ -123,6 +123,12 @@ class MigrationTool(system: ActorSystem[_]) {
   private val targetPluginId = migrationConfig.getString("target.persistence-plugin-id")
   private val targetR2dbcSettings = R2dbcSettings(system.settings.config.getConfig(targetPluginId))
 
+  targetR2dbcSettings.dialectName
+  require(
+    !targetR2dbcSettings.durableStateAssertSingleWriter,
+    "While running the MigrationTool the " +
+    "`akka.persistence.r2dbc.state.assert-single-writer` configuration must be set to off.")
+
   private val serialization: Serialization = SerializationExtension(system)
 
   private val targetExecutorProvider = new R2dbcExecutorProvider(
@@ -165,6 +171,12 @@ class MigrationTool(system: ActorSystem[_]) {
       case _           => new MigrationToolDao(targetExecutorProvider)
     }
   }
+
+  private[r2dbc] val durableStateMigrationToolDao =
+    new DurableStateMigrationToolDao(
+      persistenceExt,
+      targetExecutorProvider,
+      targetR2dbcSettings.connectionFactorySettings.dialect)
 
   private lazy val createProgressTable: Future[Done] =
     migrationDao.createProgressTable()
@@ -432,20 +444,12 @@ class MigrationTool(system: ActorSystem[_]) {
         for {
           revision <- {
             val serializedRow = serializedDurableStateRow(selectedDurableState)
-            targetDurableStateDao
-              .upsertState(serializedRow, selectedDurableState.value, changeEvent = None)
+            durableStateMigrationToolDao
+              .upsertDurableState(serializedRow, selectedDurableState.value)
               .map(_ => selectedDurableState.revision)(ExecutionContexts.parasitic)
           }
           _ <- migrationDao.updateDurableStateProgress(persistenceId, revision)
         } yield 1
-    }
-  }
-
-  private lazy val checkAssertSingleWriter: Unit = {
-    if (targetR2dbcSettings.durableStateAssertSingleWriter) {
-      throw new IllegalArgumentException(
-        "When running the MigrationTool the " +
-        "`akka.persistence.r2dbc.state.assert-single-writer` configuration must be set to off.")
     }
   }
 

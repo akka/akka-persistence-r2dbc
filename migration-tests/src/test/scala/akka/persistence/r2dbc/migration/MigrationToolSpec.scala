@@ -417,6 +417,14 @@ class MigrationToolSpec
       assertDurableState(pid, "s-1")
     }
 
+    "migrate durable state of one persistenceId with an updated revision" in {
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      persistDurableState(pid, "s-1")
+      persistDurableState(pid, "s-1")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-1")
+    }
+
     "migrate durable state of a persistenceId several times" in {
       val pid = PersistenceId.ofUniqueId(nextPid())
       persistDurableState(pid, "s-1")
