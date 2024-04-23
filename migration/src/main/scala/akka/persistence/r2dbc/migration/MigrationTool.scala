@@ -124,10 +124,6 @@ class MigrationTool(system: ActorSystem[_]) {
   private val targetR2dbcSettings = R2dbcSettings(system.settings.config.getConfig(targetPluginId))
 
   targetR2dbcSettings.dialectName
-  require(
-    !targetR2dbcSettings.durableStateAssertSingleWriter,
-    "While running the MigrationTool the " +
-    "`akka.persistence.r2dbc.state.assert-single-writer` configuration must be set to off.")
 
   private val serialization: Serialization = SerializationExtension(system)
 

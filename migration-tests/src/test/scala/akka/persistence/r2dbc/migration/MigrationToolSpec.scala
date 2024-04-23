@@ -246,6 +246,19 @@ class MigrationToolSpec
       Await.result(
         r2dbcExecutor.updateOne("beforeAll migration_progress")(_.createStatement("delete from migration_progress")),
         10.seconds)
+
+      Await.result(
+        r2dbcExecutor.executeDdl("add column 'test_column'")(
+          _.createStatement("alter table durable_state add column if not exists test_column VARCHAR(255)")),
+        10.seconds)
+
+      Await.result(
+        r2dbcExecutor.executeDdl("create table test_counter")(_.createStatement(
+          "CREATE TABLE IF NOT EXISTS test_counter (persistence_id VARCHAR(255) NOT NULL, slice INT NOT NULL, counter INT NOT NULL, PRIMARY KEY (persistence_id, slice))")),
+        10.seconds)
+      Await.result(
+        r2dbcExecutor.updateOne("beforeAll clear test_counter")(_.createStatement("delete from test_counter")),
+        10.seconds)
     }
   }
 
@@ -410,11 +423,41 @@ class MigrationToolSpec
       pending
     }
 
-    "migrate durable state of one persistenceId" in {
+    "migrate durable state of one persistenceId with change handler" in {
+      import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+      import r2dbcSettings.codecSettings.DurableStateImplicits._
       val pid = PersistenceId.ofUniqueId(nextPid())
-      persistDurableState(pid, "s-1")
+      def query: Int = {
+        val query = r2dbcExecutor.select("select value for additional column")(
+          _.createStatement(sql"SELECT counter from test_counter where persistence_id=?")
+            .bind(0, pid.id),
+          row => row.get("counter", classOf[Integer]))
+        Await.result(query, 10.seconds).toList match {
+          case Nil  => 0
+          case list => list.head
+        }
+      }
+
+      query shouldBe 0
+      persistDurableState(pid, "s-handler")
       migration.migrateDurableState(pid.id).futureValue shouldBe 1L
-      assertDurableState(pid, "s-1")
+      assertDurableState(pid, "s-handler")
+      query shouldBe 1
+    }
+
+    "migrate durable state of one persistenceId with additional column" in {
+      import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+      import r2dbcSettings.codecSettings.DurableStateImplicits._
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      persistDurableState(pid, "s-column")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-column")
+      val query = r2dbcExecutor.select("select value for additional column")(
+        _.createStatement(sql"SELECT test_column from durable_state where persistence_id=?")
+          .bind(0, pid.id),
+        row => row.get("test_column"))
+      val result = Await.result(query, 10.seconds)
+      result.head shouldBe "my value"
     }
 
     "migrate durable state of one persistenceId with an updated revision" in {
