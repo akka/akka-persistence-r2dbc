@@ -4,9 +4,6 @@
 
 package akka.persistence.r2dbc.migration
 
-import java.time.Instant
-
-import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
@@ -16,21 +13,11 @@ import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
-import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
-import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao.EvaluatedAdditionalColumnBindings
-import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
-import akka.persistence.typed.PersistenceId
-import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
-import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
+import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
+import akka.persistence.typed.PersistenceId
 
 /**
  * INTERNAL API
