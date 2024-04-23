@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS durable_state (
   state_payload BYTEA NOT NULL,
   tags TEXT ARRAY,
 
-  PRIMARY KEY(persistence_id HASH, revision ASC)
+  PRIMARY KEY(persistence_id HASH)
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used

@@ -61,7 +61,7 @@ IF object_id('durable_state') is null
 	  state_payload VARBINARY(MAX) NOT NULL,
 	  tags NVARCHAR(255),
 
-	  PRIMARY KEY(persistence_id, revision)
+	  PRIMARY KEY(persistence_id)
 	);
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used

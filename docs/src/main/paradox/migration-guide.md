@@ -1,5 +1,21 @@
 # Migration Guide
 
+## 1.2.x to 1.3.0
+
+### Durable State table schema change (optional)
+The existing primary key for the Durable State table was containing an unnecessary column.
+
+Please run the following query to update the table constraint:
+
+Postgres / Yugabyte:
+: ```sql
+ALTER TABLE "durable_state"
+DROP CONSTRAINT durable_state_pkey,
+ADD PRIMARY KEY(persistence_id);
+```
+
+If you are using @ref[data partitioning](./data-partition.md), please make sure to apply the change to all tables.
+
 ## 1.1.x to 1.2.0
 
 ### Configuration file changes
