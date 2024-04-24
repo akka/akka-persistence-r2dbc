@@ -89,7 +89,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   import settings.codecSettings.DurableStateImplicits._
   protected def log: Logger = PostgresDurableStateDao.log
 
-  protected val persistenceExt = Persistence(system)
+  private val persistenceExt = Persistence(system)
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
@@ -110,7 +110,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def selectStateSql(slice: Int, entityType: String): String =
+  private def selectStateSql(slice: Int, entityType: String): String =
     sqlCache.get(slice, s"selectStateSql-$entityType") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
       sql"""
@@ -222,7 +222,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       createSql // no cache
   }
 
-  protected def additionalUpdateParameters(
+  private def additionalUpdateParameters(
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     if (additionalBindings.isEmpty) ""
     else {
@@ -238,7 +238,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
   }
 
-  protected def hardDeleteStateSql(entityType: String, slice: Int): String = {
+  private def hardDeleteStateSql(entityType: String, slice: Int): String = {
     sqlCache.get(slice, s"hardDeleteStateSql-$entityType") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
       sql"DELETE from $stateTable WHERE persistence_id = ?"
