@@ -14,6 +14,18 @@ DROP CONSTRAINT durable_state_pkey,
 ADD PRIMARY KEY(persistence_id);
 ```
 
+Same goes for the (optional) index `` used for slice base queries. To remove the column from the index, use:
+
+Postgres / Yugabyte:
+: ```sql
+DROP INDEX IF EXISTS durable_state_slice_idx;
+CREATE INDEX IF NOT EXISTS durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp);
+```
+
+Changes to the database schema like mentioned above can have an impact on the availability of the database under certain conditions.
+
+Make sure to test them on a copy of your database to learn more about the potential impact.
+
 If you are using @ref[data partitioning](./data-partition.md), please make sure to apply the change to all tables.
 
 ## 1.1.x to 1.2.0

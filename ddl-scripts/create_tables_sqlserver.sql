@@ -67,5 +67,5 @@ IF object_id('durable_state') is null
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
 IF NOT EXISTS(SELECT * FROM sys.indexes WHERE name = 'durable_state_slice_idx' AND object_id = OBJECT_ID('durable_state'))
     BEGIN
-        CREATE INDEX durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp, revision);
+        CREATE INDEX durable_state_slice_idx ON durable_state(slice, entity_type, db_timestamp);
     END;

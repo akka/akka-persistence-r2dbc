@@ -154,7 +154,7 @@ private[r2dbc] object H2Dialect extends Dialect {
       }
       val durableStateSliceIndexes = allDurableStateTablesWithSchema.map { table =>
         val sliceIndexWithSchema = table + "_slice_idx"
-        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp, revision)"""
+        sql"""CREATE INDEX IF NOT EXISTS $sliceIndexWithSchema ON $table(slice, entity_type, db_timestamp)"""
       }
       journalSliceIndexes ++
       snapshotSliceIndexes ++
@@ -219,7 +219,7 @@ private[r2dbc] object H2Dialect extends Dialect {
           state_payload BYTEA NOT NULL,
           tags TEXT ARRAY,
 
-          PRIMARY KEY(persistence_id, revision)
+          PRIMARY KEY(persistence_id)
         )
       """
     }
