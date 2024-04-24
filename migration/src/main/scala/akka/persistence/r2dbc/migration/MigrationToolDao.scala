@@ -4,6 +4,10 @@
 
 package akka.persistence.r2dbc.migration
 
+import java.lang
+import java.time.Instant
+
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
@@ -17,7 +21,13 @@ import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import org.slf4j.LoggerFactory
 import io.r2dbc.spi.Statement
+
+import akka.persistence.Persistence
+import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao.EvaluatedAdditionalColumnBindings
+import akka.persistence.r2dbc.state.scaladsl.AdditionalColumn
+import akka.persistence.typed.PersistenceId
 
 /**
  * INTERNAL API
@@ -63,7 +73,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
     }
   }
 
-  protected def baseUpsertSql(column: String): String = {
+  protected def baseUpsertMigrationProgressSql(column: String): String = {
     sql"""
             INSERT INTO migration_progress
             (persistence_id, $column)
@@ -82,7 +92,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
   def updateEventProgress(persistenceId: String, seqNr: Long): Future[Done] = {
     r2dbcExecutor
       .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertSql("event_seq_nr"))
+        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("event_seq_nr"))
         bindBaseUpsertSql(stmt, persistenceId, seqNr)
       }
       .map(_ => Done)(ExecutionContexts.parasitic)
@@ -91,7 +101,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
   def updateSnapshotProgress(persistenceId: String, seqNr: Long): Future[Done] = {
     r2dbcExecutor
       .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertSql("snapshot_seq_nr"))
+        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("snapshot_seq_nr"))
         bindBaseUpsertSql(stmt, persistenceId, seqNr)
       }
       .map(_ => Done)(ExecutionContexts.parasitic)
@@ -100,7 +110,7 @@ import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
   def updateDurableStateProgress(persistenceId: String, revision: Long): Future[Done] = {
     r2dbcExecutor
       .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertSql("state_revision"))
+        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("state_revision"))
         bindBaseUpsertSql(stmt, persistenceId, revision)
       }
       .map(_ => Done)(ExecutionContexts.parasitic)
