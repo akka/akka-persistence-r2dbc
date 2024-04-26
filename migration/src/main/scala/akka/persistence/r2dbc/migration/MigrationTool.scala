@@ -442,7 +442,7 @@ class MigrationTool(system: ActorSystem[_]) {
           revision <- {
             val serializedRow = serializedDurableStateRow(selectedDurableState)
             durableStateMigrationToolDao
-              .upsertDurableState(serializedRow, selectedDurableState.value)
+              .upsertState(serializedRow, selectedDurableState.value, None)
               .map(_ => selectedDurableState.revision)(ExecutionContexts.parasitic)
           }
           _ <- migrationDao.updateDurableStateProgress(persistenceId, revision)

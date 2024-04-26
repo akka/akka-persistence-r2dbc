@@ -93,6 +93,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
+  protected def shouldInsert: (SerializedStateRow) => Future[Boolean] = state => Future.successful(state.revision == 1)
+
   // used for change events
   private lazy val journalDao: JournalDao = dialect.createJournalDao(executorProvider)
 
@@ -370,8 +372,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   override def upsertState(
       state: SerializedStateRow,
       value: Any,
-      changeEvent: Option[SerializedJournalRow],
-      shouldInsert: (SerializedStateRow) => Future[Boolean]): Future[Option[Instant]] = {
+      changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     require(state.revision > 0)
     val slice = persistenceExt.sliceForPersistenceId(state.persistenceId)
     val executor = executorProvider.executorFor(slice)

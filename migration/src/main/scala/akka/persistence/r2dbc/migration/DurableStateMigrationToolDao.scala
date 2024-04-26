@@ -23,13 +23,15 @@ import akka.persistence.r2dbc.internal.postgres.PostgresDurableStateDao
     dialect: Dialect)(implicit ec: ExecutionContext)
     extends PostgresDurableStateDao(executorProvider, dialect) {
 
-  def upsertDurableState(state: SerializedStateRow, value: Any): Future[Done] = {
+  /**
+   * For migration, we want to INSERT INTO if there is now state yet, regardless of the revision. In production, we only
+   * want to INSERT INTO if its the first revision.
+   * @return
+   */
+  override protected def shouldInsert: SerializedStateRow => Future[Boolean] = (state: SerializedStateRow) =>
+    readState(state.persistenceId).map {
+      case Some(_) => false
+      case None    => true
+    }
 
-    def shouldInsert = (state: SerializedStateRow) =>
-      readState(state.persistenceId).map {
-        case Some(_) => false
-        case None    => true
-      }
-    upsertState(state, value, None, shouldInsert).map(_ => Done)(ExecutionContexts.parasitic)
-  }
 }
