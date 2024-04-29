@@ -12,7 +12,6 @@ class MigrationTestColumn extends AdditionalColumn[Any, String] {
 
   override def bind(upsert: AdditionalColumn.Upsert[Any]): AdditionalColumn.Binding[String] = {
     if (upsert.value.asInstanceOf[String] == "s-column") {
-      println(s"??? ${upsert.value.asInstanceOf[String]}")
       AdditionalColumn.BindValue("my value")
     } else AdditionalColumn.Skip
   }
