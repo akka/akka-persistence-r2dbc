@@ -110,6 +110,9 @@ class MigrationToolSpec
 
   private val migration = new MigrationTool(system)
 
+  private val hasChangeHandler = r2dbcSettings.durableStateChangeHandlerClasses.nonEmpty
+  private val hasAdditionalColumn = r2dbcSettings.durableStateAdditionalColumnClasses.nonEmpty
+
   // don't run this for Yugabyte since it is using akka-persistence-jdbc
   private val postgresTest = dialect == "postgres"
   // FIXME flaky for sqlserver, issue https://github.com/akka/akka-persistence-r2dbc/issues/523
@@ -246,6 +249,25 @@ class MigrationToolSpec
       Await.result(
         r2dbcExecutor.updateOne("beforeAll migration_progress")(_.createStatement("delete from migration_progress")),
         10.seconds)
+
+      r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
+        val dataPartitionSlice = sliceRange.min
+
+        val stateTable = r2dbcSettings.getDurableStateTableWithSchema("", dataPartitionSlice)
+        Await.result(
+          r2dbcExecutor(dataPartitionSlice).executeDdl("add column 'test_column'")(
+            _.createStatement(s"alter table $stateTable add column if not exists test_column VARCHAR(255)")),
+          10.seconds)
+      }
+      if (hasChangeHandler) {
+        Await.result(
+          r2dbcExecutor.executeDdl("create table test_counter")(_.createStatement(
+            "CREATE TABLE IF NOT EXISTS test_counter (persistence_id VARCHAR(255) NOT NULL, slice INT NOT NULL, counter INT NOT NULL, PRIMARY KEY (persistence_id, slice))")),
+          10.seconds)
+        Await.result(
+          r2dbcExecutor.updateOne("beforeAll clear test_counter")(_.createStatement("delete from test_counter")),
+          10.seconds)
+      }
     }
   }
 
@@ -460,6 +482,65 @@ class MigrationToolSpec
 
       pids.foreach { pid =>
         assertDurableState(pid, s"s-$pid")
+      }
+    }
+
+    "migrate durable state of one persistenceId with an updated revision" in {
+      val pid = PersistenceId.ofUniqueId(nextPid())
+      persistDurableState(pid, "s-1")
+      persistDurableState(pid, "s-1")
+      migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+      assertDurableState(pid, "s-1")
+    }
+
+    "migrate durable state of one persistenceId with change handler" in {
+      if (hasChangeHandler) {
+        import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+        import r2dbcSettings.codecSettings.DurableStateImplicits._
+        val pid = PersistenceId.ofUniqueId(nextPid())
+        val slice = persistenceExt.sliceForPersistenceId(pid.id)
+
+        def query: Int = {
+          val query = r2dbcExecutor(slice).select("select value for additional column")(
+            _.createStatement(sql"SELECT counter from test_counter where persistence_id=?")
+              .bind(0, pid.id),
+            row => row.get("counter", classOf[Integer]))
+          Await.result(query, 10.seconds).toList match {
+            case Nil  => 0
+            case list => list.head
+          }
+        }
+
+        query shouldBe 0
+        persistDurableState(pid, "s-handler")
+        migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+        assertDurableState(pid, "s-handler")
+        query shouldBe 1
+      } else {
+        pending
+      }
+    }
+
+    "migrate durable state of one persistenceId with additional column" in {
+      if (hasAdditionalColumn) {
+        import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+        import r2dbcSettings.codecSettings.DurableStateImplicits._
+        val pid = PersistenceId.ofUniqueId(nextPid())
+        persistDurableState(pid, "s-column")
+        migration.migrateDurableState(pid.id).futureValue shouldBe 1L
+        assertDurableState(pid, "s-column")
+        val slice = persistenceExt.sliceForPersistenceId(pid.id)
+
+        val stateTable = r2dbcSettings.getDurableStateTableWithSchema("", slice)
+
+        val query = r2dbcExecutor(slice).select("select value for additional column")(
+          _.createStatement(sql"SELECT test_column from $stateTable where persistence_id=?")
+            .bind(0, pid.id),
+          row => row.get("test_column"))
+        val result = Await.result(query, 10.seconds)
+        result.head shouldBe "my value"
+      } else {
+        pending
       }
     }
   }
