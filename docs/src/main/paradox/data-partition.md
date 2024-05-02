@@ -5,7 +5,9 @@ requirements. To be able to spread the load over more than one database the even
 durable state can be split up over multiple tables and physical backend databases.
 
 The data is partitioned by the slices that are used for @ref[`eventsBySlices`](query.md#eventsbyslices) and
-@extref:[Projections](akka-projection:r2dbc.html). You can configure how many data partitions that are needed.
+@extref:[Projections](akka-projection:r2dbc.html). Events are grouped into slices based on a deterministic hash of the persistence identifier of the entity that emitted the event. There are 1024 slices, from 0 to 1023. A projection instance consumes events from a range of slices. For example, running 4 Projection instances the slice ranges would be 0-255, 256-511, 512-767, 768-1023. Changing to 8 slice ranges means that the ranges would be 0-127, 128-255, 256-383, …, 768-895, 896-1023.
+
+You can configure how many data partitions that are needed.
 A data partition corresponds to a separate database table. For example, 4 data partitions means that slice range
 (0 to 255) maps to data partition 0, (256 to 511) to data partition 1, (512 to 767) to data partition 2,
 and (768 to 1023) to data partition 3.
