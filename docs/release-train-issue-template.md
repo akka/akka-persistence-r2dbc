@@ -17,6 +17,7 @@ Key links:
 ### Cutting the release
 
 - [ ] Check that open PRs and issues assigned to the milestone are reasonable
+- [ ] If PRs were merged after EU midnight, trigger the [native-image tests](https://github.com/akka/akka-persistence-r2dbc/actions/workflows/native-image-tests.yml) and see that they are green.
 - [ ] Update the Change date and version in the LICENSE file.
 - [ ] Create a new milestone for the [next version](https://github.com/akka/akka-persistence-r2dbc/milestones)
 - [ ] Close the [$VERSION$ milestone](https://github.com/akka/akka-persistence-r2dbc/milestones?direction=asc&sort=due_date)
