@@ -15,7 +15,7 @@ The Akka Persistence R2DBC plugin allows for using SQL database with R2DBC as a 
 * [PostgreSQL JSON](postgres_json.md)
 * [Projection](projection.md)
 * [Configuration](config.md)
-* [Data partitioning](data-partition.md)
+* [Database sharding](data-partition.md)
 * [Cleanup tool](cleanup.md)
 * [Migration tool](migration.md)
 * [Migration Guide](migration-guide.md)
