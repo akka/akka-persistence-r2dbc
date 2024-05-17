@@ -1,4 +1,4 @@
-# Data partitioning
+# Database sharding
 
 Using a single non-distributed database can become a bottleneck for applications that have high throughput
 requirements. To be able to spread the load over more than one database the event journal, snapshot store and
@@ -13,7 +13,8 @@ A data partition corresponds to a separate database table. For example, 4 data p
 and (768 to 1023) to data partition 3.
 
 Number of data partitions must be between 1 and 1024 and a whole number divisor of 1024 (number of slices), e.g.
-2, 4, 8, 16. The tables will have the data partition as suffix, e.g. event_journal_0, event_journal_1.
+2, 4, 8, 16. Each data partition corresponds to a database table. The tables will have the data partition as suffix,
+e.g. event_journal_0, event_journal_1.
 
 Those tables can be located in physically separate databases. Number of databases must be a whole number divisor
 of number of partitions, and less than or equal to number of partitions. For example, 8 data partitions and 2 databases
