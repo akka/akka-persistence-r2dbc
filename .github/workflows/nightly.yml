@@ -20,7 +20,7 @@ jobs:
           # cover relevant combinations when combined with the matrix Yugabyte tests
           # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
-          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
+          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
     steps:
       - name: Checkout
@@ -79,7 +79,7 @@ jobs:
           # cover relevant combinations when combined with the matrix Postgres tests
           - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test" }
           # { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test" }
-          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
+          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
     steps:
       - name: Checkout
         # https://github.com/actions/checkout/releases
@@ -138,7 +138,7 @@ jobs:
         include:
           - { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
-          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "core/test"}
+          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
     steps:
       - name: Checkout

@@ -11,7 +11,7 @@ object Dependencies {
   val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
   val AkkaVersion = System.getProperty("override.akka.version", "2.9.3")
   val AkkaVersionInDocs = AkkaVersion.take(3)
-  val AkkaPersistenceJdbcVersion = "5.2.0" // only in migration tool tests
+  val AkkaPersistenceJdbcVersion = "5.4.0" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.2.224"
   val R2dbcH2Version = "1.0.0.RELEASE"
@@ -72,7 +72,9 @@ object Dependencies {
 
   val migrationTests =
     Seq(
-      "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
+      ("com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test)
+        // Unsupported SLF4J 2 transitively pulled in by Slick 3.5.0
+        .exclude("org.slf4j", "slf4j-api"),
       "com.microsoft.sqlserver" % "mssql-jdbc" % SqlServerJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,
