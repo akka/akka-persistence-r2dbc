@@ -6,7 +6,6 @@ package akka.persistence.r2dbc.migration
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.persistence.Persistence
@@ -14,6 +13,8 @@ import akka.persistence.query.DurableStateChange
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.session.scaladsl.R2dbcSession
 import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
+
+import scala.annotation.nowarn
 
 class MigrationChangeHandler(system: ActorSystem[_]) extends ChangeHandler[Any] {
 
@@ -25,6 +26,7 @@ class MigrationChangeHandler(system: ActorSystem[_]) extends ChangeHandler[Any] 
 
   println(incrementSql)
 
+  @nowarn("msg=exhaustive")
   override def process(session: R2dbcSession, change: DurableStateChange[Any]): Future[Done] = {
     println("process changer")
     change match {

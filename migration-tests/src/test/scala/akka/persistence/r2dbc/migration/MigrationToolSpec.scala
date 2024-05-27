@@ -496,7 +496,9 @@ class MigrationToolSpec
     "migrate durable state of one persistenceId with change handler" in {
       if (hasChangeHandler) {
         import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-        import r2dbcSettings.codecSettings.DurableStateImplicits._
+        // Scala 3 needs the extra step here
+        val durableStateImplicits = r2dbcSettings.codecSettings.DurableStateImplicits
+        import durableStateImplicits._
         val pid = PersistenceId.ofUniqueId(nextPid())
         val slice = persistenceExt.sliceForPersistenceId(pid.id)
 
@@ -524,7 +526,9 @@ class MigrationToolSpec
     "migrate durable state of one persistenceId with additional column" in {
       if (hasAdditionalColumn) {
         import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-        import r2dbcSettings.codecSettings.DurableStateImplicits._
+        // Scala 3 needs the extra step here
+        val durableStateImplicits = r2dbcSettings.codecSettings.DurableStateImplicits
+        import durableStateImplicits._
         val pid = PersistenceId.ofUniqueId(nextPid())
         persistDurableState(pid, "s-column")
         migration.migrateDurableState(pid.id).futureValue shouldBe 1L
