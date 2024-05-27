@@ -4,6 +4,11 @@ Using a single non-distributed database can become a bottleneck for applications
 requirements. To be able to spread the load over more than one database the event journal, snapshot store and
 durable state can be split up over multiple tables and physical backend databases.
 
+Without any application-level concerns or specific sharding features in the databases the R2DBC plugin has support for:
+
+* database partitioning - vertical database scalability by multiple tables in one physical database
+* database sharding - horizontal database scalability by distributing the data across multiple physical databases 
+
 The data is partitioned by the slices that are used for @ref[`eventsBySlices`](query.md#eventsbyslices) and
 @extref:[Projections](akka-projection:r2dbc.html). Events are grouped into slices based on a deterministic hash of the persistence identifier of the entity that emitted the event. There are 1024 slices, from 0 to 1023. A projection instance consumes events from a range of slices. For example, running 4 Projection instances the slice ranges would be 0-255, 256-511, 512-767, 768-1023. Changing to 8 slice ranges means that the ranges would be 0-127, 128-255, 256-383, …, 768-895, 896-1023.
 
