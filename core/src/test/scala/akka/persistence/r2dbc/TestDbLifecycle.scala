@@ -28,14 +28,14 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
 
   def testConfigPath: String = "akka.persistence.r2dbc"
 
-  lazy val r2dbcSettings: R2dbcSettings =
+  lazy val settings: R2dbcSettings =
     R2dbcSettings(typedSystem.settings.config.getConfig(testConfigPath))
 
   lazy val r2dbcExecutorProvider: R2dbcExecutorProvider =
     new R2dbcExecutorProvider(
       typedSystem,
-      r2dbcSettings.connectionFactorySettings.dialect.daoExecutionContext(r2dbcSettings, typedSystem),
-      r2dbcSettings,
+      settings.connectionFactorySettings.dialect.daoExecutionContext(settings, typedSystem),
+      settings,
       testConfigPath + ".connection-factory",
       LoggerFactory.getLogger(getClass))
 
@@ -48,22 +48,22 @@ trait TestDbLifecycle extends BeforeAndAfterAll { this: Suite =>
   lazy val persistenceExt: Persistence = Persistence(typedSystem)
 
   def pendingIfMoreThanOneDataPartition(): Unit =
-    if (r2dbcSettings.numberOfDataPartitions > 1)
+    if (settings.numberOfDataPartitions > 1)
       pending
 
   override protected def beforeAll(): Unit = {
     try {
-      r2dbcSettings.allJournalTablesWithSchema.foreach { case (table, minSlice) =>
+      settings.allJournalTablesWithSchema.foreach { case (table, minSlice) =>
         Await.result(
           r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
           10.seconds)
       }
-      r2dbcSettings.allSnapshotTablesWithSchema.foreach { case (table, minSlice) =>
+      settings.allSnapshotTablesWithSchema.foreach { case (table, minSlice) =>
         Await.result(
           r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
           10.seconds)
       }
-      r2dbcSettings.allDurableStateTablesWithSchema.foreach { case (table, minSlice) =>
+      settings.allDurableStateTablesWithSchema.foreach { case (table, minSlice) =>
         Await.result(
           r2dbcExecutor(minSlice).updateOne("beforeAll delete")(_.createStatement(s"delete from $table")),
           10.seconds)

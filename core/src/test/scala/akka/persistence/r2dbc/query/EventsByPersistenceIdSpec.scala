@@ -12,10 +12,8 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.query.PersistenceQuery
-import akka.persistence.query.TimestampOffset
 import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
@@ -45,7 +43,6 @@ class EventsByPersistenceIdSpec
   import EventsByPersistenceIdSpec._
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 

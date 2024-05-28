@@ -59,7 +59,7 @@ class EventsBySlicePerfSpec
 
   s"EventsBySlices performance" should {
 
-    if (r2dbcSettings.dialectName == "sqlserver") {
+    if (settings.dialectName == "sqlserver") {
       pending
     }
 
@@ -175,9 +175,9 @@ class EventsBySlicePerfSpec
                 val delayed =
                   (EnvelopeOrigin.fromPubSub(env) && lagMillis > 50) ||
                   (EnvelopeOrigin.fromQuery(
-                    env) && lagMillis > r2dbcSettings.querySettings.refreshInterval.toMillis + 300) ||
+                    env) && lagMillis > settings.querySettings.refreshInterval.toMillis + 300) ||
                   (EnvelopeOrigin.fromPubSub(
-                    env) && lagMillis > r2dbcSettings.querySettings.backtrackingWindow.toMillis / 2 + 300)
+                    env) && lagMillis > settings.querySettings.backtrackingWindow.toMillis / 2 + 300)
                 if (delayed)
                   println(
                     s"# received ${newAcc.size}$duplicate from ${env.source}: ${env.persistenceId} seqNr ${env.sequenceNr}, lag $lagMillis ms")

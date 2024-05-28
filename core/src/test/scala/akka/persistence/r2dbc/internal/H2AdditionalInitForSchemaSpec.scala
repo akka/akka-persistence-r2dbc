@@ -55,8 +55,7 @@ class H2AdditionalInitForSchemaSpec
   private def exists(slice: Int, whereCondition: String): Boolean =
     r2dbcExecutor(slice)
       .selectOne("count")(
-        _.createStatement(
-          s"select count(*) from ${r2dbcSettings.durableStateTableWithSchema(slice)} where $whereCondition"),
+        _.createStatement(s"select count(*) from ${settings.durableStateTableWithSchema(slice)} where $whereCondition"),
         row => row.get(0, classOf[java.lang.Long]).longValue())
       .futureValue
       .contains(1)

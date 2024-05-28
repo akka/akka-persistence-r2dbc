@@ -34,7 +34,7 @@ class R2dbcJournalPerfManyActorsSpec extends JournalPerfSpec(R2dbcJournalPerfSpe
 
   "A PersistentActor's performance" must {
 
-    if (r2dbcSettings.dialectName == "sqlserver") {
+    if (settings.dialectName == "sqlserver") {
       pending
     }
 

@@ -73,7 +73,7 @@ class DurableStateStoreSpec
     }
 
     "detect and reject concurrent updates" in {
-      if (!r2dbcSettings.durableStateAssertSingleWriter)
+      if (!settings.durableStateAssertSingleWriter)
         pending
 
       val entityType = nextEntityType()
@@ -151,7 +151,7 @@ class DurableStateStoreSpec
     }
 
     "detect and reject concurrent deletes" in {
-      if (!r2dbcSettings.durableStateAssertSingleWriter)
+      if (!settings.durableStateAssertSingleWriter)
         pending
 
       val entityType = nextEntityType()

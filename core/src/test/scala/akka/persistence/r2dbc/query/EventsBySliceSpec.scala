@@ -5,7 +5,6 @@
 package akka.persistence.r2dbc.query
 
 import scala.concurrent.Await
-import scala.concurrent.duration._
 import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
@@ -19,7 +18,6 @@ import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestActors.Persister.Persist
@@ -75,7 +73,6 @@ class EventsBySliceSpec
   import EventsBySliceSpec._
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 

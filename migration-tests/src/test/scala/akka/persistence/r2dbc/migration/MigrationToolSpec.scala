@@ -110,8 +110,8 @@ class MigrationToolSpec
 
   private val migration = new MigrationTool(system)
 
-  private val hasChangeHandler = r2dbcSettings.durableStateChangeHandlerClasses.nonEmpty
-  private val hasAdditionalColumn = r2dbcSettings.durableStateAdditionalColumnClasses.nonEmpty
+  private val hasChangeHandler = settings.durableStateChangeHandlerClasses.nonEmpty
+  private val hasAdditionalColumn = settings.durableStateAdditionalColumnClasses.nonEmpty
 
   // don't run this for Yugabyte since it is using akka-persistence-jdbc
   private val postgresTest = dialect == "postgres"
@@ -250,10 +250,10 @@ class MigrationToolSpec
         r2dbcExecutor.updateOne("beforeAll migration_progress")(_.createStatement("delete from migration_progress")),
         10.seconds)
 
-      r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
+      settings.dataPartitionSliceRanges.foreach { sliceRange =>
         val dataPartitionSlice = sliceRange.min
 
-        val stateTable = r2dbcSettings.getDurableStateTableWithSchema("", dataPartitionSlice)
+        val stateTable = settings.getDurableStateTableWithSchema("", dataPartitionSlice)
         Await.result(
           r2dbcExecutor(dataPartitionSlice).executeDdl("add column 'test_column'")(
             _.createStatement(s"alter table $stateTable add column if not exists test_column VARCHAR(255)")),
@@ -497,7 +497,7 @@ class MigrationToolSpec
       if (hasChangeHandler) {
         import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
         // Scala 3 needs the extra step here
-        val durableStateImplicits = r2dbcSettings.codecSettings.DurableStateImplicits
+        val durableStateImplicits = settings.codecSettings.DurableStateImplicits
         import durableStateImplicits._
         val pid = PersistenceId.ofUniqueId(nextPid())
         val slice = persistenceExt.sliceForPersistenceId(pid.id)
@@ -527,7 +527,7 @@ class MigrationToolSpec
       if (hasAdditionalColumn) {
         import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
         // Scala 3 needs the extra step here
-        val durableStateImplicits = r2dbcSettings.codecSettings.DurableStateImplicits
+        val durableStateImplicits = settings.codecSettings.DurableStateImplicits
         import durableStateImplicits._
         val pid = PersistenceId.ofUniqueId(nextPid())
         persistDurableState(pid, "s-column")
@@ -535,7 +535,7 @@ class MigrationToolSpec
         assertDurableState(pid, "s-column")
         val slice = persistenceExt.sliceForPersistenceId(pid.id)
 
-        val stateTable = r2dbcSettings.getDurableStateTableWithSchema("", slice)
+        val stateTable = settings.getDurableStateTableWithSchema("", slice)
 
         val query = r2dbcExecutor(slice).select("select value for additional column")(
           _.createStatement(sql"SELECT test_column from $stateTable where persistence_id=?")

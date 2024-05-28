@@ -16,8 +16,6 @@ import akka.persistence.query.Offset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
-import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
@@ -26,7 +24,6 @@ import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -55,7 +52,6 @@ class EventsBySliceBacktrackingSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   import settings.codecSettings.JournalImplicits._
 
   private val query = PersistenceQuery(testKit.system)

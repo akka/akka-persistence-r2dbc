@@ -10,7 +10,6 @@ import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
@@ -27,7 +26,6 @@ class PersistTagsSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
   import settings.codecSettings.JournalImplicits.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
@@ -44,7 +42,7 @@ class PersistTagsSpec
   }
 
   private def selectAllRows(): IndexedSeq[Row] =
-    r2dbcSettings.allJournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
+    settings.allJournalTablesWithSchema.toVector.sortBy(_._1).flatMap { case (table, minSlice) =>
       selectRows(table, minSlice)
     }
 
