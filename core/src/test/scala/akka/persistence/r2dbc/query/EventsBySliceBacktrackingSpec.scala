@@ -148,7 +148,7 @@ class EventsBySliceBacktrackingSpec
       // no backtracking yet
       result.expectNoMessage(settings.querySettings.refreshInterval + 100.millis)
 
-      // after 1/2 of the backtracking widow, to kick off a backtracking query
+      // after 1/2 of the backtracking, to kick off a backtracking query
       writeEvent(
         slice1,
         pid1,

@@ -113,25 +113,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
 
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
-    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = (offset, row) => {
-      val event = deserializePayload(row)
-      val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-      val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
-      val filtered = row.serId == filteredPayloadSerId
-
-      new EventEnvelope(
-        offset,
-        row.persistenceId,
-        row.seqNr,
-        if (filtered) None else event,
-        row.dbTimestamp.toEpochMilli,
-        metadata,
-        row.entityType,
-        row.slice,
-        filtered,
-        source,
-        tags = row.tags)
-    }
+    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = createEventEnvelope
 
     val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
@@ -140,6 +122,43 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
     _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
+
+  private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
+    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
+    createEventEnvelope(offset, row)
+  }
+
+  private def createEventEnvelope[Event](offset: TimestampOffset, row: SerializedJournalRow): EventEnvelope[Event] = {
+    val event = deserializePayload(row)
+    val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+    val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
+    val filtered = row.serId == filteredPayloadSerId
+
+    new EventEnvelope(
+      offset,
+      row.persistenceId,
+      row.seqNr,
+      if (filtered) None else event,
+      row.dbTimestamp.toEpochMilli,
+      metadata,
+      row.entityType,
+      row.slice,
+      filtered,
+      source,
+      tags = row.tags)
+  }
+
+  private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
+    val event = deserializePayload(row)
+    // note that it's not possible to filter out FilteredPayload here
+    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
+    val envelope = ClassicEventEnvelope(offset, row.persistenceId, row.seqNr, event.get, row.dbTimestamp.toEpochMilli)
+    row.metadata match {
+      case None => envelope
+      case Some(meta) =>
+        envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
+    }
+  }
 
   private def snapshotsBySlice[Snapshot, Event](
       transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
@@ -751,39 +770,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
       })
       .mapMaterializedValue(_ => NotUsed)
-  }
-
-  private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
-    val event = deserializePayload[Event](row)
-    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
-    val metadata = row.metadata.map(meta => serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-    val source = if (event.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking
-    val filtered = row.serId == filteredPayloadSerId
-
-    new EventEnvelope(
-      offset,
-      row.persistenceId,
-      row.seqNr,
-      if (filtered) None else event,
-      row.dbTimestamp.toEpochMilli,
-      metadata,
-      row.entityType,
-      row.slice,
-      filtered,
-      source,
-      tags = row.tags)
-  }
-
-  private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
-    val event = deserializePayload(row)
-    // note that it's not possible to filter out FilteredPayload here
-    val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
-    val envelope = ClassicEventEnvelope(offset, row.persistenceId, row.seqNr, event.get, row.dbTimestamp.toEpochMilli)
-    row.metadata match {
-      case None => envelope
-      case Some(meta) =>
-        envelope.withMetadata(serialization.deserialize(meta.payload, meta.serId, meta.serManifest).get)
-    }
   }
 
   override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
