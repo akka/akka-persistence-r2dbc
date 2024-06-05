@@ -9,7 +9,7 @@ idempotent result. Full rolling update when switching database or Persistence pl
 you can migrate most of the data while the system is online and then have a short full shutdown while
 migrating the remaining data that was written after the previous online migration.
 
-The migration tool is intended to run as a separate, standalone application and should not be part of the same jvm process the main application is running under.
+The migration tool is intended to run as a separate, standalone application and should not be part of the same jvm process as the main application is running under.
 
 ## Dependencies
 
