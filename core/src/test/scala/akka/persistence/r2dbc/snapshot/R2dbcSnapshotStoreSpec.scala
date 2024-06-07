@@ -60,12 +60,20 @@ class R2dbcSnapshotStoreSpec extends SnapshotStoreSpec(TestConfig.config) with T
       result.snapshot.get.snapshot should ===("s-5")
     }
     "delete the single snapshot for a pid identified by sequenceNr in snapshot metadata" in {
+      val senderProbe = TestProbe()
+
+      // first confirm the current sequence number for the snapshot
+      snapshotStore.tell(LoadSnapshot(pid, SnapshotSelectionCriteria(), Long.MaxValue), senderProbe.ref)
+      val result = senderProbe.expectMsgType[LoadSnapshotResult]
+      result.snapshot shouldBe defined
+      val sequenceNr = result.snapshot.get.metadata.sequenceNr
+      sequenceNr shouldBe 15
+
       val md =
-        SnapshotMetadata(pid, sequenceNr = 2, timestamp = 0) // don't care about timestamp for delete of single snap
+        SnapshotMetadata(pid, sequenceNr, timestamp = 0) // don't care about timestamp for delete of single snap
       val cmd = DeleteSnapshot(md)
       val sub = TestProbe()
 
-      val senderProbe = TestProbe()
       subscribe[DeleteSnapshot](sub.ref)
       snapshotStore.tell(cmd, senderProbe.ref)
       sub.expectMsg(cmd)
