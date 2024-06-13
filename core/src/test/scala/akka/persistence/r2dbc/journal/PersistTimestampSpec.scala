@@ -5,22 +5,27 @@
 package akka.persistence.r2dbc.journal
 
 import java.time.Instant
+
 import scala.concurrent.duration._
+
+import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.{ PostgresTimestampCodec, SqlServerTimestampCodec }
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.PostgresTimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.SqlServerTimestampCodec
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
-import org.scalatest.wordspec.AnyWordSpecLike
 
 class PersistTimestampSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)
@@ -29,7 +34,7 @@ class PersistTimestampSpec
     with TestData
     with LogCapturing {
 
-  import settings.codecSettings.JournalImplicits.journalPayloadCodec
+  implicit val payloadCodec: PayloadCodec = settings.codecSettings.JournalImplicits.journalPayloadCodec
   override def typedSystem: ActorSystem[_] = system
   private val serialization = SerializationExtension(system)
   case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)

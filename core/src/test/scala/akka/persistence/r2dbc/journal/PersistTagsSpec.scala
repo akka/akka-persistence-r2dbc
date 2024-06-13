@@ -6,6 +6,8 @@ package akka.persistence.r2dbc.journal
 
 import scala.concurrent.duration._
 
+import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -14,9 +16,9 @@ import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
 import akka.persistence.typed.PersistenceId
-import org.scalatest.wordspec.AnyWordSpecLike
 
 class PersistTagsSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)
@@ -26,7 +28,7 @@ class PersistTagsSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  import settings.codecSettings.JournalImplicits.tagsCodec
+  implicit val codec: TagsCodec = settings.codecSettings.JournalImplicits.tagsCodec
   case class Row(pid: String, seqNr: Long, tags: Set[String])
 
   private def selectRows(table: String, minSlice: Int): IndexedSeq[Row] = {
