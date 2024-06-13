@@ -44,12 +44,6 @@ object TestConfig {
         refresh-interval = 1s
       }
     }
-    akka.actor {
-      serialization-bindings {
-        "akka.persistence.r2dbc.CborSerializable" = jackson-cbor
-        "akka.persistence.r2dbc.JsonSerializable" = jackson-json
-      }
-    }
     akka.actor.testkit.typed.default-timeout = 10s
     """))
       .withFallback(defaultConfig)

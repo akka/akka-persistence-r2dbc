@@ -88,5 +88,6 @@ object Dependencies {
       // r2dbcPostgres is already a transitive dependency from core, but
       // sometimes sbt doesn't understand that ¯\_(ツ)_/¯
       r2dbcPostgres,
-      TestDeps.akkaPersistenceTyped)
+      TestDeps.akkaPersistenceTyped,
+      "com.typesafe.akka" %% "akka-cluster-sharding-typed" % AkkaVersion)
 }
