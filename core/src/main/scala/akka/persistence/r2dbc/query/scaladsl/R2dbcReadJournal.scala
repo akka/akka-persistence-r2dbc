@@ -56,6 +56,7 @@ import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
+import akka.util.OptionVal
 
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
@@ -569,7 +570,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   @InternalApi private[r2dbc] def internalCurrentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
+      toSequenceNr: Long,
+      readHighestSequenceNr: Boolean = true,
+      includeDeleted: Boolean = false): Source[SerializedJournalRow, NotUsed] = {
 
     def updateState(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
@@ -591,7 +594,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
         newState -> Some(
           queryDao
-            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr))
+            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr, includeDeleted))
       } else {
         log.debugN(
           "currentEventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
@@ -611,7 +614,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         toSequenceNr)
 
     val highestSeqNrFut =
-      if (toSequenceNr == Long.MaxValue) journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+      if (readHighestSequenceNr && toSequenceNr == Long.MaxValue)
+        journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
       else Future.successful(toSequenceNr)
 
     Source
@@ -707,7 +711,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         newState ->
         Some(
           queryDao
-            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, toSequenceNr))
+            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, toSequenceNr, includeDeleted = false))
       }
     }
 

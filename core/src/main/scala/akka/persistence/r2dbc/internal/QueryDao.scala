@@ -29,7 +29,8 @@ private[r2dbc] trait QueryDao extends BySliceQuery.Dao[SerializedJournalRow] {
   def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed]
+      toSequenceNr: Long,
+      includeDeleted: Boolean): Source[SerializedJournalRow, NotUsed]
 
   def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed]
 
