@@ -66,17 +66,17 @@ class DurableStateStoreAdditionalColumnSpec
     with TestData
     with LogCapturing {
 
-  private def customTable(slice: Int) = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity", slice)
+  private def customTable(slice: Int) = settings.getDurableStateTableWithSchema("CustomEntity", slice)
 
   private def createCustomTable(slice: Int): String = {
-    if (r2dbcSettings.dialectName == "sqlserver")
-      s"IF object_id('${customTable(slice)}') is null SELECT * INTO ${customTable(slice)} FROM ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+    if (settings.dialectName == "sqlserver")
+      s"IF object_id('${customTable(slice)}') is null SELECT * INTO ${customTable(slice)} FROM ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
     else
-      s"create table if not exists ${customTable(slice)} as select * from ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+      s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
   }
 
   private def alterCustomTable(slice: Int, col: String, colType: String): String = {
-    if (r2dbcSettings.dialectName == "sqlserver")
+    if (settings.dialectName == "sqlserver")
       s"IF COL_LENGTH('${customTable(slice)}', '$col') IS NULL ALTER TABLE ${customTable(slice)} ADD $col $colType"
     else
       s"alter table ${customTable(slice)} add if not exists $col $colType"
@@ -85,7 +85,7 @@ class DurableStateStoreAdditionalColumnSpec
   override def typedSystem: ActorSystem[_] = system
 
   override def beforeAll(): Unit = {
-    r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
+    settings.dataPartitionSliceRanges.foreach { sliceRange =>
       val dataPartitionSlice = sliceRange.min
       Await.result(
         r2dbcExecutor(dataPartitionSlice).executeDdl("beforeAll create durable_state_test")(

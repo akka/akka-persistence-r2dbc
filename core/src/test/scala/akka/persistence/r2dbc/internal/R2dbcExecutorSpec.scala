@@ -48,12 +48,12 @@ class R2dbcExecutorSpec
 
   // need pg_sleep or similar
   private def canBeTestedWithDialect: Boolean =
-    r2dbcSettings.connectionFactorySettings.dialect == PostgresDialect ||
-    r2dbcSettings.connectionFactorySettings.dialect == YugabyteDialect
+    settings.connectionFactorySettings.dialect == PostgresDialect ||
+    settings.connectionFactorySettings.dialect == YugabyteDialect
 
   private def pendingIfCannotBeTestedWithDialect(): Unit = {
     if (!canBeTestedWithDialect) {
-      info(s"Can't be tested with dialect [${r2dbcSettings.dialectName}]")
+      info(s"Can't be tested with dialect [${settings.dialectName}]")
       pending
     }
   }
@@ -89,7 +89,7 @@ class R2dbcExecutorSpec
           connection.createStatement(s"insert into $table (col) values ('b')"))
       }
 
-      Thread.sleep(r2dbcSettings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
+      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
@@ -118,7 +118,7 @@ class R2dbcExecutorSpec
 
       val result = r2dbcExecutor.updateOne("test")(_.createStatement("select pg_sleep(4)"))
 
-      Thread.sleep(r2dbcSettings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
+      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]

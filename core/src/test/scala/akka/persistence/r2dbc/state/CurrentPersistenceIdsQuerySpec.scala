@@ -62,18 +62,18 @@ class CurrentPersistenceIdsQuerySpec
   private val customPid1 = nextPid(customEntityType)
   private val customPid2 = nextPid(customEntityType)
 
-  private def customTable(slice: Int) = r2dbcSettings.getDurableStateTableWithSchema("CustomEntity", slice)
+  private def customTable(slice: Int) = settings.getDurableStateTableWithSchema("CustomEntity", slice)
 
   private def createTable(slice: Int) = {
-    if (r2dbcSettings.dialectName == "sqlserver") {
-      s"IF object_id('${customTable(slice)}') is null SELECT * into ${customTable(slice)} from ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+    if (settings.dialectName == "sqlserver") {
+      s"IF object_id('${customTable(slice)}') is null SELECT * into ${customTable(slice)} from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
     } else {
-      s"create table if not exists ${customTable(slice)} as select * from ${r2dbcSettings.durableStateTableWithSchema(slice)} where persistence_id = ''"
+      s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
     }
   }
 
   override protected def beforeAll(): Unit = {
-    r2dbcSettings.dataPartitionSliceRanges.foreach { sliceRange =>
+    settings.dataPartitionSliceRanges.foreach { sliceRange =>
       val dataPartitionSlice = sliceRange.min
       Await.result(
         r2dbcExecutor(dataPartitionSlice).executeDdl("beforeAll create durable_state_test")(
@@ -113,7 +113,7 @@ class CurrentPersistenceIdsQuerySpec
 
     "retrieve all ids" in {
       val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
-      if (r2dbcSettings.numberOfDataPartitions == 1)
+      if (settings.numberOfDataPartitions == 1)
         result shouldBe pids.map(_.id)
       else
         result.sorted shouldBe pids.map(_.id).sorted
@@ -146,7 +146,7 @@ class CurrentPersistenceIdsQuerySpec
       createPidsInCustomTable()
       val result = store.currentPersistenceIds().runWith(Sink.seq).futureValue
       // note that custom tables always come afterwards, i.e. not strictly sorted on the pids (but that should be ok)
-      if (r2dbcSettings.numberOfDataPartitions == 1)
+      if (settings.numberOfDataPartitions == 1)
         result shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2)
       else
         result.sorted shouldBe (pids.map(_.id) :+ customPid1 :+ customPid2).sorted

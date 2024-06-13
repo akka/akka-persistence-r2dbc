@@ -9,7 +9,6 @@ import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.SerializedEvent
-import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
@@ -27,7 +26,6 @@ class PersistSerializedEventSpec
     with LogCapturing {
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   case class Row(pid: String, seqNr: Long, serializerId: Int, manifest: String)
 

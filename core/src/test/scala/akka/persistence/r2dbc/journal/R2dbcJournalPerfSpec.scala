@@ -31,7 +31,7 @@ class R2dbcJournalPerfSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) 
   override def typedSystem: ActorSystem[_] = system.toTyped
 
   override def benchActor(replyAfter: Int): ActorRef = {
-    if (r2dbcSettings.dialectName == "sqlserver")
+    if (settings.dialectName == "sqlserver")
       throw new TestPendingException
     else
       super.benchActor(replyAfter)

@@ -6,15 +6,17 @@ package akka.persistence.r2dbc
 
 import java.nio.charset.StandardCharsets.UTF_8
 
+import com.typesafe.config.ConfigFactory
+import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.Done
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
 import akka.persistence.r2dbc.TestActors.DurableStatePersister
 import akka.persistence.r2dbc.TestActors.Persister
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
-import com.typesafe.config.ConfigFactory
-import org.scalatest.wordspec.AnyWordSpecLike
 
 /**
  * The purpose of this test is to verify JSONB payloads, but it can also be run with ordinary BYTEA payloads. To test
@@ -59,7 +61,6 @@ class PayloadSpec
   import PayloadSpec._
 
   override def typedSystem: ActorSystem[_] = system
-  private val settings = R2dbcSettings(system.settings.config.getConfig("akka.persistence.r2dbc"))
 
   private def testJournalPersister(persistenceId: String, msg: Any): Unit = {
     val probe = createTestProbe[Any]()
@@ -88,7 +89,7 @@ class PayloadSpec
   }
 
   private def selectJournalRow(persistenceId: String): TestRow = {
-    import settings.codecSettings.JournalImplicits.journalPayloadCodec
+    implicit val codec: PayloadCodec = settings.codecSettings.JournalImplicits.journalPayloadCodec
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     r2dbcExecutor(slice)
@@ -108,7 +109,7 @@ class PayloadSpec
   }
 
   private def selectSnapshotRow(persistenceId: String): TestRow = {
-    import settings.codecSettings.SnapshotImplicits.snapshotPayloadCodec
+    implicit val codec: PayloadCodec = settings.codecSettings.SnapshotImplicits.snapshotPayloadCodec
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     r2dbcExecutor(slice)
@@ -128,7 +129,7 @@ class PayloadSpec
   }
 
   private def selectDurableStateRow(persistenceId: String): TestRow = {
-    import settings.codecSettings.DurableStateImplicits.durableStatePayloadCodec
+    implicit val codec: PayloadCodec = settings.codecSettings.DurableStateImplicits.durableStatePayloadCodec
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
     r2dbcExecutor(slice)

@@ -224,7 +224,7 @@ class EventsBySlicePubSubSpec
           .via(
             query.skipPubSubTooFarAhead(
               enabled = true,
-              maxAheadOfBacktracking = JDuration.ofMillis(r2dbcSettings.querySettings.backtrackingWindow.toMillis)))
+              maxAheadOfBacktracking = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
           .toMat(TestSink[EventEnvelope[String]]())(Keep.both)
           .run()
       out.request(100)
@@ -244,7 +244,7 @@ class EventsBySlicePubSubSpec
       val time2 = envA1.offset
         .asInstanceOf[TimestampOffset]
         .timestamp
-        .plusMillis(r2dbcSettings.querySettings.backtrackingWindow.toMillis)
+        .plusMillis(settings.querySettings.backtrackingWindow.toMillis)
       val envC1 = createEnvelope(pidC, 1L, "c1", time2.plusMillis(1))
       val envC2 = createEnvelope(pidC, 2L, "c2", time2.plusMillis(2))
       in.sendNext(envC1)
