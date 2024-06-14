@@ -33,8 +33,8 @@ inThisBuild(
     // add snapshot repo when Akka version overriden
     resolvers ++=
       (if (Dependencies.AkkaVersion.endsWith("-SNAPSHOT"))
-        Seq("Akka library snapshot repository".at("https://repo.akka.io/snapshots"))
-      else Seq.empty)))
+         Seq("Akka library snapshot repository".at("https://repo.akka.io/snapshots"))
+       else Seq.empty)))
 
 def common: Seq[Setting[_]] =
   Seq(
