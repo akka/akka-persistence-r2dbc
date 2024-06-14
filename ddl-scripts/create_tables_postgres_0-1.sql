@@ -121,5 +121,5 @@ CREATE TABLE IF NOT EXISTS durable_state_1 (
 );
 
 -- `durable_state_slice_idx` is only needed if the slice based queries are used
-CREATE INDEX IF NOT EXISTS durable_state_0_slice_idx ON durable_state_0(slice, entity_type, db_timestamp, revision);
-CREATE INDEX IF NOT EXISTS durable_state_1_slice_idx ON durable_state_1(slice, entity_type, db_timestamp, revision);
+CREATE INDEX IF NOT EXISTS durable_state_0_slice_idx ON durable_state_0(slice, entity_type, db_timestamp);
+CREATE INDEX IF NOT EXISTS durable_state_1_slice_idx ON durable_state_1(slice, entity_type, db_timestamp);
