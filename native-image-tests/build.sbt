@@ -6,7 +6,7 @@ scalaVersion := "2.13.14"
 
 resolvers += "Akka library repository".at("https://repo.akka.io/maven")
 
-lazy val akkaVersion = sys.props.getOrElse("akka.version", "2.9.3")
+lazy val akkaVersion = sys.props.getOrElse("akka.version", "2.9.4")
 lazy val akkaR2dbcVersion = sys.props.getOrElse("akka.r2dbc.version", "1.2.3")
 
 fork := true
