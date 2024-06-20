@@ -60,7 +60,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
   override protected def selectEventsIncludeDeletedSql(slice: Int): String =
     sqlCache.get(slice, "selectEventsIncludeDeletedSql") {
       sql"""
-      SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
       from ${journalTable(slice)}
       WHERE persistence_id = @persistenceId AND seq_nr >= @from AND seq_nr <= @to
       ORDER BY seq_nr"""
