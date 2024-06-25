@@ -144,10 +144,20 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectEventsSql(slice: Int): String =
     sqlCache.get(slice, "selectEventsSql") {
       sql"""
-      SELECT slice, entity_type, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT slice, entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       from ${journalTable(slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       AND deleted = false
+      ORDER BY seq_nr
+      LIMIT ?"""
+    }
+
+  protected def selectEventsIncludeDeletedSql(slice: Int): String =
+    sqlCache.get(slice, "selectEventsIncludeDeletedSql") {
+      sql"""
+      SELECT slice, entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      from ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       ORDER BY seq_nr
       LIMIT ?"""
     }
@@ -378,28 +388,47 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   override def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
+      toSequenceNr: Long,
+      includeDeleted: Boolean): Source[SerializedJournalRow, NotUsed] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val result = executor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection => {
-        val stmt = connection.createStatement(selectEventsSql(slice))
+        val selectSql = if (includeDeleted) selectEventsIncludeDeletedSql(slice) else selectEventsSql(slice)
+        val stmt = connection.createStatement(selectSql)
         bindSelectEventsSql(stmt, persistenceId, fromSequenceNr, toSequenceNr, settings.querySettings.bufferSize)
       },
       row =>
-        SerializedJournalRow(
-          slice = row.get[Integer]("slice", classOf[Integer]),
-          entityType = row.get("entity_type", classOf[String]),
-          persistenceId = row.get("persistence_id", classOf[String]),
-          seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-          dbTimestamp = row.getTimestamp("db_timestamp"),
-          readDbTimestamp = row.getTimestamp("read_db_timestamp"),
-          payload = Some(row.getPayload("event_payload")),
-          serId = row.get[Integer]("event_ser_id", classOf[Integer]),
-          serManifest = row.get("event_ser_manifest", classOf[String]),
-          writerUuid = row.get("writer", classOf[String]),
-          tags = row.getTags("tags"),
-          metadata = readMetadata(row)))
+        if (includeDeleted && row.get[java.lang.Boolean]("deleted", classOf[java.lang.Boolean])) {
+          // deleted row
+          SerializedJournalRow(
+            slice = row.get[Integer]("slice", classOf[Integer]),
+            entityType = row.get("entity_type", classOf[String]),
+            persistenceId = persistenceId,
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
+            payload = None,
+            serId = 0,
+            serManifest = "",
+            writerUuid = "",
+            tags = Set.empty,
+            metadata = None)
+        } else {
+          SerializedJournalRow(
+            slice = row.get[Integer]("slice", classOf[Integer]),
+            entityType = row.get("entity_type", classOf[String]),
+            persistenceId = persistenceId,
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
+            payload = Some(row.getPayload("event_payload")),
+            serId = row.get[Integer]("event_ser_id", classOf[Integer]),
+            serManifest = row.get("event_ser_manifest", classOf[String]),
+            writerUuid = row.get("writer", classOf[String]),
+            tags = row.getTags("tags"),
+            metadata = readMetadata(row))
+        })
 
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] events for persistenceId [{}]", rows.size, persistenceId))

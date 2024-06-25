@@ -42,6 +42,7 @@ import akka.stream.scaladsl.Sink
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
+import akka.persistence.journal.AsyncReplay
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
@@ -72,13 +73,16 @@ private[r2dbc] object R2dbcJournal {
     }
     reprWithMeta
   }
+
+  val FutureDone: Future[Done] = Future.successful(Done)
 }
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal {
+private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends AsyncWriteJournal with AsyncReplay {
+  import R2dbcJournal.FutureDone
   import R2dbcJournal.WriteFinished
   import R2dbcJournal.deserializeRow
 
@@ -215,30 +219,71 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     journalDao.deleteEventsTo(persistenceId, toSequenceNr, resetSequenceNumber = false)
   }
 
+  override def replayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(
+      recoveryCallback: PersistentRepr => Unit): Future[Long] = {
+    log.debug("replayMessages [{}] [{}]", persistenceId, fromSequenceNr)
+    val pendingWrite = Option(writesInProgress.get(persistenceId)) match {
+      case Some(f) =>
+        log.debug("Write in progress for [{}], deferring replayMessages until write completed", persistenceId)
+        // we only want to make write - replay sequential, not fail if previous write failed
+        f.recover { case _ => Done }(ExecutionContexts.parasitic)
+      case None => FutureDone
+    }
+    pendingWrite.flatMap { _ =>
+      if (toSequenceNr == Long.MaxValue && max == Long.MaxValue) {
+        // this is the normal case, highest sequence number from last event
+        query
+          .internalCurrentEventsByPersistenceId(
+            persistenceId,
+            fromSequenceNr,
+            toSequenceNr,
+            readHighestSequenceNr = false,
+            includeDeleted = true)
+          .runWith(Sink.fold(0L) { (_, item) =>
+            // payload is empty for deleted item
+            if (item.payload.isDefined) {
+              val repr = deserializeRow(serialization, item)
+              recoveryCallback(repr)
+            }
+            item.seqNr
+          })
+      } else if (toSequenceNr <= 0) {
+        // no replay
+        journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+      } else {
+        // replay to custom sequence number
+
+        val highestSeqNr = journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+
+        val effectiveToSequenceNr =
+          if (max == Long.MaxValue) toSequenceNr
+          else math.min(toSequenceNr, fromSequenceNr + max - 1)
+
+        query
+          .internalCurrentEventsByPersistenceId(
+            persistenceId,
+            fromSequenceNr,
+            effectiveToSequenceNr,
+            readHighestSequenceNr = false,
+            includeDeleted = false)
+          .runWith(Sink
+            .foreach { item =>
+              val repr = deserializeRow(serialization, item)
+              recoveryCallback(repr)
+            })
+          .flatMap(_ => highestSeqNr)
+      }
+    }
+  }
+
   override def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(
       recoveryCallback: PersistentRepr => Unit): Future[Unit] = {
-    log.debug("asyncReplayMessages persistenceId [{}], fromSequenceNr [{}]", persistenceId, fromSequenceNr)
-    val effectiveToSequenceNr =
-      if (max == Long.MaxValue) toSequenceNr
-      else math.min(toSequenceNr, fromSequenceNr + max - 1)
-    query
-      .internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, effectiveToSequenceNr)
-      .runWith(Sink.foreach { row =>
-        val repr = deserializeRow(serialization, row)
-        recoveryCallback(repr)
-      })
-      .map(_ => ())
+    throw new IllegalStateException(
+      "asyncReplayMessages is not supposed to be called when implementing AsyncReplay. This is a bug, please report.")
   }
 
   override def asyncReadHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
-    log.debug("asyncReadHighestSequenceNr [{}] [{}]", persistenceId, fromSequenceNr)
-    val pendingWrite = Option(writesInProgress.get(persistenceId)) match {
-      case Some(f) =>
-        log.debug("Write in progress for [{}], deferring highest seq nr until write completed", persistenceId)
-        // we only want to make write - replay sequential, not fail if previous write failed
-        f.recover { case _ => Done }(ExecutionContexts.parasitic)
-      case None => Future.successful(Done)
-    }
-    pendingWrite.flatMap(_ => journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr))
+    throw new IllegalStateException(
+      "asyncReplayMessages is not supposed to be called when implementing AsyncReplay. This is a bug, please report.")
   }
 }
