@@ -79,6 +79,32 @@ Each data partition corresponds to a table. You can copy the DDL statements for 
 data partition suffix. For example `event_journal_0`, `event_journal_0_slice_idx`, `event_journal_1`, `event_journal_1_slice_idx`.
 Note that the index must also reference the parent table with same data partition suffix.
 
+## Reducing number of database connections
+
+When using the @extref:[default allocation strategy for Akka Cluster Sharding](akka:typed/cluster-sharding.html#shard-allocation)
+the there is no correlation between the slice of the entity and to which node the entity will be allocated. That means
+that there will be database connections from an Akka node to each of the databases. With a large Akka cluster each
+database would have to handle many connections, maybe more than its connection limit. That would be an inefficient
+use of resources on both the Akka side and the databases.
+
+To reduce number of connections you can change the allocation strategy to @apidoc[SliceRangeShardAllocationStrategy].
+It will collocate entities with the same slice and contiguous range of slices to the same Akka node. Thereby
+the connections from one Akka node will go to one or a few databases since the database sharding is based on
+slice ranges.
+
+Java
+: @@snip [ShardingDocExample](/docs/src/test/java/jdocs/home/sharding/ShardingDocExample.java) { #sharding-init }
+
+Scala
+: @@snip [ShardingDocExample](/docs/src/test/scala/docs/home/sharding/ShardingDocExample.scala) { #sharding-init }
+
+
+Note that `SliceRangeShardAllocationStrategy` also requires change of the message extractor to
+@apidoc[SliceRangeShardAllocationStrategy.ShardBySliceMessageExtractor].
+
+Do not change shard allocation strategy in a rolling update. The cluster must be fully stopped and then started again
+when changing to a different allocation strategy.
+
 ## Changing data partitions
 
 The configuration of data partitions and databases **must not** be changed in a rolling update, since the data must

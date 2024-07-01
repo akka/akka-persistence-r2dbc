@@ -17,6 +17,7 @@ import akka.persistence.r2dbc.TestActors.DurableStatePersister
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.internal.codec.PayloadCodec
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
+import akka.serialization.jackson.JsonSerializable
 
 /**
  * The purpose of this test is to verify JSONB payloads, but it can also be run with ordinary BYTEA payloads. To test
