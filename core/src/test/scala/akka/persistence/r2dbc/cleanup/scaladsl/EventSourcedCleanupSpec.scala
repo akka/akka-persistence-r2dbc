@@ -55,11 +55,13 @@ class EventSourcedCleanupSpec
 
   // find two different persistenceIds that are both in the slice range 0-255 so that this test can run with
   // 4 data partitions
-  private def pidsWithSliceLessThan256(entityType: String) = {
+  private def pidsWithDifferentSlicesLessThan256(entityType: String) = {
     var pid1: PersistenceId = null
     var pid2: PersistenceId = null
-    while (pid1 == pid2 || persistenceExt.sliceForPersistenceId(pid1.id) > 255 || persistenceExt
-        .sliceForPersistenceId(pid2.id) > 255) {
+    def slice1 = persistenceExt.sliceForPersistenceId(pid1.id)
+    def slice2 = persistenceExt.sliceForPersistenceId(pid2.id)
+
+    while (pid1 == pid2 || slice1 == slice2 || slice1 > 255 || slice2 > 255) {
       pid1 = PersistenceId(entityType, UUID.randomUUID().toString)
       pid2 = PersistenceId(entityType, UUID.randomUUID().toString)
     }
@@ -393,7 +395,7 @@ class EventSourcedCleanupSpec
       val ackProbe = createTestProbe[Done]()
       val entityType = nextEntityType()
 
-      var (pid1, pid2) = pidsWithSliceLessThan256(entityType)
+      var (pid1, pid2) = pidsWithDifferentSlicesLessThan256(entityType)
 
       val p1 = spawn(Persister(pid1))
       val p2 = spawn(Persister(pid2))
