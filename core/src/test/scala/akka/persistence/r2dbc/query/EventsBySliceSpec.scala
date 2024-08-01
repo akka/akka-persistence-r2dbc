@@ -4,11 +4,15 @@
 
 package akka.persistence.r2dbc.query
 
+import java.time.Instant
+
 import scala.concurrent.Await
+
 import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.{ ActorRef, ActorSystem }
 import akka.persistence.FilteredPayload
 import akka.persistence.query.NoOffset
@@ -20,16 +24,23 @@ import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
-import akka.persistence.r2dbc.TestActors.Persister.Persist
 import akka.persistence.r2dbc.TestActors.Persister.PersistAll
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestActors.Persister.Ping
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.InstantFactory
+import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
+import akka.persistence.r2dbc.internal.codec.PayloadCodec
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
+import akka.persistence.r2dbc.internal.codec.QueryAdapter
+import akka.persistence.r2dbc.internal.codec.TimestampCodec
+import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.internal.ReplicatedEventMetadata
+import akka.serialization.SerializationExtension
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
@@ -37,6 +48,7 @@ import akka.stream.testkit.scaladsl.TestSink
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
+import org.slf4j.LoggerFactory
 
 object EventsBySliceSpec {
   sealed trait QueryType
@@ -75,6 +87,40 @@ class EventsBySliceSpec
   override def typedSystem: ActorSystem[_] = system
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
+
+  implicit val payloadCodec: PayloadCodec = settings.codecSettings.JournalImplicits.journalPayloadCodec
+  implicit val timestampCodec: TimestampCodec = settings.codecSettings.JournalImplicits.timestampCodec
+  implicit val queryAdapter: QueryAdapter = settings.codecSettings.JournalImplicits.queryAdapter
+
+  private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
+
+  private val log = LoggerFactory.getLogger(getClass)
+
+  // to be able to store events with specific timestamps
+  private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
+    log.debugN("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
+
+    val insertEventSql = sql"""
+      INSERT INTO ${settings.journalTableWithSchema(slice)}
+      (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
+      VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
+
+    val entityType = PersistenceId.extractEntityType(persistenceId)
+
+    val result = r2dbcExecutor(slice).updateOne("test writeEvent") { connection =>
+      connection
+        .createStatement(insertEventSql)
+        .bind(0, slice)
+        .bind(1, entityType)
+        .bind(2, persistenceId)
+        .bind(3, seqNr)
+        .bindTimestamp(4, timestamp)
+        .bind(5, stringSerializer.identifier)
+        .bindPayload(6, stringSerializer.toBinary(event))
+    }
+
+    result.futureValue shouldBe 1
+  }
 
   private class Setup {
     val entityType = nextEntityType()
@@ -181,6 +227,48 @@ class EventsBySliceSpec
         for (i <- 1 to 10) {
           result.expectNext().event shouldBe s"e-$i"
         }
+        assertFinished(result)
+      }
+
+      "handle more events with same timestamp than buffer size, with overlapping seq numbers" in {
+        val entityType = nextEntityType()
+        val pid1 = nextPid(entityType)
+        val pid2 = nextPid(entityType)
+        val pid3 = nextPid(entityType)
+        val slice1 = query.sliceForPersistenceId(pid1)
+        val slice2 = query.sliceForPersistenceId(pid2)
+        val slice3 = query.sliceForPersistenceId(pid3)
+        val slices = Seq(slice1, slice2, slice3)
+
+        val timestamp = InstantFactory.now()
+        writeEvent(slice1, pid1, 1L, timestamp, "A1")
+        writeEvent(slice1, pid1, 2L, timestamp, "A2")
+        writeEvent(slice1, pid1, 3L, timestamp, "A3")
+        writeEvent(slice1, pid1, 4L, timestamp, "A4")
+        writeEvent(slice1, pid1, 5L, timestamp, "A5")
+        writeEvent(slice1, pid1, 6L, timestamp, "A6")
+        writeEvent(slice2, pid2, 3L, timestamp, "B3")
+        writeEvent(slice2, pid2, 4L, timestamp, "B4")
+        writeEvent(slice3, pid3, 3L, timestamp, "C3")
+
+        val queryWithSmallBuffer = PersistenceQuery(testKit.system) // buffer size = 4
+          .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
+
+        val sinkProbe = TestSink[EventEnvelope[String]]()
+
+        val result: TestSubscriber.Probe[EventEnvelope[String]] =
+          doQuery(entityType, slices.min, slices.max, NoOffset, queryWithSmallBuffer)
+            .runWith(sinkProbe)
+            .request(10)
+
+        def take(n: Int): Set[String] =
+          (1 to n).map(_ => result.expectNext().event).toSet
+
+        take(2) shouldBe Set("A1", "A2")
+        take(3) shouldBe Set("A3", "B3", "C3")
+        take(2) shouldBe Set("A4", "B4")
+        take(2) shouldBe Set("A5", "A6")
+
         assertFinished(result)
       }
 
