@@ -24,12 +24,16 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 
   override protected def eventsBySlicesRangeSql(
+      fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
     // not caching, too many combinations
+
+    def fromSeqNrParamCondition =
+      if (fromSeqNrParam) "AND (db_timestamp != ? OR seq_nr >= ?)" else ""
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
@@ -51,7 +55,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
-      AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+      AND db_timestamp >= ? $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""

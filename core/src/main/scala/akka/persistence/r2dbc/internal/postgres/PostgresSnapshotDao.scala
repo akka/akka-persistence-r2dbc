@@ -388,6 +388,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedSnapshotRow, NotUsed] = {

@@ -653,6 +653,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedStateRow, NotUsed] = {

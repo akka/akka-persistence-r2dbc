@@ -69,12 +69,16 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     "SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
   protected def eventsBySlicesRangeSql(
+      fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
     // not caching, too many combinations
+
+    def fromSeqNrParamCondition =
+      if (fromSeqNrParam) "AND (db_timestamp != ? OR seq_nr >= ?)" else ""
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
@@ -96,7 +100,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
-      AND db_timestamp >= ? $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+      AND db_timestamp >= ? $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
@@ -209,16 +213,25 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       stmt: Statement,
       entityType: String,
       fromTimestamp: Instant,
+      fromSeqNr: Option[Long],
       toTimestamp: Option[Instant]): Statement = {
     stmt
       .bind(0, entityType)
       .bindTimestamp(1, fromTimestamp)
+    val index1 = 2
+    val index2 = fromSeqNr match {
+      case Some(seqNr) =>
+        stmt.bindTimestamp(index1, fromTimestamp)
+        stmt.bind(index1 + 1, seqNr)
+        index1 + 2
+      case None => index1
+    }
     toTimestamp match {
       case Some(until) =>
-        stmt.bindTimestamp(2, until)
-        stmt.bind(3, settings.querySettings.bufferSize)
+        stmt.bindTimestamp(index2, until)
+        stmt.bind(index2 + 1, settings.querySettings.bufferSize)
       case None =>
-        stmt.bind(2, settings.querySettings.bufferSize)
+        stmt.bind(index2, settings.querySettings.bufferSize)
     }
   }
 
@@ -227,6 +240,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
@@ -241,12 +255,13 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         val stmt = connection
           .createStatement(
             eventsBySlicesRangeSql(
+              fromSeqNrParam = fromSeqNr.isDefined,
               toDbTimestampParam = toTimestamp.isDefined,
               behindCurrentTime,
               backtracking,
               minSlice,
               maxSlice))
-        bindEventsBySlicesRangeSql(stmt, entityType, fromTimestamp, toTimestamp)
+        bindEventsBySlicesRangeSql(stmt, entityType, fromTimestamp, fromSeqNr, toTimestamp)
       },
       row =>
         if (backtracking)

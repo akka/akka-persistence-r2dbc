@@ -168,6 +168,22 @@ class EventsBySliceSpec
         assertFinished(result)
       }
 
+      "handle more events with same timestamp than buffer size" in new Setup {
+        val queryWithSmallBuffer = PersistenceQuery(testKit.system) // buffer size = 4
+          .readJournalFor[R2dbcReadJournal]("akka.persistence.r2dbc-small-buffer.query")
+        persister ! PersistAll((1 to 10).map(i => s"e-$i").toList)
+        persister ! Ping(probe.ref)
+        probe.expectMessage(Done)
+        val result: TestSubscriber.Probe[EventEnvelope[String]] =
+          doQuery(entityType, slice, slice, NoOffset, queryWithSmallBuffer)
+            .runWith(sinkProbe)
+            .request(11)
+        for (i <- 1 to 10) {
+          result.expectNext().event shouldBe s"e-$i"
+        }
+        assertFinished(result)
+      }
+
       "include metadata" in {
         val probe = testKit.createTestProbe[Done]()
         val entityType = nextEntityType()
