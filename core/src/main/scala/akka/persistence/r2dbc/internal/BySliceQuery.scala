@@ -74,9 +74,8 @@ import org.slf4j.Logger
     }
   }
 
-  private def highestSeenSeqNr(offset: TimestampOffset): Option[Long] = {
-    if (offset.seen.isEmpty) None else Some(offset.seen.values.max)
-  }
+  private def highestSeenSeqNr(offset: TimestampOffset): Option[Long] =
+    Option.when(offset.seen.nonEmpty)(offset.seen.values.max)
 
   object Buckets {
     type EpochSeconds = Long

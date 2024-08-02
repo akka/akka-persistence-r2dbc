@@ -77,6 +77,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       maxSlice: Int): String = {
     // not caching, too many combinations
 
+    // If more events than the buffer size are all on the same timestamp, then the query will get stuck on that same
+    // timestamp. Avoid this by also starting from the highest seen sequence number for that timestamp, using the fact
+    // that events are ordered by db_timestamp, seq_nr. Note that sequence numbers are per persistence id, so a later
+    // timestamp can have an earlier sequence number. Add a logical conditional only when db_timestamp = fromTimestamp
+    // to also filter for seq_nr >= fromSeqNr. Expressed in a logically equivalent form, where A -> B === ~A v B.
     def fromSeqNrParamCondition =
       if (fromSeqNrParam) "AND (db_timestamp != ? OR seq_nr >= ?)" else ""
 
