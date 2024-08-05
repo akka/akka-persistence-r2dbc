@@ -24,6 +24,7 @@ import java.util.Locale
 
 import scala.concurrent.ExecutionContext
 
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
@@ -46,7 +47,9 @@ private[r2dbc] object H2Dialect extends Dialect {
     res
   }
 
-  override def createConnectionFactory(config: Config): ConnectionFactory = {
+  override def createConnectionFactory(
+      config: Config,
+      optionsProvider: ConnectionFactoryOptionsProvider): ConnectionFactory = {
     // starting point for both url and regular configs,
     // to allow url to override anything but provide sane defaults
     val builder = H2ConnectionConfiguration.builder()

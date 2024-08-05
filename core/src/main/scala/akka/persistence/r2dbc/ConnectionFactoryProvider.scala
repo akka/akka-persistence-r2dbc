@@ -20,6 +20,11 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
+import scala.util.Failure
+import scala.util.Success
+
+import com.typesafe.config.Config
+import io.r2dbc.spi.ConnectionFactoryOptions
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
@@ -29,9 +34,24 @@ object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] 
 
   // Java API
   def get(system: ActorSystem[_]): ConnectionFactoryProvider = apply(system)
+
+  trait ConnectionFactoryOptionsProvider {
+    def buildOptions(
+        builder: ConnectionFactoryOptions.Builder,
+        connectionFactoryConfig: Config): ConnectionFactoryOptions
+  }
+
+  private object DefaultConnectionFactoryOptionsProvider extends ConnectionFactoryOptionsProvider {
+    override def buildOptions(
+        builder: ConnectionFactoryOptions.Builder,
+        connectionFactoryConfig: Config): ConnectionFactoryOptions =
+      builder.build()
+  }
 }
 
 class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
+  import ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
+  import ConnectionFactoryProvider.DefaultConnectionFactoryOptionsProvider
 
   import R2dbcExecutor.PublisherOps
   private val sessions = new ConcurrentHashMap[String, ConnectionPool]
@@ -51,7 +71,8 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         configLocation,
         configLocation => {
           val settings = connectionFactorySettingsFor(configLocation)
-          val connectionFactory = settings.dialect.createConnectionFactory(settings.config)
+          val optionsProvider = connectionFactoryOptionsProvider(settings)
+          val connectionFactory = settings.dialect.createConnectionFactory(settings.config, optionsProvider)
           createConnectionPoolFactory(settings.poolSettings, connectionFactory)
         })
       .asInstanceOf[ConnectionFactory]
@@ -69,6 +90,22 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
         connectionFactorySettings.put(configLocation, settings)
         settings
       case settings => settings
+    }
+  }
+
+  private def connectionFactoryOptionsProvider(
+      settings: ConnectionFactorySettings): ConnectionFactoryOptionsProvider = {
+    settings.optionsProvider match {
+      case "" => DefaultConnectionFactoryOptionsProvider
+      case fqcn =>
+        system.dynamicAccess.createInstanceFor[ConnectionFactoryOptionsProvider](fqcn, Nil) match {
+          case Success(provider) => provider
+          case Failure(_) =>
+            system.dynamicAccess
+              .createInstanceFor[ConnectionFactoryOptionsProvider](fqcn, List(classOf[ActorSystem[_]] -> system))
+              .get
+
+        }
     }
   }
 

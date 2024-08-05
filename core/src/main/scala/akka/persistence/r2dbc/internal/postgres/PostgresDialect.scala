@@ -26,6 +26,7 @@ import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
 
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
@@ -66,7 +67,9 @@ private[r2dbc] object PostgresDialect extends Dialect {
       }
   }
 
-  override def createConnectionFactory(config: Config): ConnectionFactory = {
+  override def createConnectionFactory(
+      config: Config,
+      optionsProvider: ConnectionFactoryOptionsProvider): ConnectionFactory = {
     val settings = new PostgresConnectionFactorySettings(config)
     val builder =
       settings.urlOption match {
@@ -115,7 +118,8 @@ private[r2dbc] object PostgresDialect extends Dialect {
         builder.option(PostgresqlConnectionFactoryProvider.SSL_PASSWORD, settings.sslPassword)
     }
 
-    ConnectionFactories.get(builder.build())
+    val options = optionsProvider.buildOptions(builder, config)
+    ConnectionFactories.get(options)
   }
 
   override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext =
