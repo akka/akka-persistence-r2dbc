@@ -31,7 +31,19 @@ import org.slf4j.Logger
 
   object QueryState {
     val empty: QueryState =
-      QueryState(TimestampOffset.Zero, 0, 0, 0, 0, backtrackingCount = 0, TimestampOffset.Zero, 0, 0, Buckets.empty)
+      QueryState(
+        latest = TimestampOffset.Zero,
+        rowCount = 0,
+        rowCountSinceBacktracking = 0,
+        queryCount = 0,
+        idleCount = 0,
+        backtrackingCount = 0,
+        latestBacktracking = TimestampOffset.Zero,
+        latestBacktrackingSeenCount = 0,
+        backtrackingExpectFiltered = 0,
+        buckets = Buckets.empty,
+        previous = TimestampOffset.Zero,
+        previousBacktracking = TimestampOffset.Zero)
   }
 
   final case class QueryState(
@@ -44,7 +56,9 @@ import org.slf4j.Logger
       latestBacktracking: TimestampOffset,
       latestBacktrackingSeenCount: Int,
       backtrackingExpectFiltered: Int,
-      buckets: Buckets) {
+      buckets: Buckets,
+      previous: TimestampOffset,
+      previousBacktracking: TimestampOffset) {
 
     def backtracking: Boolean = backtrackingCount > 0
 
@@ -55,6 +69,10 @@ import org.slf4j.Logger
     def nextQueryFromTimestamp: Instant =
       if (backtracking) latestBacktracking.timestamp
       else latest.timestamp
+
+    def nextQueryFromSeqNr: Option[Long] =
+      if (backtracking) highestSeenSeqNr(previousBacktracking, latestBacktracking)
+      else highestSeenSeqNr(previous, latest)
 
     def nextQueryToTimestamp(atLeastNumberOfEvents: Int): Option[Instant] = {
       buckets.findTimeForLimit(nextQueryFromTimestamp, atLeastNumberOfEvents) match {
@@ -69,6 +87,12 @@ import org.slf4j.Logger
       }
     }
   }
+
+  // only filter by highest seen seq nr when the next query is the same timestamp (or when unknown for initial queries)
+  private def highestSeenSeqNr(previous: TimestampOffset, latest: TimestampOffset): Option[Long] =
+    Option.when((previous == TimestampOffset.Zero || previous.timestamp == latest.timestamp) && latest.seen.nonEmpty) {
+      latest.seen.values.max
+    }
 
   object Buckets {
     type EpochSeconds = Long
@@ -157,6 +181,7 @@ import org.slf4j.Logger
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
+        fromSeqNr: Option[Long], // for events with same timestamp as `fromTimestamp`
         toTimestamp: Option[Instant],
         behindCurrentTime: FiniteDuration,
         backtracking: Boolean): Source[SerializedRow, NotUsed]
@@ -212,7 +237,10 @@ import org.slf4j.Logger
       // so continue until rowCount is 0. That means an extra query at the end to make sure there are no
       // more to fetch.
       if (state.queryCount == 0L || state.rowCount > 0) {
-        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
+        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1, previous = state.latest)
+
+        val fromTimestamp = state.latest.timestamp
+        val fromSeqNr = highestSeenSeqNr(state.previous, state.latest)
 
         val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize) match {
           case Some(t) =>
@@ -228,7 +256,7 @@ import org.slf4j.Logger
             state.queryCount,
             minSlice,
             maxSlice,
-            state.latest.timestamp,
+            fromTimestamp,
             toTimestamp,
             state.rowCount)
 
@@ -238,7 +266,8 @@ import org.slf4j.Logger
               entityType,
               minSlice,
               maxSlice,
-              state.latest.timestamp,
+              fromTimestamp,
+              fromSeqNr,
               toTimestamp = Some(toTimestamp),
               behindCurrentTime = Duration.Zero,
               backtracking = false)
@@ -312,7 +341,11 @@ import org.slf4j.Logger
             s"Unexpected offset [$offset] before latestBacktracking [${state.latestBacktracking}].")
 
         val newSeenCount =
-          if (offset.timestamp == state.latestBacktracking.timestamp) state.latestBacktrackingSeenCount + 1 else 1
+          if (offset.timestamp == state.latestBacktracking.timestamp &&
+            highestSeenSeqNr(state.previousBacktracking, offset) ==
+              highestSeenSeqNr(state.previousBacktracking, state.latestBacktracking))
+            state.latestBacktrackingSeenCount + 1
+          else 1
 
         state.copy(
           latestBacktracking = offset,
@@ -420,6 +453,7 @@ import org.slf4j.Logger
         else settings.querySettings.behindCurrentTime
 
       val fromTimestamp = newState.nextQueryFromTimestamp
+      val fromSeqNr = newState.nextQueryFromSeqNr
       val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize)
 
       if (log.isDebugEnabled()) {
@@ -446,7 +480,11 @@ import org.slf4j.Logger
           else s"Found [${state.rowCount}] rows in previous query.")
       }
 
-      newState ->
+      val newStateWithPrevious =
+        if (newState.backtracking) newState.copy(previousBacktracking = newState.latestBacktracking)
+        else newState.copy(previous = newState.latest)
+
+      newStateWithPrevious ->
       Some(
         dao
           .rowsBySlices(
@@ -454,6 +492,7 @@ import org.slf4j.Logger
             minSlice,
             maxSlice,
             fromTimestamp,
+            fromSeqNr,
             toTimestamp,
             behindCurrentTime,
             backtracking = newState.backtracking)

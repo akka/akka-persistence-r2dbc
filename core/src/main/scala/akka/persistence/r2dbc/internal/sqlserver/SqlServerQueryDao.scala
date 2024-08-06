@@ -112,12 +112,16 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
   }
 
   override protected def eventsBySlicesRangeSql(
+      fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
       backtracking: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
     // not caching, too many combinations
+
+    def fromSeqNrParamCondition =
+      if (fromSeqNrParam) "AND (db_timestamp != @from OR seq_nr >= @fromSeqNr)" else ""
 
     def toDbTimestampParamCondition =
       if (toDbTimestampParam) "AND db_timestamp <= @until" else ""
@@ -139,7 +143,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
         FROM ${journalTable(minSlice)}
         WHERE entity_type = @entityType
         AND ${sliceCondition(minSlice, maxSlice)}
-        AND db_timestamp >= @from $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
+        AND db_timestamp >= @from $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
         AND deleted = $sqlFalse
         ORDER BY db_timestamp, seq_nr"""
   }
@@ -148,11 +152,13 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       stmt: Statement,
       entityType: String,
       fromTimestamp: Instant,
+      fromSeqNr: Option[Long],
       toTimestamp: Option[Instant]): Statement = {
     stmt
       .bind("@limit", settings.querySettings.bufferSize)
       .bind("@entityType", entityType)
       .bindTimestamp("@from", fromTimestamp)
+    fromSeqNr.foreach(seqNr => stmt.bind("@fromSeqNr", seqNr))
     toTimestamp.foreach(timestamp => stmt.bindTimestamp("@until", timestamp))
     stmt
   }
