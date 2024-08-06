@@ -24,6 +24,7 @@ import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
 
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
@@ -59,7 +60,9 @@ private[r2dbc] object SqlServerDialect extends Dialect {
     res
   }
 
-  override def createConnectionFactory(config: Config): ConnectionFactory = {
+  override def createConnectionFactory(
+      config: Config,
+      optionsProvider: ConnectionFactoryOptionsProvider): ConnectionFactory = {
 
     val settings = new SqlServerConnectionFactorySettings(config)
     val builder =
@@ -79,11 +82,13 @@ private[r2dbc] object SqlServerDialect extends Dialect {
             .option(ConnectionFactoryOptions.DATABASE, settings.database)
             .option(ConnectionFactoryOptions.CONNECT_TIMEOUT, JDuration.ofMillis(settings.connectTimeout.toMillis))
       }
-    ConnectionFactories.get(
-      builder
-        //the option below is necessary to avoid https://github.com/r2dbc/r2dbc-mssql/issues/276
-        .option(MssqlConnectionFactoryProvider.PREFER_CURSORED_EXECUTION, false)
-        .build())
+
+    builder
+      //the option below is necessary to avoid https://github.com/r2dbc/r2dbc-mssql/issues/276
+      .option(MssqlConnectionFactoryProvider.PREFER_CURSORED_EXECUTION, false)
+
+    val options = optionsProvider.buildOptions(builder, config)
+    ConnectionFactories.get(options)
   }
 
   override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext =

@@ -16,6 +16,8 @@ import com.typesafe.config.Config
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
+
 /**
  * INTERNAL API
  */
@@ -44,7 +46,10 @@ private[r2dbc] object ConnectionFactorySettings {
     // for backwards compatibility/convenience
     val poolSettings = new ConnectionPoolSettings(config)
 
-    ConnectionFactorySettings(dialect, config, poolSettings)
+    // H2 dialect doesn't support options-provider
+    val optionsProvider = if (dialect == H2Dialect) "" else config.getString("options-provider")
+
+    ConnectionFactorySettings(dialect, config, poolSettings, optionsProvider)
   }
 
 }
@@ -56,4 +61,5 @@ private[r2dbc] object ConnectionFactorySettings {
 private[r2dbc] case class ConnectionFactorySettings(
     dialect: Dialect,
     config: Config,
-    poolSettings: ConnectionPoolSettings)
+    poolSettings: ConnectionPoolSettings,
+    optionsProvider: String)

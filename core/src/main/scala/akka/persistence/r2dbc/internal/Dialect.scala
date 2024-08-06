@@ -9,8 +9,9 @@ import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.R2dbcSettings
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
-
 import scala.concurrent.ExecutionContext
+
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 
 /**
  * INTERNAL API
@@ -31,7 +32,7 @@ private[r2dbc] trait Dialect {
 
   def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext
 
-  def createConnectionFactory(config: Config): ConnectionFactory
+  def createConnectionFactory(config: Config, optionsProvider: ConnectionFactoryOptionsProvider): ConnectionFactory
 
   def createJournalDao(executorProvider: R2dbcExecutorProvider): JournalDao
 

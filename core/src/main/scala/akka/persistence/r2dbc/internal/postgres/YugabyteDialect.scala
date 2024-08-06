@@ -17,6 +17,7 @@ import akka.persistence.r2dbc.internal.SnapshotDao
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactory
 
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 /**
@@ -27,8 +28,10 @@ private[r2dbc] object YugabyteDialect extends Dialect {
 
   override def name: String = "yugabyte"
 
-  override def createConnectionFactory(config: Config): ConnectionFactory =
-    PostgresDialect.createConnectionFactory(config)
+  override def createConnectionFactory(
+      config: Config,
+      optionsProvider: ConnectionFactoryOptionsProvider): ConnectionFactory =
+    PostgresDialect.createConnectionFactory(config, optionsProvider)
 
   override def daoExecutionContext(settings: R2dbcSettings, system: ActorSystem[_]): ExecutionContext =
     system.executionContext
