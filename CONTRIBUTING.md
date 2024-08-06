@@ -7,7 +7,7 @@ The tests expect a locally running database.
 It can be started with the docker-compose file in the docker folder:
 
 ```
-docker-compose -f docker/docker-compose-postgres.yml up --wait
+docker compose -f docker/docker-compose-postgres.yml up --wait
 ```
 
 ```
@@ -52,7 +52,7 @@ The tests expect a locally running database.
 It can be started with the docker-comopse file in the docker folder:
 
 ```
-docker-compose -f docker/docker-compose-yugabyte.yml up
+docker compose -f docker/docker-compose-yugabyte.yml up
 ```
 
 ```

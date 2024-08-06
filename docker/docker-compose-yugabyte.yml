@@ -1,4 +1,4 @@
-version: '2'
+version: '2.2'
 
 # Local Yugabyte database, see https://docs.yugabyte.com/latest/deploy/docker/docker-compose/
 
