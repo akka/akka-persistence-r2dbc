@@ -88,7 +88,6 @@ private[r2dbc] object SqlServerDialect extends Dialect {
       .option(MssqlConnectionFactoryProvider.PREFER_CURSORED_EXECUTION, false)
 
     val options = optionsProvider.buildOptions(builder, config)
-
     ConnectionFactories.get(options)
   }
 

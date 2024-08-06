@@ -46,7 +46,10 @@ private[r2dbc] object ConnectionFactorySettings {
     // for backwards compatibility/convenience
     val poolSettings = new ConnectionPoolSettings(config)
 
-    ConnectionFactorySettings(dialect, config, poolSettings, config.getString("options-provider"))
+    // H2 dialect doesn't support options-provider
+    val optionsProvider = if (dialect == H2Dialect) "" else config.getString("options-provider")
+
+    ConnectionFactorySettings(dialect, config, poolSettings, optionsProvider)
   }
 
 }

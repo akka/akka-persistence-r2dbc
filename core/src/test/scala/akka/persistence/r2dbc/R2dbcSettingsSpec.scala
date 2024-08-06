@@ -64,6 +64,14 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       connectionFactorySettings.sslMode shouldBe "verify-full"
       SSLMode.fromValue(connectionFactorySettings.sslMode) shouldBe SSLMode.VERIFY_FULL
     }
+
+    "support options-provider" in {
+      val config = ConfigFactory
+        .parseString("akka.persistence.r2dbc.connection-factory.options-provider=my.OptProvider")
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.connectionFactorySettings(0).optionsProvider shouldBe "my.OptProvider"
+    }
   }
 
   "data-partition settings" should {
@@ -285,6 +293,47 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
 
       settings.connectionFactorSliceRanges.size shouldBe 1
       settings.connectionFactorSliceRanges(0) should be(0 until 1024)
+    }
+
+    "support options-provider" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.postgres.options-provider=my.OptProvider
+          akka.persistence.r2dbc.data-partition {
+            number-of-partitions = 2
+            number-of-databases = 2
+          }
+          akka.persistence.r2dbc.connection-factory-0-0 = ${akka.persistence.r2dbc.postgres}
+          akka.persistence.r2dbc.connection-factory-0-0.host = hostA
+          akka.persistence.r2dbc.connection-factory-1-1 = ${akka.persistence.r2dbc.postgres}
+          akka.persistence.r2dbc.connection-factory-1-1.host = hostB
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+        .resolve()
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.connectionFactorySettings(0).optionsProvider shouldBe "my.OptProvider"
+      settings.connectionFactorySettings(1).optionsProvider shouldBe "my.OptProvider"
+    }
+
+    "support options-provider per db" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.data-partition {
+            number-of-partitions = 2
+            number-of-databases = 2
+          }
+          akka.persistence.r2dbc.connection-factory-0-0 = ${akka.persistence.r2dbc.postgres}
+          akka.persistence.r2dbc.connection-factory-0-0.host = hostA
+          akka.persistence.r2dbc.connection-factory-0-0.options-provider=my.OptProvider0
+          akka.persistence.r2dbc.connection-factory-1-1 = ${akka.persistence.r2dbc.postgres}
+          akka.persistence.r2dbc.connection-factory-1-1.host = hostB
+          akka.persistence.r2dbc.connection-factory-1-1.options-provider=my.OptProvider1
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+        .resolve()
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      settings.connectionFactorySettings(0).optionsProvider shouldBe "my.OptProvider0"
+      settings.connectionFactorySettings(1023).optionsProvider shouldBe "my.OptProvider1"
     }
 
   }
