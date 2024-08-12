@@ -30,5 +30,5 @@ libraryDependencies ++= Seq(
   "com.lightbend.akka" %% "akka-persistence-r2dbc" % akkaR2dbcVersion,
   "ch.qos.logback" % "logback-classic" % "1.2.13",
   // H2
-  "com.h2database" % "h2" % "2.2.224",
+  "com.h2database" % "h2" % "2.3.230",
   "io.r2dbc" % "r2dbc-h2" % "1.0.0.RELEASE")
