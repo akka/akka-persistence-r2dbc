@@ -16,6 +16,7 @@ import akka.persistence.query.typed.EventEnvelope
   val SourceBacktracking = "BT"
   val SourcePubSub = "PS"
   val SourceSnapshot = "SN"
+  val SourceHeartbeat = "HB"
 
   def fromQuery(env: EventEnvelope[_]): Boolean =
     env.source == SourceQuery
@@ -31,6 +32,15 @@ import akka.persistence.query.typed.EventEnvelope
 
   def fromSnapshot(env: EventEnvelope[_]): Boolean =
     env.source == SourceSnapshot
+
+  def fromHeartbeat(env: EventEnvelope[_]): Boolean =
+    env.source == SourceHeartbeat
+
+  def isHeartbeatEvent(env: Any): Boolean =
+    env match {
+      case e: EventEnvelope[_] => fromHeartbeat(e)
+      case _                   => false
+    }
 
   def isFilteredEvent(env: Any): Boolean =
     env match {
