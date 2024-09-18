@@ -208,6 +208,7 @@ import org.slf4j.Logger
     dao: BySliceQuery.Dao[Row],
     createEnvelope: (TimestampOffset, Row) => Envelope,
     extractOffset: Envelope => TimestampOffset,
+    createHeartbeat: Instant => Option[Envelope],
     settings: R2dbcSettings,
     log: Logger)(implicit val ec: ExecutionContext) {
   import BySliceQuery._
@@ -501,12 +502,22 @@ import org.slf4j.Logger
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 
+    def heeartbeat(state: QueryState): Option[Envelope] = {
+      if (state.idleCount >= 1) {
+        val timestamp = state.latestBacktracking.timestamp.plusMillis(
+          settings.querySettings.refreshInterval.toMillis * state.idleCount)
+        createHeartbeat(timestamp)
+      } else
+        None
+    }
+
     ContinuousQuery[QueryState, Envelope](
       initialState = QueryState.empty.copy(latest = initialOffset),
       updateState = nextOffset,
       delayNextQuery = delayNextQuery,
       nextQuery = nextQuery,
-      beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _))
+      beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
+      heartbeat = heeartbeat)
   }
 
   private def beforeQuery(

@@ -117,7 +117,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
-    new BySliceQuery(queryDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+    val createHeartbeat: Instant => Option[EventEnvelope[Any]] = { timestamp =>
+      Some(createEventEnvelopeHeartbeat(timestamp))
+    }
+
+    new BySliceQuery(queryDao, createEnvelope, extractOffset, createHeartbeat, settings, log)(
+      typedSystem.executionContext)
   }
 
   private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
@@ -148,6 +153,22 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       tags = row.tags)
   }
 
+  def createEventEnvelopeHeartbeat(timestamp: Instant): EventEnvelope[Any] = {
+    val event: Any = 0 // FIXME could be populated with idle slices, represented as bitmap 0-1023
+    new EventEnvelope(
+      TimestampOffset(timestamp, Map.empty),
+      "", // FIXME persistenceId
+      1L,
+      eventOption = Some(event),
+      timestamp.toEpochMilli,
+      eventMetadata = None,
+      "", // FIXME entityType
+      0, // FIXME slice
+      filtered = true,
+      source = EnvelopeOrigin.SourceHeartbeat,
+      Set.empty)
+  }
+
   private def deserializeRow(row: SerializedJournalRow): ClassicEventEnvelope = {
     val event = deserializePayload(row)
     // note that it's not possible to filter out FilteredPayload here
@@ -167,7 +188,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
-    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+    val createHeartbeat: Instant => Option[EventEnvelope[Event]] = { timestamp =>
+      Some(createEventEnvelopeHeartbeat(timestamp).asInstanceOf[EventEnvelope[Event]])
+    }
+
+    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, createHeartbeat, settings, log)(
+      typedSystem.executionContext)
   }
 
   private def createEnvelopeFromSnapshot[Snapshot, Event](
@@ -520,7 +546,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           env => {
             env.offset match {
               case t: TimestampOffset =>
-                if (EnvelopeOrigin.fromBacktracking(env)) {
+                if (EnvelopeOrigin.fromBacktracking(env) || EnvelopeOrigin.fromHeartbeat(env)) {
                   latestBacktracking = t.timestamp
                   env :: Nil
                 } else if (EnvelopeOrigin.fromPubSub(env) && latestBacktracking == Instant.EPOCH) {

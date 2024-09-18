@@ -107,7 +107,8 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
 
     val extractOffset: DurableStateChange[A] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
-    new BySliceQuery(stateDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+    new BySliceQuery(stateDao, createEnvelope, extractOffset, createHeartbeat = _ => None, settings, log)(
+      typedSystem.executionContext)
   }
 
   override def getObject(persistenceId: String): Future[GetObjectResult[A]] = {
