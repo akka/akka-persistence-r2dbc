@@ -144,6 +144,10 @@ class EventsBySlicePubSubBacktrackingSpec
       Thread.sleep(5000)
       val heartbeatEnv = result.expectNext()
       heartbeatEnv.source shouldBe EnvelopeOrigin.SourceHeartbeat
+      heartbeatEnv.slice shouldBe slice
+      persistenceExt.sliceForPersistenceId(heartbeatEnv.persistenceId) shouldBe slice
+      heartbeatEnv.sequenceNr shouldBe 1L
+      heartbeatEnv.filtered shouldBe true
 
       // and because of the heartbeat it will accept PubSub even though it's now > backtracking.window
       persister ! PersistWithAck("e-20", probe.ref)

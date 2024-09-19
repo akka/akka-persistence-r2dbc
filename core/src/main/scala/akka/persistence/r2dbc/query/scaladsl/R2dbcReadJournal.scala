@@ -7,7 +7,9 @@ package akka.persistence.r2dbc.query.scaladsl
 import java.time.Clock
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+import java.util.concurrent.ConcurrentHashMap
 
+import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
@@ -56,7 +58,6 @@ import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-import akka.util.OptionVal
 
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
@@ -110,26 +111,52 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private val filteredPayloadSerId = SerializationExtension(system).findSerializerFor(FilteredPayload).identifier
 
+  // key is tuple of entity type and slice
+  private val heartbeatPersistenceIds = new ConcurrentHashMap[(String, Int), String]()
+
+  private def heartbeatPersistenceId(entityType: String, slice: Int): String = {
+    val key = entityType -> slice
+    heartbeatPersistenceIds.get(key) match {
+      case null =>
+        // no need to block other threads, it's just a cache
+        val pid = generateHeartbeatPersistenceId(entityType, slice)
+        heartbeatPersistenceIds.put(key, pid)
+        pid
+      case pid => pid
+    }
+  }
+
+  @tailrec private def generateHeartbeatPersistenceId(entityType: String, slice: Int, n: Int = 1): String = {
+    if (n < 1000000) {
+      val pid = PersistenceId.concat(entityType, s"_ht-$n")
+      if (persistenceExt.sliceForPersistenceId(pid) == slice)
+        pid
+      else
+        generateHeartbeatPersistenceId(entityType, slice, n + 1)
+    } else
+      throw new IllegalStateException(s"Couldn't find heartbeat persistenceId for [$entityType] with slice [$slice]")
+
+  }
+
   private def deserializePayload[Event](row: SerializedJournalRow): Option[Event] =
     row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
 
   private val clock = Clock.systemUTC()
 
-  private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
-    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = createEventEnvelope
+  private def bySlice[Event](
+      entityType: String,
+      minSlice: Int): BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] = {
+    val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Event] = createEventEnvelope
 
-    val extractOffset: EventEnvelope[Any] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
+    val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
-    val createHeartbeat: Instant => Option[EventEnvelope[Any]] = { timestamp =>
-      Some(createEventEnvelopeHeartbeat(timestamp))
+    val createHeartbeat: Instant => Option[EventEnvelope[Event]] = { timestamp =>
+      Some(createEventEnvelopeHeartbeat(entityType, minSlice, timestamp))
     }
 
     new BySliceQuery(queryDao, createEnvelope, extractOffset, createHeartbeat, clock, settings, log)(
       typedSystem.executionContext)
   }
-
-  private def bySlice[Event]: BySliceQuery[SerializedJournalRow, EventEnvelope[Event]] =
-    _bySlice.asInstanceOf[BySliceQuery[SerializedJournalRow, EventEnvelope[Event]]]
 
   private def deserializeBySliceRow[Event](row: SerializedJournalRow): EventEnvelope[Event] = {
     val offset = TimestampOffset(row.dbTimestamp, row.readDbTimestamp, Map(row.persistenceId -> row.seqNr))
@@ -156,17 +183,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       tags = row.tags)
   }
 
-  def createEventEnvelopeHeartbeat(timestamp: Instant): EventEnvelope[Any] = {
-    val event: Any = 0 // FIXME could be populated with idle slices, represented as bitmap 0-1023
+  def createEventEnvelopeHeartbeat[Event](entityType: String, slice: Int, timestamp: Instant): EventEnvelope[Event] = {
     new EventEnvelope(
       TimestampOffset(timestamp, Map.empty),
-      "", // FIXME persistenceId
+      heartbeatPersistenceId(entityType, slice),
       1L,
-      eventOption = Some(event),
+      eventOption = None,
       timestamp.toEpochMilli,
       eventMetadata = None,
-      "", // FIXME entityType
-      0, // FIXME slice
+      entityType,
+      slice,
       filtered = true,
       source = EnvelopeOrigin.SourceHeartbeat,
       Set.empty)
@@ -185,6 +211,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   private def snapshotsBySlice[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
       transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
     val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] =
       (offset, row) => createEnvelopeFromSnapshot(row, offset, transformSnapshot)
@@ -192,7 +220,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
     val createHeartbeat: Instant => Option[EventEnvelope[Event]] = { timestamp =>
-      Some(createEventEnvelopeHeartbeat(timestamp).asInstanceOf[EventEnvelope[Event]])
+      Some(createEventEnvelopeHeartbeat(entityType, minSlice, timestamp).asInstanceOf[EventEnvelope[Event]])
     }
 
     new BySliceQuery(snapshotDao, createEnvelope, extractOffset, createHeartbeat, clock, settings, log)(
@@ -237,7 +265,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
-    bySlice
+    bySlice(entityType, minSlice)
       .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
   }
 
@@ -279,7 +307,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
-    val dbSource = bySlice[Event].liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+    val dbSource =
+      bySlice[Event](entityType, minSlice).liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
     if (settings.journalPublishEvents) {
       val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
       mergeDbAndPubSubSources(dbSource, pubSubSource)
@@ -311,7 +340,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val timestampOffset = toTimestampOffset(offset)
 
     val snapshotSource =
-      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+      snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
         .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset)
 
     Source.fromGraph(
@@ -334,7 +363,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             initOffset,
             snapshotOffsets.size)
 
-          bySlice.currentBySlices(
+          bySlice(entityType, minSlice).currentBySlices(
             "currentEventsBySlices",
             entityType,
             minSlice,
@@ -368,7 +397,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     val timestampOffset = toTimestampOffset(offset)
 
     val snapshotSource =
-      snapshotsBySlice[Snapshot, Event](transformSnapshot)
+      snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
         .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
 
     Source.fromGraph(
@@ -392,7 +421,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             snapshotOffsets.size)
 
           val dbSource =
-            bySlice[Event].liveBySlices(
+            bySlice[Event](entityType, minSlice).liveBySlices(
               "eventsBySlices",
               entityType,
               minSlice,
