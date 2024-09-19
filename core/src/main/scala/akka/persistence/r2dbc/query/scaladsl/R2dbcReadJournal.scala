@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.query.scaladsl
 
+import java.time.Clock
 import java.time.Instant
 import java.time.{ Duration => JDuration }
 
@@ -112,6 +113,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private def deserializePayload[Event](row: SerializedJournalRow): Option[Event] =
     row.payload.map(payload => serialization.deserialize(payload, row.serId, row.serManifest).get.asInstanceOf[Event])
 
+  private val clock = Clock.systemUTC()
+
   private val _bySlice: BySliceQuery[SerializedJournalRow, EventEnvelope[Any]] = {
     val createEnvelope: (TimestampOffset, SerializedJournalRow) => EventEnvelope[Any] = createEventEnvelope
 
@@ -121,7 +124,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       Some(createEventEnvelopeHeartbeat(timestamp))
     }
 
-    new BySliceQuery(queryDao, createEnvelope, extractOffset, createHeartbeat, settings, log)(
+    new BySliceQuery(queryDao, createEnvelope, extractOffset, createHeartbeat, clock, settings, log)(
       typedSystem.executionContext)
   }
 
@@ -192,7 +195,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       Some(createEventEnvelopeHeartbeat(timestamp).asInstanceOf[EventEnvelope[Event]])
     }
 
-    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, createHeartbeat, settings, log)(
+    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, createHeartbeat, clock, settings, log)(
       typedSystem.executionContext)
   }
 

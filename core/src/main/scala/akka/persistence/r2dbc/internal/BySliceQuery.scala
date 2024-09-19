@@ -4,14 +4,18 @@
 
 package akka.persistence.r2dbc.internal
 
+import java.time.Clock
+
 import scala.collection.immutable
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.annotation.InternalApi
 import akka.persistence.query.Offset
@@ -39,6 +43,7 @@ import org.slf4j.Logger
         backtrackingCount = 0,
         latestBacktracking = TimestampOffset.Zero,
         latestBacktrackingSeenCount = 0,
+        latestBacktrackingWallClock = Instant.EPOCH,
         backtrackingExpectFiltered = 0,
         buckets = Buckets.empty,
         previous = TimestampOffset.Zero,
@@ -54,6 +59,7 @@ import org.slf4j.Logger
       backtrackingCount: Int,
       latestBacktracking: TimestampOffset,
       latestBacktrackingSeenCount: Int,
+      latestBacktrackingWallClock: Instant,
       backtrackingExpectFiltered: Int,
       buckets: Buckets,
       previous: TimestampOffset,
@@ -209,6 +215,7 @@ import org.slf4j.Logger
     createEnvelope: (TimestampOffset, Row) => Envelope,
     extractOffset: Envelope => TimestampOffset,
     createHeartbeat: Instant => Option[Envelope],
+    clock: Clock,
     settings: R2dbcSettings,
     log: Logger)(implicit val ec: ExecutionContext) {
   import BySliceQuery._
@@ -350,6 +357,7 @@ import org.slf4j.Logger
         state.copy(
           latestBacktracking = offset,
           latestBacktrackingSeenCount = newSeenCount,
+          latestBacktrackingWallClock = clock.instant(),
           rowCount = state.rowCount + 1)
 
       } else {
@@ -502,10 +510,11 @@ import org.slf4j.Logger
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 
-    def heeartbeat(state: QueryState): Option[Envelope] = {
+    def heartbeat(state: QueryState): Option[Envelope] = {
       if (state.idleCount >= 1) {
-        val timestamp = state.latestBacktracking.timestamp.plusMillis(
-          settings.querySettings.refreshInterval.toMillis * state.idleCount)
+        // using wall clock to measure duration since the last backtracking event
+        val timestamp =
+          state.latestBacktracking.timestamp.plus(JDuration.between(state.latestBacktrackingWallClock, clock.instant()))
         createHeartbeat(timestamp)
       } else
         None
@@ -517,7 +526,7 @@ import org.slf4j.Logger
       delayNextQuery = delayNextQuery,
       nextQuery = nextQuery,
       beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
-      heartbeat = heeartbeat)
+      heartbeat = heartbeat)
   }
 
   private def beforeQuery(
