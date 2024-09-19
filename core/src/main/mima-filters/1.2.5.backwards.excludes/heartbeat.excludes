@@ -1,0 +1,6 @@
+# PR #599 internals
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.copy")
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.copy*")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.this")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.apply")
+ProblemFilters.exclude[IncompatibleSignatureProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.unapply")
