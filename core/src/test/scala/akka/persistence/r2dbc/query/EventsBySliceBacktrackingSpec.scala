@@ -111,6 +111,7 @@ class EventsBySliceBacktrackingSpec
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query
           .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, NoOffset)
+          .filterNot(EnvelopeOrigin.fromHeartbeat)
           .runWith(sinkProbe)
           .request(100)
 
@@ -203,6 +204,7 @@ class EventsBySliceBacktrackingSpec
       def startQuery(offset: Offset): TestSubscriber.Probe[EventEnvelope[String]] =
         query
           .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, offset)
+          .filterNot(EnvelopeOrigin.fromHeartbeat)
           .runWith(sinkProbe)
           .request(100)
 
@@ -279,6 +281,7 @@ class EventsBySliceBacktrackingSpec
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query
           .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, latestOffset)
+          .filterNot(EnvelopeOrigin.fromHeartbeat)
           .runWith(sinkProbe)
           .request(numberOfEvents)
 

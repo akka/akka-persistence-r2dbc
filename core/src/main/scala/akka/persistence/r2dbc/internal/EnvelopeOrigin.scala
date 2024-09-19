@@ -36,6 +36,12 @@ import akka.persistence.query.typed.EventEnvelope
   def fromHeartbeat(env: EventEnvelope[_]): Boolean =
     env.source == SourceHeartbeat
 
+  def isHeartbeatEvent(env: Any): Boolean =
+    env match {
+      case e: EventEnvelope[_] => fromHeartbeat(e)
+      case _                   => false
+    }
+
   def isFilteredEvent(env: Any): Boolean =
     env match {
       case e: EventEnvelope[_] => e.filtered
