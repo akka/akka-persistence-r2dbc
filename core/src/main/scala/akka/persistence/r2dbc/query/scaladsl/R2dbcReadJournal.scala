@@ -536,8 +536,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           // cache of seen pid/seqNr
           var seen = mutable.LinkedHashSet.empty[(String, Long)]
           env => {
-            if (EnvelopeOrigin.fromBacktracking(env)) {
-              // don't deduplicate from backtracking
+            if (EnvelopeOrigin.fromBacktracking(env) || EnvelopeOrigin.fromHeartbeat(env)) {
+              // don't deduplicate from backtracking or heartbeats
               env :: Nil
             } else {
               val entry = env.persistenceId -> env.sequenceNr
