@@ -415,20 +415,28 @@ import org.slf4j.Logger
       state.backtracking && state.rowCount < settings.querySettings.bufferSize - state.backtrackingExpectFiltered
     }
 
+    def switchToBacktracking(state: QueryState, newIdleCount: Long): Boolean = {
+      // Note that when starting the query with offset = NoOffset it will switch to backtracking immediately after
+      // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
+
+      val qSettings = settings.querySettings
+      import akka.util.JavaDurationConverters._
+
+      qSettings.backtrackingEnabled &&
+      !state.backtracking &&
+      state.latest != TimestampOffset.Zero &&
+      state.latest.timestamp.isAfter(clock.instant().minus(qSettings.backtrackingWindow.asJava)) &&
+      (newIdleCount >= 5 ||
+      state.rowCountSinceBacktracking + state.rowCount >= qSettings.bufferSize * 3 ||
+      JDuration
+        .between(state.latestBacktracking.timestamp, state.latest.timestamp)
+        .compareTo(halfBacktrackingWindow) > 0)
+    }
+
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
       val newState =
-        if (settings.querySettings.backtrackingEnabled && !state.backtracking && state.latest != TimestampOffset.Zero &&
-          (newIdleCount >= 5 ||
-          state.rowCountSinceBacktracking + state.rowCount >= settings.querySettings.bufferSize * 3 ||
-          JDuration
-            .between(state.latestBacktracking.timestamp, state.latest.timestamp)
-            .compareTo(halfBacktrackingWindow) > 0)) {
-          // FIXME config for newIdleCount >= 5 and maybe something like `newIdleCount % 5 == 0`
-
-          // Note that when starting the query with offset = NoOffset it will switch to backtracking immediately after
-          // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
-
+        if (switchToBacktracking(state, newIdleCount)) {
           // switching to backtracking
           val fromOffset =
             if (state.latestBacktracking == TimestampOffset.Zero)
@@ -445,7 +453,7 @@ import org.slf4j.Logger
             latestBacktracking = fromOffset,
             backtrackingExpectFiltered = state.latestBacktrackingSeenCount)
         } else if (switchFromBacktracking(state)) {
-          // switch from backtracking
+          // switching from backtracking
           state.copy(
             rowCount = 0,
             rowCountSinceBacktracking = 0,

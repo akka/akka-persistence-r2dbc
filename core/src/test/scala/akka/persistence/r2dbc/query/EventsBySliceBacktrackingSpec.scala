@@ -37,6 +37,7 @@ import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
+import akka.util.JavaDurationConverters._
 
 object EventsBySliceBacktrackingSpec {
   private val BufferSize = 10 // small buffer for testing
@@ -103,7 +104,8 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
-      val startTime = InstantFactory.now().minusSeconds(10 * 60)
+      val startTime =
+        InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava).minusSeconds(10)
 
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
@@ -195,7 +197,8 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
-      val startTime = InstantFactory.now().minusSeconds(10 * 60)
+      val startTime =
+        InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava).minusSeconds(10)
 
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(2), "e1-2")
@@ -245,6 +248,63 @@ class EventsBySliceBacktrackingSpec
       result2.cancel()
     }
 
+    "skip backtracking when far behind current time" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = nextEntityType()
+      val pid1 = nextPid(entityType)
+      val pid2 = nextPid(entityType)
+      val slice1 = query.sliceForPersistenceId(pid1)
+      val slice2 = query.sliceForPersistenceId(pid2)
+      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+
+      val startTime = InstantFactory.now().minusSeconds(60 * 60 * 24)
+
+      (1 to 100).foreach { n =>
+        writeEvent(slice1, pid1, n, startTime.plusSeconds(n).plusMillis(1), s"e1-$n")
+        writeEvent(slice2, pid2, n, startTime.plusSeconds(n).plusMillis(2), s"e2-$n")
+      }
+
+      def startQuery(offset: Offset): TestSubscriber.Probe[EventEnvelope[String]] =
+        query
+          .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, offset)
+          .filterNot(EnvelopeOrigin.fromHeartbeat)
+          .runWith(sinkProbe)
+          .request(1000)
+
+      def expect(env: EventEnvelope[String], pid: String, seqNr: Long, eventOption: Option[String]): Offset = {
+        env.persistenceId shouldBe pid
+        env.sequenceNr shouldBe seqNr
+        if (eventOption.isEmpty)
+          env.source shouldBe EnvelopeOrigin.SourceBacktracking
+        else
+          env.source shouldBe EnvelopeOrigin.SourceQuery
+        env.eventOption shouldBe eventOption
+        env.offset
+      }
+
+      val result1 = startQuery(NoOffset)
+      (1 to 100).foreach { n =>
+        expect(result1.expectNext(), pid1, n, Some(s"e1-$n"))
+        expect(result1.expectNext(), pid2, n, Some(s"e2-$n"))
+      }
+      // no backtracking
+      result1.expectNoMessage()
+
+      val now = InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava)
+      writeEvent(slice1, pid1, 101, now, "e1-101")
+      writeEvent(slice2, pid2, 101, now.plusMillis(1), "e2-101")
+
+      expect(result1.expectNext(), pid1, 101, Some("e1-101"))
+      expect(result1.expectNext(), pid2, 101, Some("e2-101"))
+
+      // backtracking events
+      expect(result1.expectNext(), pid1, 101, None)
+      expect(result1.expectNext(), pid2, 101, None)
+
+      result1.cancel()
+    }
+
     "predict backtracking filtered events based on latest seen counts" in {
       pendingIfMoreThanOneDataPartition()
 
@@ -254,7 +314,11 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
 
       // use times in the past well outside behind-current-time
-      val timeZero = InstantFactory.now().truncatedTo(ChronoUnit.SECONDS).minusSeconds(10 * 60)
+      val timeZero = InstantFactory
+        .now()
+        .truncatedTo(ChronoUnit.SECONDS)
+        .minus(settings.querySettings.backtrackingBehindCurrentTime.asJava)
+        .minusSeconds(10)
 
       // events around the buffer size (of 10) will share the same timestamp
       // to test tracking of seen events that will be filtered on the next cycle
