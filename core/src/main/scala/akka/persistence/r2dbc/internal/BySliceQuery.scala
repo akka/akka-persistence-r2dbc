@@ -71,16 +71,20 @@ import org.slf4j.Logger
       if (backtracking) latestBacktracking
       else latest
 
-    def nextQueryFromTimestamp: Instant =
-      if (backtracking) latestBacktracking.timestamp
-      else latest.timestamp
+    def nextQueryFromTimestamp(backtrackingWindow: JDuration): Instant =
+      if (backtracking && latest.timestamp.minus(backtrackingWindow).isAfter(latestBacktracking.timestamp))
+        latest.timestamp.minus(backtrackingWindow)
+      else if (backtracking)
+        latestBacktracking.timestamp
+      else
+        latest.timestamp
 
     def nextQueryFromSeqNr: Option[Long] =
       if (backtracking) highestSeenSeqNr(previousBacktracking, latestBacktracking)
       else highestSeenSeqNr(previous, latest)
 
-    def nextQueryToTimestamp(atLeastNumberOfEvents: Int): Option[Instant] = {
-      buckets.findTimeForLimit(nextQueryFromTimestamp, atLeastNumberOfEvents) match {
+    def nextQueryToTimestamp(backtrackingWindow: JDuration, atLeastNumberOfEvents: Int): Option[Instant] = {
+      buckets.findTimeForLimit(nextQueryFromTimestamp(backtrackingWindow), atLeastNumberOfEvents) match {
         case Some(t) =>
           if (backtracking)
             if (t.isAfter(latest.timestamp)) Some(latest.timestamp) else Some(t)
@@ -253,7 +257,7 @@ import org.slf4j.Logger
         val fromTimestamp = state.latest.timestamp
         val fromSeqNr = highestSeenSeqNr(state.previous, state.latest)
 
-        val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize) match {
+        val toTimestamp = newState.nextQueryToTimestamp(backtrackingWindow, settings.querySettings.bufferSize) match {
           case Some(t) =>
             if (t.isBefore(endTimestamp)) t else endTimestamp
           case None =>
@@ -415,20 +419,36 @@ import org.slf4j.Logger
       state.backtracking && state.rowCount < settings.querySettings.bufferSize - state.backtrackingExpectFiltered
     }
 
+    def switchToBacktracking(state: QueryState, newIdleCount: Long): Boolean = {
+      // Note that when starting the query with offset = NoOffset it will switch to backtracking immediately after
+      // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
+
+      val qSettings = settings.querySettings
+
+      def disableBacktrackingWhenFarBehindCurrentWallClockTime: Boolean = {
+        val aheadOfInitial =
+          initialOffset == TimestampOffset.Zero || state.latestBacktracking.timestamp.isAfter(initialOffset.timestamp)
+        val previousTimestamp =
+          if (state.previous == TimestampOffset.Zero) state.latest.timestamp else state.previous.timestamp
+        aheadOfInitial &&
+        previousTimestamp.isBefore(clock.instant().minus(firstBacktrackingQueryWindow))
+      }
+
+      qSettings.backtrackingEnabled &&
+      !state.backtracking &&
+      state.latest != TimestampOffset.Zero &&
+      !disableBacktrackingWhenFarBehindCurrentWallClockTime &&
+      (newIdleCount >= 5 ||
+      state.rowCountSinceBacktracking + state.rowCount >= qSettings.bufferSize * 3 ||
+      JDuration
+        .between(state.latestBacktracking.timestamp, state.latest.timestamp)
+        .compareTo(halfBacktrackingWindow) > 0)
+    }
+
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
       val newState =
-        if (settings.querySettings.backtrackingEnabled && !state.backtracking && state.latest != TimestampOffset.Zero &&
-          (newIdleCount >= 5 ||
-          state.rowCountSinceBacktracking + state.rowCount >= settings.querySettings.bufferSize * 3 ||
-          JDuration
-            .between(state.latestBacktracking.timestamp, state.latest.timestamp)
-            .compareTo(halfBacktrackingWindow) > 0)) {
-          // FIXME config for newIdleCount >= 5 and maybe something like `newIdleCount % 5 == 0`
-
-          // Note that when starting the query with offset = NoOffset it will switch to backtracking immediately after
-          // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
-
+        if (switchToBacktracking(state, newIdleCount)) {
           // switching to backtracking
           val fromOffset =
             if (state.latestBacktracking == TimestampOffset.Zero)
@@ -445,7 +465,7 @@ import org.slf4j.Logger
             latestBacktracking = fromOffset,
             backtrackingExpectFiltered = state.latestBacktrackingSeenCount)
         } else if (switchFromBacktracking(state)) {
-          // switch from backtracking
+          // switching from backtracking
           state.copy(
             rowCount = 0,
             rowCountSinceBacktracking = 0,
@@ -468,9 +488,9 @@ import org.slf4j.Logger
         if (newState.backtracking) settings.querySettings.backtrackingBehindCurrentTime
         else settings.querySettings.behindCurrentTime
 
-      val fromTimestamp = newState.nextQueryFromTimestamp
+      val fromTimestamp = newState.nextQueryFromTimestamp(backtrackingWindow)
       val fromSeqNr = newState.nextQueryFromSeqNr
-      val toTimestamp = newState.nextQueryToTimestamp(settings.querySettings.bufferSize)
+      val toTimestamp = newState.nextQueryToTimestamp(backtrackingWindow, settings.querySettings.bufferSize)
 
       if (log.isDebugEnabled()) {
         val backtrackingInfo =
