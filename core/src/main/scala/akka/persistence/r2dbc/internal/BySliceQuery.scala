@@ -424,14 +424,20 @@ import org.slf4j.Logger
       // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
 
       val qSettings = settings.querySettings
-      val previousTimestamp =
-        if (state.previous == TimestampOffset.Zero) state.latest.timestamp else state.previous.timestamp
+
+      def disableBacktrackingWhenFarBehindCurrentWallClockTime: Boolean = {
+        val aheadOfInitial =
+          initialOffset == TimestampOffset.Zero || state.latestBacktracking.timestamp.isAfter(initialOffset.timestamp)
+        val previousTimestamp =
+          if (state.previous == TimestampOffset.Zero) state.latest.timestamp else state.previous.timestamp
+        aheadOfInitial &&
+        previousTimestamp.isBefore(clock.instant().minus(firstBacktrackingQueryWindow))
+      }
 
       qSettings.backtrackingEnabled &&
       !state.backtracking &&
       state.latest != TimestampOffset.Zero &&
-      // no backtracking if far behind current wall clock time
-      previousTimestamp.isAfter(clock.instant().minus(firstBacktrackingQueryWindow)) &&
+      !disableBacktrackingWhenFarBehindCurrentWallClockTime &&
       (newIdleCount >= 5 ||
       state.rowCountSinceBacktracking + state.rowCount >= qSettings.bufferSize * 3 ||
       JDuration
