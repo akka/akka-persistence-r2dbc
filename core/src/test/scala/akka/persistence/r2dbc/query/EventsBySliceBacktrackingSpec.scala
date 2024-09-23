@@ -104,8 +104,7 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
-      val startTime =
-        InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava).minusSeconds(10)
+      val startTime = InstantFactory.now().minusSeconds(90)
 
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(1), "e1-2")
@@ -197,8 +196,7 @@ class EventsBySliceBacktrackingSpec
       val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
 
       // don't let behind-current-time be a reason for not finding events
-      val startTime =
-        InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava).minusSeconds(10)
+      val startTime = InstantFactory.now().minusSeconds(90)
 
       writeEvent(slice1, pid1, 1L, startTime, "e1-1")
       writeEvent(slice1, pid1, 2L, startTime.plusMillis(2), "e1-2")
