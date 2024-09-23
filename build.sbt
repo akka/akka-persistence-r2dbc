@@ -66,6 +66,18 @@ def common: Seq[Setting[_]] =
       "-Xms1G" :: "-Xmx1G" :: "-XX:MaxDirectMemorySize=256M" :: akkaProperties
     },
     projectInfoVersion := (if (isSnapshot.value) "snapshot" else version.value),
+    Compile / doc / scalacOptions := scalacOptions.value ++ Seq(
+      "-doc-title",
+      "Akka Persistence R2DBC",
+      "-doc-version",
+      version.value
+    ) ++
+      // make use of https://github.com/scala/scala/pull/8663
+      (if (scalaBinaryVersion.value.startsWith("3")) {
+        Seq(s"-external-mappings:https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/docs/api") // different usage in scala3
+      } else if (scalaBinaryVersion.value.startsWith("2.13")) {
+        Seq("-jdk-api-doc-base", s"https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/docs/api")
+      } else Nil),
     Global / excludeLintKeys += projectInfoVersion,
     Global / excludeLintKeys += mimaReportSignatureProblems,
     Global / excludeLintKeys += mimaPreviousArtifacts,
@@ -152,7 +164,7 @@ lazy val docs = project
       "extref.akka.base_url" -> s"https://doc.akka.io/libraries/akka-core/${Dependencies.AkkaVersionInDocs}/%s",
       "extref.akka-docs.base_url" -> s"https://doc.akka.io/libraries/akka-core/${Dependencies.AkkaVersionInDocs}/%s",
       "extref.akka-projection.base_url" -> s"https://doc.akka.io/libraries/akka-projection/${Dependencies.AkkaProjectionVersionInDocs}/%s",
-      "extref.java-docs.base_url" -> "https://docs.oracle.com/en/java/javase/11/%s",
+      "extref.java-docs.base_url" -> s"https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/%s",
       "scaladoc.scala.base_url" -> s"https://www.scala-lang.org/api/current/",
       "scaladoc.akka.persistence.r2dbc.base_url" -> s"/${(Preprocess / siteSubdirName).value}/",
       "javadoc.akka.persistence.r2dbc.base_url" -> "", // no Javadoc is published
