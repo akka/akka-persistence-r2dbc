@@ -420,12 +420,14 @@ import org.slf4j.Logger
       // the first normal query because between(latestBacktracking.timestamp, latest.timestamp) > halfBacktrackingWindow
 
       val qSettings = settings.querySettings
-      import akka.util.JavaDurationConverters._
+      val previousTimestamp =
+        if (state.previous == TimestampOffset.Zero) state.latest.timestamp else state.previous.timestamp
 
       qSettings.backtrackingEnabled &&
       !state.backtracking &&
       state.latest != TimestampOffset.Zero &&
-      state.latest.timestamp.isAfter(clock.instant().minus(qSettings.backtrackingWindow.asJava)) &&
+      // no backtracking if far behind current wall clock time
+      previousTimestamp.isAfter(clock.instant().minus(firstBacktrackingQueryWindow)) &&
       (newIdleCount >= 5 ||
       state.rowCountSinceBacktracking + state.rowCount >= qSettings.bufferSize * 3 ||
       JDuration
