@@ -40,7 +40,7 @@ Key links:
          ```
          cd ~/www
          git status
-         git add docs/akka-persistence-r2dbc/current docs/akka-persistence-r2dbc/$VERSION$
+         git add libraries/akka-persistence-r2dbc/current libraries/akka-persistence-r2dbc/$VERSION$
          git add api/akka-persistence-r2dbc/current api/akka-persistence-r2dbc/$VERSION$
          git commit -m "Akka Persistence R2DBC $VERSION$"
          ```
