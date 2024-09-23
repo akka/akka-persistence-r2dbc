@@ -10,7 +10,7 @@ inThisBuild(
   Seq(
     organization := "com.lightbend.akka",
     organizationName := "Lightbend Inc.",
-    homepage := Some(url("https://doc.akka.io/docs/akka-persistence-r2dbc/current")),
+    homepage := Some(url("https://doc.akka.io/libraries/akka-persistence-r2dbc/current")),
     scmInfo := Some(
       ScmInfo(
         url("https://github.com/akka/akka-persistence-r2dbc"),
@@ -137,21 +137,21 @@ lazy val docs = project
     previewPath := (Paradox / siteSubdirName).value,
     Preprocess / siteSubdirName := s"api/akka-persistence-r2dbc/${projectInfoVersion.value}",
     Preprocess / sourceDirectory := (LocalRootProject / ScalaUnidoc / unidoc / target).value,
-    Paradox / siteSubdirName := s"docs/akka-persistence-r2dbc/${projectInfoVersion.value}",
+    Paradox / siteSubdirName := s"libraries/akka-persistence-r2dbc/${projectInfoVersion.value}",
     paradoxGroups := Map(
       "Language" -> Seq("Java", "Scala"),
       "Dialect" -> Seq("Postgres", "Yugabyte", "H2", "SQLServer")),
     Compile / paradoxProperties ++= Map(
-      "project.url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current/",
-      "canonical.base_url" -> "https://doc.akka.io/docs/akka-persistence-r2dbc/current",
+      "project.url" -> "https://doc.akka.io/libraries/akka-persistence-r2dbc/current/",
+      "canonical.base_url" -> "https://doc.akka.io/libraries/akka-persistence-r2dbc/current",
       "akka.version" -> Dependencies.AkkaVersion,
       "h2.version" -> Dependencies.H2Version,
       "r2dbc-h2.version" -> Dependencies.R2dbcH2Version,
       "scala.version" -> scalaVersion.value,
       "scala.binary.version" -> scalaBinaryVersion.value,
-      "extref.akka.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",
-      "extref.akka-docs.base_url" -> s"https://doc.akka.io/docs/akka/${Dependencies.AkkaVersionInDocs}/%s",
-      "extref.akka-projection.base_url" -> s"https://doc.akka.io/docs/akka-projection/${Dependencies.AkkaProjectionVersionInDocs}/%s",
+      "extref.akka.base_url" -> s"https://doc.akka.io/libraries/akka-core/${Dependencies.AkkaVersionInDocs}/%s",
+      "extref.akka-docs.base_url" -> s"https://doc.akka.io/libraries/akka-core/${Dependencies.AkkaVersionInDocs}/%s",
+      "extref.akka-projection.base_url" -> s"https://doc.akka.io/libraries/akka-projection/${Dependencies.AkkaProjectionVersionInDocs}/%s",
       "extref.java-docs.base_url" -> "https://docs.oracle.com/en/java/javase/11/%s",
       "scaladoc.scala.base_url" -> s"https://www.scala-lang.org/api/current/",
       "scaladoc.akka.persistence.r2dbc.base_url" -> s"/${(Preprocess / siteSubdirName).value}/",

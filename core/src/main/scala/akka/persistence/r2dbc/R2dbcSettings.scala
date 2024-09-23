@@ -36,7 +36,7 @@ object R2dbcSettings {
         "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
         "the old 'dialect' config entry must be removed, " +
         "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+        "https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html")
     }
 
     val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
@@ -102,7 +102,7 @@ object R2dbcSettings {
             "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
             "to choose database dialect using the connection-factory block, " +
             "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-            "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+            "https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html")
         }
         Vector(ConnectionFactorySettings(config.getConfig("connection-factory")))
       } else {

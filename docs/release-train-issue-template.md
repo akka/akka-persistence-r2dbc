@@ -30,7 +30,7 @@ Key links:
 ### Check availability
 
 - [ ] Check [API](https://doc.akka.io/api/akka-persistence-r2dbc/$VERSION$/) documentation
-- [ ] Check [reference](https://doc.akka.io/docs/akka-persistence-r2dbc/$VERSION$/) documentation. Check that the reference docs were deployed and show a version warning (see section below on how to fix the version warning).
+- [ ] Check [reference](https://doc.akka.io/libraries/akka-persistence-r2dbc/$VERSION$/) documentation. Check that the reference docs were deployed and show a version warning (see section below on how to fix the version warning).
 - [ ] Check the release on https://repo.akka.io/maven/com/lightbend/akka/akka-persistence-r2dbc_2.13/$VERSION$/akka-persistence-r2dbc_2.13-$VERSION$.pom
 
 ### When everything is on https://repo.akka.io/maven
@@ -60,6 +60,6 @@ For minor or major releases:
 
 ### Afterwards
 
-- [ ] Update [akka-dependencies bom](https://github.com/lightbend/akka-dependencies) and version for [Akka module versions](https://doc.akka.io/docs/akka-dependencies/current/) in [akka-dependencies repo](https://github.com/akka/akka-dependencies)
+- [ ] Update [akka-dependencies bom](https://github.com/lightbend/akka-dependencies) and version for [Akka module versions](https://doc.akka.io/libraries/akka-dependencies/current/) in [akka-dependencies repo](https://github.com/akka/akka-dependencies)
 - [ ] Update [Akka Projection gRPC samples](https://github.com/akka/akka-projection/tree/main/samples/grpc)
 - Close this issue

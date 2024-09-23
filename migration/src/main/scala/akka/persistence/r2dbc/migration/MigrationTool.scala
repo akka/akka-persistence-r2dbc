@@ -327,7 +327,7 @@ class MigrationTool(system: ActorSystem[_]) {
           seqNr <- {
             // We could load the timestamp and tags from corresponding event, see R2dbcSnapshotStore.saveAsync,
             // but when enabling eventsBySlicesStartingFromSnapshots the sql updates should anyway be run.
-            // See https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
+            // See https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
             val serializedRow = serializedSnapotRow(selectedSnapshot)
             targetSnapshotDao
               .store(serializedRow)
