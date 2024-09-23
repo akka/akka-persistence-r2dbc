@@ -2,12 +2,12 @@
 
 The Akka family of projects is managed by teams at [Lightbend](https://lightbend.com/) with help from the community.
 
-[Akka Persistence](https://doc.akka.io/docs/akka/current/scala/persistence.html) journal and snapshot 
+[Akka Persistence](https://doc.akka.io/libraries/akka-core/current/scala/persistence.html) journal and snapshot 
 store for SQL datbases with RD2BC connectivity. 
 
 For questions please use the [discuss.akka.io](https://discuss.akka.io). Tag any new questions with `akka-persistence` and `r2dbc`.
 
-The documentation can be found [here](https://doc.akka.io/docs/akka-persistence-r2dbc/current/index.html)
+The documentation can be found [here](https://doc.akka.io/libraries/akka-persistence-r2dbc/current/index.html)
 
 ## Project status
 

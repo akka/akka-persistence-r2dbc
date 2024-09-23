@@ -271,7 +271,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * To use `currentEventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
-   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
+   * https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
   override def currentEventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
@@ -328,7 +328,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * To use `eventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
-   * https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
+   * https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots
    */
   override def eventsBySlicesStartingFromSnapshots[Snapshot, Event](
       entityType: String,
@@ -417,7 +417,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       throw new IllegalArgumentException(
         s"To use $methodName you must enable " +
         "configuration `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in " +
-        "migration guide https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots")
+        "migration guide https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html#eventsBySlicesStartingFromSnapshots")
 
   private def eventsBySlicesPubSubSource[Event](
       entityType: String,
