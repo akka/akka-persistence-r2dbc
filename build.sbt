@@ -70,14 +70,14 @@ def common: Seq[Setting[_]] =
       "-doc-title",
       "Akka Persistence R2DBC",
       "-doc-version",
-      version.value
-    ) ++
+      version.value) ++ {
       // make use of https://github.com/scala/scala/pull/8663
-      (if (scalaBinaryVersion.value.startsWith("3")) {
-        Seq(s"-external-mappings:https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/docs/api") // different usage in scala3
-      } else if (scalaBinaryVersion.value.startsWith("2.13")) {
+      if (scalaBinaryVersion.value.startsWith("3")) {
+        Seq(s"-external-mappings:https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/docs/api")
+      } else {
         Seq("-jdk-api-doc-base", s"https://docs.oracle.com/en/java/javase/${Dependencies.JavaDocLinkVersion}/docs/api")
-      } else Nil),
+      }
+    },
     Global / excludeLintKeys += projectInfoVersion,
     Global / excludeLintKeys += mimaReportSignatureProblems,
     Global / excludeLintKeys += mimaPreviousArtifacts,
