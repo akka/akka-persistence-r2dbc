@@ -62,7 +62,7 @@ jobs:
         # v1.3.5
         uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
         with:
-          jvm: temurin:1.11
+          jvm: temurin:1.17
 
       - name: Publish
         run: |-
