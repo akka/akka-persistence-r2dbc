@@ -25,9 +25,7 @@ import org.slf4j.LoggerFactory
 import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.query.DeletedDurableState
 import akka.persistence.query.DurableStateChange
@@ -475,7 +473,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       changeEvent: Option[SerializedJournalRow]): Future[Option[Instant]] = {
     if (revision == 0) {
       hardDeleteState(persistenceId)
-        .map(_ => None)(ExecutionContexts.parasitic)
+        .map(_ => None)(ExecutionContext.parasitic)
     } else {
       val slice = persistenceExt.sliceForPersistenceId(persistenceId)
       val executor = executorProvider.executorFor(slice)
@@ -612,7 +610,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     if (log.isDebugEnabled())
       result.foreach(_ => log.debug("Hard deleted durable state for persistenceId [{}]", persistenceId))
 
-    result.map(_ => Done)(ExecutionContexts.parasitic)
+    result.map(_ => Done)(ExecutionContext.parasitic)
   }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
@@ -708,8 +706,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           ))
 
     if (log.isDebugEnabled)
-      result.foreach(rows =>
-        log.debugN("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -890,7 +887,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debugN("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     result
 

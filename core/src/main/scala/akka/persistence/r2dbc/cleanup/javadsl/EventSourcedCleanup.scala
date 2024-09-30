@@ -8,8 +8,8 @@ import java.time.Instant
 import java.util.concurrent.CompletionStage
 import java.util.{ List => JList }
 
-import scala.collection.JavaConverters._
-import scala.compat.java8.FutureConverters._
+import scala.jdk.CollectionConverters._
+import scala.jdk.FutureConverters._
 
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
@@ -53,19 +53,19 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
    *   sequence nr (inclusive) to delete up to
    */
   def deleteEventsTo(persistenceId: String, toSequenceNr: Long): CompletionStage[Done] =
-    delegate.deleteEventsTo(persistenceId, toSequenceNr).toJava
+    delegate.deleteEventsTo(persistenceId, toSequenceNr).asJava
 
   /**
    * Delete all events related to one single `persistenceId`. Snapshots are not deleted.
    */
   def deleteAllEvents(persistenceId: String, resetSequenceNumber: Boolean): CompletionStage[Done] =
-    delegate.deleteAllEvents(persistenceId, resetSequenceNumber).toJava
+    delegate.deleteAllEvents(persistenceId, resetSequenceNumber).asJava
 
   /**
    * Delete all events related to the given list of `persistenceIds`. Snapshots are not deleted.
    */
   def deleteAllEvents(persistenceIds: JList[String], resetSequenceNumber: Boolean): CompletionStage[Done] =
-    delegate.deleteAllEvents(persistenceIds.asScala.toVector, resetSequenceNumber).toJava
+    delegate.deleteAllEvents(persistenceIds.asScala.toVector, resetSequenceNumber).asJava
 
   /**
    * Delete events before a timestamp for the given persistence id. Snapshots are not deleted.
@@ -83,7 +83,7 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
    *   timestamp (exclusive) to delete up to
    */
   def deleteEventsBefore(persistenceId: String, timestamp: Instant): CompletionStage[Done] =
-    delegate.deleteEventsBefore(persistenceId, timestamp).toJava
+    delegate.deleteEventsBefore(persistenceId, timestamp).asJava
 
   /**
    * Delete events before a timestamp for the given entityType and slice. Snapshots are not deleted.
@@ -103,43 +103,43 @@ final class EventSourcedCleanup private (delegate: scaladsl.EventSourcedCleanup)
    *   timestamp (exclusive) to delete up to
    */
   def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): CompletionStage[Done] =
-    delegate.deleteEventsBefore(entityType, slice, timestamp).toJava
+    delegate.deleteEventsBefore(entityType, slice, timestamp).asJava
 
   /**
    * Delete snapshots related to one single `persistenceId`. Events are not deleted.
    */
   def deleteSnapshot(persistenceId: String): CompletionStage[Done] =
-    delegate.deleteSnapshot(persistenceId).toJava
+    delegate.deleteSnapshot(persistenceId).asJava
 
   /**
    * Delete all snapshots related to the given list of `persistenceIds`. Events are not deleted.
    */
   def deleteSnapshots(persistenceIds: JList[String]): CompletionStage[Done] =
-    delegate.deleteSnapshots(persistenceIds.asScala.toVector).toJava
+    delegate.deleteSnapshots(persistenceIds.asScala.toVector).asJava
 
   /**
    * Deletes all events for the given persistence id from before the snapshot. The snapshot is not deleted. The event
    * with the same sequence number as the remaining snapshot is deleted.
    */
   def cleanupBeforeSnapshot(persistenceId: String): CompletionStage[Done] =
-    delegate.cleanupBeforeSnapshot(persistenceId).toJava
+    delegate.cleanupBeforeSnapshot(persistenceId).asJava
 
   /**
    * See single persistenceId overload for what is done for each persistence id
    */
   def cleanupBeforeSnapshot(persistenceIds: JList[String]): CompletionStage[Done] =
-    delegate.cleanupBeforeSnapshot(persistenceIds.asScala.toVector).toJava
+    delegate.cleanupBeforeSnapshot(persistenceIds.asScala.toVector).asJava
 
   /**
    * Delete everything related to one single `persistenceId`. All events and snapshots are deleted.
    */
   def deleteAll(persistenceId: String, resetSequenceNumber: Boolean): CompletionStage[Done] =
-    delegate.deleteAll(persistenceId, resetSequenceNumber).toJava
+    delegate.deleteAll(persistenceId, resetSequenceNumber).asJava
 
   /**
    * Delete everything related to the given list of `persistenceIds`. All events and snapshots are deleted.
    */
   def deleteAll(persistenceIds: JList[String], resetSequenceNumber: Boolean): CompletionStage[Done] =
-    delegate.deleteAll(persistenceIds.asScala.toVector, resetSequenceNumber).toJava
+    delegate.deleteAll(persistenceIds.asScala.toVector, resetSequenceNumber).asJava
 
 }

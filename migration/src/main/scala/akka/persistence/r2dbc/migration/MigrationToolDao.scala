@@ -95,7 +95,7 @@ import akka.persistence.typed.PersistenceId
         val stmt = connection.createStatement(baseUpsertMigrationProgressSql("event_seq_nr"))
         bindBaseUpsertSql(stmt, persistenceId, seqNr)
       }
-      .map(_ => Done)(ExecutionContexts.parasitic)
+      .map(_ => Done)(ExecutionContext.parasitic)
   }
 
   def updateSnapshotProgress(persistenceId: String, seqNr: Long): Future[Done] = {
@@ -104,7 +104,7 @@ import akka.persistence.typed.PersistenceId
         val stmt = connection.createStatement(baseUpsertMigrationProgressSql("snapshot_seq_nr"))
         bindBaseUpsertSql(stmt, persistenceId, seqNr)
       }
-      .map(_ => Done)(ExecutionContexts.parasitic)
+      .map(_ => Done)(ExecutionContext.parasitic)
   }
 
   def updateDurableStateProgress(persistenceId: String, revision: Long): Future[Done] = {
@@ -113,7 +113,7 @@ import akka.persistence.typed.PersistenceId
         val stmt = connection.createStatement(baseUpsertMigrationProgressSql("state_revision"))
         bindBaseUpsertSql(stmt, persistenceId, revision)
       }
-      .map(_ => Done)(ExecutionContexts.parasitic)
+      .map(_ => Done)(ExecutionContext.parasitic)
   }
 
   def currentProgress(persistenceId: String): Future[Option[CurrentProgress]] = {

@@ -4,15 +4,14 @@
 
 package akka.persistence.r2dbc.internal
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import akka.NotUsed
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.stream.Attributes
 import akka.stream.Outlet
 import akka.stream.SourceShape
@@ -117,7 +116,7 @@ final private[r2dbc] class ContinuousQuery[S, T](
             beforeQuery(state) match {
               case None => runNextQuery()
               case Some(beforeQueryFuture) =>
-                beforeQueryFuture.onComplete(beforeQueryCallback.invoke)(ExecutionContexts.parasitic)
+                beforeQueryFuture.onComplete(beforeQueryCallback.invoke)(ExecutionContext.parasitic)
             }
         }
       }

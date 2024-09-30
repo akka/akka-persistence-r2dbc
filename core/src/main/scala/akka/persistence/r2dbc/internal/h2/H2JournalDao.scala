@@ -5,16 +5,13 @@
 package akka.persistence.r2dbc.internal.h2
 
 import java.time.Instant
-
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
@@ -81,7 +78,7 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
       result.foreach { _ =>
         log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
       }
-    result.map(_ => events.head.dbTimestamp)(ExecutionContexts.parasitic)
+    result.map(_ => events.head.dbTimestamp)(ExecutionContext.parasitic)
   }
 
   override def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant] = {
@@ -95,7 +92,7 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
       result.foreach { _ =>
         log.debug("Wrote [{}] event for persistenceId [{}]", 1, persistenceId)
       }
-    result.map(_ => event.dbTimestamp)(ExecutionContexts.parasitic)
+    result.map(_ => event.dbTimestamp)(ExecutionContext.parasitic)
   }
 
   private def bindInsertStatement(stmt: Statement, write: SerializedJournalRow): Statement = {

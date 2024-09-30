@@ -9,6 +9,7 @@ import java.util.Locale
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
+import scala.jdk.DurationConverters._
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -18,7 +19,6 @@ import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
-import akka.util.JavaDurationConverters.JavaDurationOps
 import com.typesafe.config.Config
 import io.r2dbc.postgresql.PostgresqlConnectionFactoryProvider
 import io.r2dbc.postgresql.client.SSLMode
@@ -57,13 +57,13 @@ private[r2dbc] object PostgresDialect extends Dialect {
     val sslKey: String = config.getString("ssl.key")
     val sslPassword: String = config.getString("ssl.password")
 
-    val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
+    val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").toScala
     val statementCacheSize: Int = config.getInt("statement-cache-size")
 
     val statementTimeout: Option[FiniteDuration] =
       config.getString("statement-timeout").toLowerCase(Locale.ROOT) match {
         case "off" => None
-        case _     => Some(config.getDuration("statement-timeout").asScala)
+        case _     => Some(config.getDuration("statement-timeout").toScala)
       }
   }
 
@@ -95,8 +95,8 @@ private[r2dbc] object PostgresDialect extends Dialect {
         Integer.valueOf(settings.statementCacheSize))
 
     settings.statementTimeout.foreach { timeout =>
-      import akka.util.JavaDurationConverters._
-      builder.option(PostgresqlConnectionFactoryProvider.STATEMENT_TIMEOUT, timeout.asJava)
+      import scala.jdk.DurationConverters._
+      builder.option(PostgresqlConnectionFactoryProvider.STATEMENT_TIMEOUT, timeout.toJava)
     }
 
     if (settings.sslEnabled) {

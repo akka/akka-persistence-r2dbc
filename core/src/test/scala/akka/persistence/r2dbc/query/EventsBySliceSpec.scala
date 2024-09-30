@@ -12,7 +12,6 @@ import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.{ ActorRef, ActorSystem }
 import akka.persistence.FilteredPayload
 import akka.persistence.query.NoOffset
@@ -98,7 +97,7 @@ class EventsBySliceSpec
 
   // to be able to store events with specific timestamps
   private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
-    log.debugN("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
+    log.debug("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
 
     val insertEventSql = sql"""
       INSERT INTO ${settings.journalTableWithSchema(slice)}

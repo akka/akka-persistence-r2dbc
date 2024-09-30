@@ -8,10 +8,10 @@ import java.util.Optional
 import java.util.concurrent.CompletionStage
 import java.util.function.{ Function => JFunction }
 
-import scala.collection.JavaConverters._
-import scala.compat.java8.FutureConverters._
-import scala.compat.java8.OptionConverters._
 import scala.concurrent.ExecutionContext
+import scala.jdk.CollectionConverters._
+import scala.jdk.FutureConverters._
+import scala.jdk.OptionConverters._
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.ApiMayChange
@@ -39,9 +39,9 @@ object R2dbcSession {
       fun: JFunction[R2dbcSession, CompletionStage[A]]): CompletionStage[A] = {
     scaladsl.R2dbcSession.withSession(system, connectionFactoryConfigPath) { scaladslSession =>
       val javadslSession = new R2dbcSession(scaladslSession.connection)(system.executionContext, system)
-      fun(javadslSession).toScala
+      fun(javadslSession).asScala
     }
-  }.toJava
+  }.asJava
 
 }
 
@@ -52,18 +52,18 @@ final class R2dbcSession(val connection: Connection)(implicit ec: ExecutionConte
     connection.createStatement(sql)
 
   def updateOne(statement: Statement): CompletionStage[java.lang.Long] =
-    R2dbcExecutor.updateOneInTx(statement).map(java.lang.Long.valueOf)(ExecutionContexts.parasitic).toJava
+    R2dbcExecutor.updateOneInTx(statement).map(java.lang.Long.valueOf)(ExecutionContext.parasitic).asJava
 
   def update(statements: java.util.List[Statement]): CompletionStage[java.util.List[java.lang.Long]] =
     R2dbcExecutor
       .updateInTx(statements.asScala.toVector)
       .map(results => results.map(java.lang.Long.valueOf).asJava)
-      .toJava
+      .asJava
 
   def selectOne[A](statement: Statement)(mapRow: JFunction[Row, A]): CompletionStage[Optional[A]] =
-    R2dbcExecutor.selectOneInTx(statement, mapRow(_)).map(_.asJava)(ExecutionContexts.parasitic).toJava
+    R2dbcExecutor.selectOneInTx(statement, mapRow(_)).map(_.toJava)(ExecutionContext.parasitic).asJava
 
   def select[A](statement: Statement)(mapRow: JFunction[Row, A]): CompletionStage[java.util.List[A]] =
-    R2dbcExecutor.selectInTx(statement, mapRow(_)).map(_.asJava).toJava
+    R2dbcExecutor.selectInTx(statement, mapRow(_)).map(_.asJava).asJava
 
 }
