@@ -17,9 +17,7 @@ import org.slf4j.LoggerFactory
 
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
@@ -273,7 +271,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
           statement
         },
         collectSerializedSnapshot(entityType, _))
-      .map(_.headOption)(ExecutionContexts.parasitic)
+      .map(_.headOption)(ExecutionContext.parasitic)
   }
 
   protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {
@@ -322,7 +320,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
           bindUpsertSql(statement, serializedRow)
 
       }
-      .map(_ => ())(ExecutionContexts.parasitic)
+      .map(_ => ())(ExecutionContext.parasitic)
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit] = {
@@ -352,7 +350,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       }
       statement
     }
-  }.map(_ => ())(ExecutionContexts.parasitic)
+  }.map(_ => ())(ExecutionContext.parasitic)
 
   /**
    * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
@@ -406,7 +404,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       collectSerializedSnapshot(entityType, _))
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debugN("Read [{}] snapshots from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debug("Read [{}] snapshots from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -465,7 +463,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debugN("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
     result
 

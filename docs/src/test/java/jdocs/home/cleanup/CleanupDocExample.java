@@ -9,7 +9,8 @@ import akka.persistence.query.PersistenceQuery;
 import akka.persistence.query.javadsl.CurrentPersistenceIdsQuery;
 import akka.persistence.r2dbc.cleanup.scaladsl.EventSourcedCleanup;
 import akka.persistence.r2dbc.query.javadsl.R2dbcReadJournal;
-import scala.compat.java8.FutureConverters;
+
+import scala.jdk.javaapi.FutureConverters;
 
 public class CleanupDocExample {
 
@@ -30,7 +31,7 @@ public class CleanupDocExample {
         queries
             .currentPersistenceIds()
             .mapAsync(persistenceIdParallelism, pid ->
-                FutureConverters.toJava(cleanup.cleanupBeforeSnapshot(pid)))
+                FutureConverters.asJava(cleanup.cleanupBeforeSnapshot(pid)))
             .run(system);
 
         //#cleanup

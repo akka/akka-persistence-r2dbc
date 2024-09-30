@@ -4,7 +4,10 @@
 
 package akka.persistence.r2dbc
 
+import scala.concurrent.duration._
 import scala.collection.immutable
+import scala.jdk.DurationConverters._
+
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
@@ -14,12 +17,9 @@ import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.ConnectionFactorySettings
-import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 
 import java.util.Locale
-import scala.collection.immutable
-import scala.concurrent.duration._
 
 /**
  * INTERNAL API
@@ -36,7 +36,7 @@ object R2dbcSettings {
         "Database dialect config has moved from 'akka.persistence.r2dbc.dialect' into the connection-factory block, " +
         "the old 'dialect' config entry must be removed, " +
         "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-        "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+        "https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html")
     }
 
     val schema: Option[String] = Option(config.getString("schema")).filterNot(_.trim.isEmpty)
@@ -61,7 +61,7 @@ object R2dbcSettings {
       configToMap(config.getConfig("state.custom-table"))
 
     val durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = {
-      import akka.util.ccompat.JavaConverters._
+      import scala.jdk.CollectionConverters._
       val cfg = config.getConfig("state.additional-columns")
       cfg.root.unwrapped.asScala.toMap.map {
         case (k, v: java.util.List[_]) => k -> v.iterator.asScala.map(_.toString).toVector
@@ -102,7 +102,7 @@ object R2dbcSettings {
             "The Akka Persistence R2DBC database config scheme has changed, the config needs to be updated " +
             "to choose database dialect using the connection-factory block, " +
             "see akka-persistence-r2dbc documentation for details on the new configuration scheme: " +
-            "https://doc.akka.io/docs/akka-persistence-r2dbc/current/migration-guide.html")
+            "https://doc.akka.io/libraries/akka-persistence-r2dbc/current/migration-guide.html")
         }
         Vector(ConnectionFactorySettings(config.getConfig("connection-factory")))
       } else {
@@ -126,7 +126,7 @@ object R2dbcSettings {
     val logDbCallsExceeding: FiniteDuration =
       config.getString("log-db-calls-exceeding").toLowerCase(Locale.ROOT) match {
         case "off" => -1.millis
-        case _     => config.getDuration("log-db-calls-exceeding").asScala
+        case _     => config.getDuration("log-db-calls-exceeding").toScala
       }
 
     val codecSettings = {
@@ -190,7 +190,7 @@ object R2dbcSettings {
   }
 
   private def configToMap(cfg: Config): Map[String, String] = {
-    import akka.util.ccompat.JavaConverters._
+    import scala.jdk.CollectionConverters._
     cfg.root.unwrapped.asScala.toMap.map { case (k, v) => k -> v.toString }
   }
 
@@ -484,11 +484,11 @@ final class R2dbcSettings private (
  */
 @InternalStableApi
 final class QuerySettings(config: Config) {
-  val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
-  val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").asScala
+  val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").toScala
+  val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").toScala
   val backtrackingEnabled: Boolean = config.getBoolean("backtracking.enabled")
-  val backtrackingWindow: FiniteDuration = config.getDuration("backtracking.window").asScala
-  val backtrackingBehindCurrentTime: FiniteDuration = config.getDuration("backtracking.behind-current-time").asScala
+  val backtrackingWindow: FiniteDuration = config.getDuration("backtracking.window").toScala
+  val backtrackingBehindCurrentTime: FiniteDuration = config.getDuration("backtracking.behind-current-time").toScala
   val bufferSize: Int = config.getInt("buffer-size")
   val persistenceIdsBufferSize: Int = config.getInt("persistence-ids.buffer-size")
   val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
@@ -502,10 +502,10 @@ final class QuerySettings(config: Config) {
 final class ConnectionPoolSettings(config: Config) {
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
-  val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").asScala
-  val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").asScala
+  val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").toScala
+  val maxLifeTime: FiniteDuration = config.getDuration("max-life-time").toScala
 
-  val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").asScala
+  val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").toScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
   val validationQuery: String = config.getString("validation-query")
@@ -513,7 +513,7 @@ final class ConnectionPoolSettings(config: Config) {
   val closeCallsExceeding: Option[FiniteDuration] =
     config.getString("close-calls-exceeding").toLowerCase(Locale.ROOT) match {
       case "off" => None
-      case _     => Some(config.getDuration("close-calls-exceeding").asScala)
+      case _     => Some(config.getDuration("close-calls-exceeding").toScala)
     }
 }
 
@@ -523,7 +523,7 @@ final class ConnectionPoolSettings(config: Config) {
 @InternalStableApi
 final class PublishEventsDynamicSettings(config: Config) {
   val throughputThreshold: Int = config.getInt("throughput-threshold")
-  val throughputCollectInterval: FiniteDuration = config.getDuration("throughput-collect-interval").asScala
+  val throughputCollectInterval: FiniteDuration = config.getDuration("throughput-collect-interval").toScala
 }
 
 /**

@@ -9,11 +9,11 @@ import java.util.function.BiConsumer
 import scala.collection.immutable
 import scala.collection.immutable.IntMap
 import scala.collection.mutable
-import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.duration._
+import scala.jdk.FutureConverters._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.control.Exception.Catcher
@@ -21,9 +21,7 @@ import scala.util.control.NonFatal
 
 import akka.Done
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalStableApi
-import akka.dispatch.ExecutionContexts
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.Result
@@ -44,17 +42,17 @@ import akka.persistence.r2dbc.R2dbcSettings
 @InternalStableApi object R2dbcExecutor {
   final implicit class PublisherOps[T](val publisher: Publisher[T]) extends AnyVal {
     def asFuture(): Future[T] =
-      Mono.from(publisher).toFuture.toScala
+      Mono.from(publisher).toFuture.asScala
 
     def asFutureDone(): Future[Done] = {
       val mono: Mono[Done] = Mono.from(publisher).map(_ => Done)
-      mono.defaultIfEmpty(Done).toFuture.toScala
+      mono.defaultIfEmpty(Done).toFuture.asScala
     }
   }
 
   def updateOneInTx(stmt: Statement)(implicit ec: ExecutionContext): Future[Long] =
     stmt.execute().asFuture().flatMap { result =>
-      result.getRowsUpdated.asFuture().map(_.longValue())(ExecutionContexts.parasitic)
+      result.getRowsUpdated.asFuture().map(_.longValue())(ExecutionContext.parasitic)
     }
 
   def updateOneReturningInTx[A](stmt: Statement, mapRow: Row => A)(implicit ec: ExecutionContext): Future[A] =
@@ -79,7 +77,7 @@ import akka.persistence.r2dbc.R2dbcSettings
     statements.foldLeft(Future.successful(Vector.empty[Long])) { (acc, stmt) =>
       acc.flatMap { seq =>
         stmt.execute().asFuture().flatMap { res =>
-          res.getRowsUpdated.asFuture().map(seq :+ _.longValue())(ExecutionContexts.parasitic)
+          res.getRowsUpdated.asFuture().map(seq :+ _.longValue())(ExecutionContext.parasitic)
         }
       }
     }
@@ -142,7 +140,7 @@ class R2dbcExecutor(
         if (durationMicros >= logDbCallsExceedingMicros)
           log.info("{} - getConnection took [{}] µs", logPrefix, durationMicros)
         connection
-      }(ExecutionContexts.parasitic)
+      }(ExecutionContext.parasitic)
   }
 
   /**
@@ -220,7 +218,7 @@ class R2dbcExecutor(
   def updateInBatchReturning[A](logPrefix: String)(
       statementFactory: Connection => Statement,
       mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
-    import scala.collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
     withConnection(logPrefix) { connection =>
       val stmt = statementFactory(connection)
       Flux
@@ -251,7 +249,7 @@ class R2dbcExecutor(
         }
 
       mappedRows.failed.foreach { exc =>
-        log.debug2("{} - Select failed: {}", logPrefix, exc)
+        log.debug("{} - Select failed: {}", logPrefix, exc)
         connection.close().asFutureDone()
       }
 
@@ -259,7 +257,7 @@ class R2dbcExecutor(
         connection.close().asFutureDone().map { _ =>
           val durationMicros = durationInMicros(startTime)
           if (durationMicros >= logDbCallsExceedingMicros)
-            log.infoN("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
+            log.info("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
           r
         }
       }
@@ -290,7 +288,7 @@ class R2dbcExecutor(
 
         result.failed.foreach { exc =>
           if (log.isDebugEnabled())
-            log.debug2("{} - DB call failed: {}", logPrefix, exc.toString)
+            log.debug("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
           val done = rollbackAndClose(connection)
           timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
@@ -332,7 +330,7 @@ class R2dbcExecutor(
           }
 
         result.failed.foreach { exc =>
-          log.debug2("{} - DB call failed: {}", logPrefix, exc)
+          log.debug("{} - DB call failed: {}", logPrefix, exc)
           // auto-commit so nothing to rollback
           val done = connection.close().asFutureDone()
           timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
@@ -342,7 +340,7 @@ class R2dbcExecutor(
           val done = connection.close().asFutureDone().map { _ =>
             val durationMicros = durationInMicros(startTime)
             if (durationMicros >= logDbCallsExceedingMicros)
-              log.infoN("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
+              log.info("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
             r
           }
           timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }

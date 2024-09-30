@@ -16,9 +16,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.JournalDao
@@ -202,7 +200,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
         result.foreach { _ =>
           log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
         }
-      result.map(_.head)(ExecutionContexts.parasitic)
+      result.map(_.head)(ExecutionContext.parasitic)
     }
   }
 
@@ -295,7 +293,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
           val seqNr = row.get(0, classOf[java.lang.Long])
           if (seqNr eq null) 0L else seqNr.longValue
         })
-      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContexts.parasitic)
+      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContext.parasitic)
 
     if (log.isDebugEnabled)
       result.foreach(seqNr => log.debug("Highest sequence nr for persistenceId [{}]: [{}]", persistenceId, seqNr))
@@ -316,7 +314,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
           val seqNr = row.get(0, classOf[java.lang.Long])
           if (seqNr eq null) 0L else seqNr.longValue
         })
-      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContexts.parasitic)
+      .map(r => if (r.isEmpty) 0L else r.head)(ExecutionContext.parasitic)
 
     if (log.isDebugEnabled)
       result.foreach(seqNr => log.debug("Lowest sequence nr for persistenceId [{}]: [{}]", persistenceId, seqNr))
@@ -378,13 +376,13 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
            }
        }).map(deletedRows =>
         if (log.isDebugEnabled) {
-          log.debugN(
+          log.debug(
             "Deleted [{}] events for persistenceId [{}], from seq num [{}] to [{}]",
             deletedRows,
             persistenceId,
             from,
             to)
-        })(ExecutionContexts.parasitic)
+        })(ExecutionContext.parasitic)
     }
 
     val batchSize = settings.cleanupSettings.eventsJournalDeleteBatchSize
@@ -416,8 +414,8 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
           .bindTimestamp(1, timestamp)
       }
       .map(deletedRows =>
-        log.debugN("Deleted [{}] events for persistenceId [{}], before [{}]", deletedRows, persistenceId, timestamp))(
-        ExecutionContexts.parasitic)
+        log.debug("Deleted [{}] events for persistenceId [{}], before [{}]", deletedRows, persistenceId, timestamp))(
+        ExecutionContext.parasitic)
   }
 
   override def deleteEventsBefore(entityType: String, slice: Int, timestamp: Instant): Future[Unit] = {
@@ -431,12 +429,12 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
           .bindTimestamp(2, timestamp)
       }
       .map(deletedRows =>
-        log.debugN(
+        log.debug(
           "Deleted [{}] events for entityType [{}], slice [{}], before [{}]",
           deletedRows,
           entityType,
           slice,
-          timestamp))(ExecutionContexts.parasitic)
+          timestamp))(ExecutionContext.parasitic)
   }
 
 }

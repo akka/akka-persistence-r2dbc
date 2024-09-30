@@ -16,7 +16,6 @@ import org.slf4j.LoggerFactory
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
 import akka.persistence.SnapshotSelectionCriteria
@@ -209,7 +208,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
         case pid :: tail =>
           pidOperation(pid).flatMap { _ =>
             if (n % settings.cleanupSettings.logProgressEvery == 0)
-              log.infoN("Cleanup {} [{}] of [{}].", operationName, n, size)
+              log.info("Cleanup {} [{}] of [{}].", operationName, n, size)
             loop(tail, n + 1)
           }
       }
@@ -219,7 +218,7 @@ final class EventSourcedCleanup(systemProvider: ClassicActorSystemProvider, conf
 
     result.onComplete {
       case Success(_) =>
-        log.info2("Cleanup completed {} of [{}] persistenceId.", operationName, size)
+        log.info("Cleanup completed {} of [{}] persistenceId.", operationName, size)
       case Failure(e) =>
         log.error(s"Cleanup {$operationName} failed.", e)
     }

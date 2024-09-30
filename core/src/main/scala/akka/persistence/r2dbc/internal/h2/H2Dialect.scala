@@ -14,7 +14,6 @@ import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.util.ccompat.JavaConverters._
 import com.typesafe.config.Config
 import io.r2dbc.h2.H2ConnectionConfiguration
 import io.r2dbc.h2.H2ConnectionFactory
@@ -23,6 +22,7 @@ import io.r2dbc.spi.ConnectionFactory
 import java.util.Locale
 
 import scala.concurrent.ExecutionContext
+import scala.jdk.CollectionConverters._
 
 import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
