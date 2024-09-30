@@ -9,9 +9,9 @@ object Dependencies {
   val Scala3 = "3.3.3"
   val Scala2Versions = Seq(Scala213)
   val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
-  val AkkaVersion = System.getProperty("override.akka.version", "2.9.4")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.10.0-M1")
   val AkkaVersionInDocs = VersionNumber(AkkaVersion).numbers match { case Seq(major, minor, _*) => s"$major.$minor" }
-  val AkkaPersistenceJdbcVersion = "5.4.0" // only in migration tool tests
+  val AkkaPersistenceJdbcVersion = "5.5.0-M1" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.2.224"
   val R2dbcH2Version = "1.0.0.RELEASE"
@@ -48,7 +48,7 @@ object Dependencies {
 
     val postgresql = "org.postgresql" % "postgresql" % "42.7.3" % Test // BSD-2-Clause
 
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.13" % Test // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.5.7" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
@@ -75,9 +75,7 @@ object Dependencies {
 
   val migrationTests =
     Seq(
-      ("com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test)
-        // Unsupported SLF4J 2 transitively pulled in by Slick 3.5.0
-        .exclude("org.slf4j", "slf4j-api"),
+      "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
       "com.microsoft.sqlserver" % "mssql-jdbc" % SqlServerJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,

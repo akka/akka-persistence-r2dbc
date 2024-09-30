@@ -8,6 +8,7 @@ import java.time.{ Duration => JDuration }
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
+import scala.jdk.DurationConverters._
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -17,7 +18,6 @@ import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.SnapshotDao
-import akka.util.JavaDurationConverters.JavaDurationOps
 import com.typesafe.config.Config
 import io.r2dbc.mssql.MssqlConnectionFactoryProvider
 import io.r2dbc.spi.ConnectionFactories
@@ -44,7 +44,7 @@ private[r2dbc] object SqlServerDialect extends Dialect {
     val user: String = config.getString("user")
     val password: String = config.getString("password")
     val database: String = config.getString("database")
-    val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").asScala
+    val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").toScala
 
   }
 

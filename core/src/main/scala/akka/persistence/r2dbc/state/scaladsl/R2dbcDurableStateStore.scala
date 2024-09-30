@@ -14,7 +14,6 @@ import scala.concurrent.Future
 import akka.Done
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.Persistence
 import akka.persistence.SerializedEvent
@@ -353,7 +352,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
         val newState2 = newState.copy(rowCount = 0, queryCount = newState.queryCount + 1)
 
         if (newState.queryCount != 0 && log.isDebugEnabled())
-          log.debugN(
+          log.debug(
             "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
             newState.queryCount,
             newState.latestPid,

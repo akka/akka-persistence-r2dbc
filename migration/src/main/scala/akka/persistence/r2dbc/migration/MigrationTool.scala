@@ -5,19 +5,16 @@
 package akka.persistence.r2dbc.migration
 
 import java.time.Instant
-
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.LoggerOps
-import akka.dispatch.ExecutionContexts
 import akka.pattern.ask
 import akka.persistence.Persistence
 import akka.persistence.SelectedSnapshot
@@ -45,7 +42,6 @@ import akka.stream.scaladsl.Sink
 import akka.util.Timeout
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import org.slf4j.LoggerFactory
-
 import akka.persistence.r2dbc.internal.DurableStateDao.SerializedStateRow
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.state.DurableStateStoreRegistry
@@ -198,7 +194,7 @@ class MigrationTool(system: ActorSystem[_]) {
           } yield persistenceId -> Result(1, eventCount, snapshotCount)
         }
         .map { case (pid, result @ Result(_, events, snapshots)) =>
-          log.debugN(
+          log.debug(
             "Migrated persistenceId [{}] with [{}] events{}.",
             pid,
             events,
@@ -208,7 +204,7 @@ class MigrationTool(system: ActorSystem[_]) {
         .runWith(Sink.fold(Result.empty) { case (acc, Result(_, events, snapshots)) =>
           val result = Result(acc.persistenceIds + 1, acc.events + events, acc.snapshots + snapshots)
           if (result.persistenceIds % 100 == 0)
-            log.infoN(
+            log.info(
               "Migrated [{}] persistenceIds with [{}] events and [{}] snapshots.",
               result.persistenceIds,
               result.events,
@@ -218,7 +214,7 @@ class MigrationTool(system: ActorSystem[_]) {
 
     result.transform {
       case s @ Success(Result(persistenceIds, events, snapshots)) =>
-        log.infoN(
+        log.info(
           "Migration successful. Migrated [{}] persistenceIds with [{}] events and [{}] snapshots.",
           persistenceIds,
           events,
@@ -331,7 +327,7 @@ class MigrationTool(system: ActorSystem[_]) {
             val serializedRow = serializedSnapotRow(selectedSnapshot)
             targetSnapshotDao
               .store(serializedRow)
-              .map(_ => snapshotMetadata.sequenceNr)(ExecutionContexts.parasitic)
+              .map(_ => snapshotMetadata.sequenceNr)(ExecutionContext.parasitic)
           }
           _ <- migrationDao.updateSnapshotProgress(persistenceId, seqNr)
         } yield 1
@@ -399,22 +395,19 @@ class MigrationTool(system: ActorSystem[_]) {
           } yield persistenceId -> DurableStateResult(1, stateCount)
         }
         .map { case (pid, result @ DurableStateResult(_, states)) =>
-          log.debugN("Migrated persistenceId [{}] with [{}] durable state.", pid, states)
+          log.debug("Migrated persistenceId [{}] with [{}] durable state.", pid, states)
           result
         }
         .runWith(Sink.fold(DurableStateResult.empty) { case (acc, DurableStateResult(_, states)) =>
           val result = DurableStateResult(acc.persistenceIds + 1, acc.states + states)
           if (result.persistenceIds % 100 == 0)
-            log.infoN("Migrated [{}] persistenceIds with [{}] durable states.", result.persistenceIds, result.states)
+            log.info("Migrated [{}] persistenceIds with [{}] durable states.", result.persistenceIds, result.states)
           result
         })
 
     result.transform {
       case s @ Success(DurableStateResult(persistenceIds, states)) =>
-        log.infoN(
-          "Migration successful. Migrated [{}] persistenceIds with [{}] durable states.",
-          persistenceIds,
-          states)
+        log.info("Migration successful. Migrated [{}] persistenceIds with [{}] durable states.", persistenceIds, states)
         s
       case f @ Failure(exc) =>
         log.error("Migration failed.", exc)
@@ -443,7 +436,7 @@ class MigrationTool(system: ActorSystem[_]) {
             val serializedRow = serializedDurableStateRow(selectedDurableState)
             durableStateMigrationToolDao
               .upsertState(serializedRow, selectedDurableState.value, None)
-              .map(_ => selectedDurableState.revision)(ExecutionContexts.parasitic)
+              .map(_ => selectedDurableState.revision)(ExecutionContext.parasitic)
           }
           _ <- migrationDao.updateDurableStateProgress(persistenceId, revision)
         } yield 1

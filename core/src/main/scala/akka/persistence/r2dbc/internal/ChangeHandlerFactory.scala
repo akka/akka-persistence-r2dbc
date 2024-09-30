@@ -4,8 +4,8 @@
 
 package akka.persistence.r2dbc.internal
 
-import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
+import scala.jdk.FutureConverters._
 import scala.util.Try
 
 import akka.Done
@@ -29,7 +29,7 @@ import akka.persistence.r2dbc.state.scaladsl.ChangeHandler
     override def process(session: R2dbcSession, change: DurableStateChange[Any]): Future[Done] = {
       val javadslSession =
         new akka.persistence.r2dbc.session.javadsl.R2dbcSession(session.connection)(session.ec, session.system)
-      delegate.process(javadslSession, change).toScala
+      delegate.process(javadslSession, change).asScala
     }
   }
 

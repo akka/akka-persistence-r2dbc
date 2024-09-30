@@ -9,6 +9,7 @@ import java.util.Optional
 import java.util.concurrent.CompletionStage
 
 import scala.concurrent.ExecutionContext
+import scala.jdk.FutureConverters.FutureOps
 
 import akka.Done
 import akka.NotUsed
@@ -20,7 +21,6 @@ import akka.persistence.query.typed.javadsl.DurableStateStoreBySliceQuery
 import akka.persistence.r2dbc.state.scaladsl.{ R2dbcDurableStateStore => ScalaR2dbcDurableStateStore }
 import akka.persistence.state.javadsl.GetObjectResult
 import akka.stream.javadsl.Source
-import scala.compat.java8.FutureConverters.FutureOps
 
 import akka.persistence.state.javadsl.DurableStateUpdateWithChangeEventStore
 
@@ -37,10 +37,10 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
     scalaStore
       .getObject(persistenceId)
       .map(x => GetObjectResult(Optional.ofNullable(x.value.getOrElse(null.asInstanceOf[A])), x.revision))
-      .toJava
+      .asJava
 
   override def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): CompletionStage[Done] =
-    scalaStore.upsertObject(persistenceId, revision, value, tag).toJava
+    scalaStore.upsertObject(persistenceId, revision, value, tag).asJava
 
   override def upsertObject(
       persistenceId: String,
@@ -48,17 +48,17 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
       value: A,
       tag: String,
       changeEvent: Any): CompletionStage[Done] =
-    scalaStore.upsertObject(persistenceId, revision, value, tag, changeEvent).toJava
+    scalaStore.upsertObject(persistenceId, revision, value, tag, changeEvent).asJava
 
   @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
   override def deleteObject(persistenceId: String): CompletionStage[Done] =
     deleteObject(persistenceId, revision = 0)
 
   override def deleteObject(persistenceId: String, revision: Long): CompletionStage[Done] =
-    scalaStore.deleteObject(persistenceId, revision).toJava
+    scalaStore.deleteObject(persistenceId, revision).asJava
 
   override def deleteObject(persistenceId: String, revision: Long, changeEvent: Any): CompletionStage[Done] =
-    scalaStore.deleteObject(persistenceId, revision, changeEvent).toJava
+    scalaStore.deleteObject(persistenceId, revision, changeEvent).asJava
 
   override def currentChangesBySlices(
       entityType: String,
@@ -78,7 +78,7 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
     scalaStore.sliceForPersistenceId(persistenceId)
 
   override def sliceRanges(numberOfRanges: Int): util.List[Pair[Integer, Integer]] = {
-    import akka.util.ccompat.JavaConverters._
+    import scala.jdk.CollectionConverters._
     scalaStore
       .sliceRanges(numberOfRanges)
       .map(range => Pair(Integer.valueOf(range.min), Integer.valueOf(range.max)))
@@ -103,12 +103,12 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
    *   A source containing all the persistence ids, limited as specified.
    */
   def currentPersistenceIds(entityType: String, afterId: Optional[String], limit: Long): Source[String, NotUsed] = {
-    import scala.compat.java8.OptionConverters._
+    import scala.jdk.OptionConverters._
     scalaStore.currentPersistenceIds(entityType, afterId.asScala, limit).asJava
   }
 
   override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] = {
-    import scala.compat.java8.OptionConverters._
+    import scala.jdk.OptionConverters._
     scalaStore.currentPersistenceIds(afterId.asScala, limit).asJava
   }
 

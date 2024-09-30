@@ -17,9 +17,9 @@ import io.r2dbc.spi.ConnectionFactory
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.ConcurrentHashMap
 
-import scala.collection.JavaConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
+import scala.jdk.CollectionConverters._
 import scala.util.Failure
 import scala.util.Success
 

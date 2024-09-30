@@ -15,7 +15,6 @@ import scala.concurrent.duration.FiniteDuration
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
@@ -525,7 +524,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
                   latestBacktracking = t.timestamp
                   env :: Nil
                 } else if (EnvelopeOrigin.fromPubSub(env) && latestBacktracking == Instant.EPOCH) {
-                  log.trace2(
+                  log.trace(
                     "Dropping pubsub event for persistenceId [{}] seqNr [{}] because no event from backtracking yet.",
                     env.persistenceId,
                     env.sequenceNr)
@@ -534,7 +533,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
                     .between(latestBacktracking, t.timestamp)
                     .compareTo(maxAheadOfBacktracking) > 0) {
                   // drop from pubsub when too far ahead from backtracking
-                  log.debug2(
+                  log.debug(
                     "Dropping pubsub event for persistenceId [{}] seqNr [{}] because too far ahead of backtracking.",
                     env.persistenceId,
                     env.sequenceNr)
@@ -584,7 +583,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debugN(
+          log.debug(
             "currentEventsByPersistenceId query [{}] for persistenceId [{}], from [{}] to [{}]. Found [{}] rows in previous query.",
             state.queryCount,
             persistenceId,
@@ -596,7 +595,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           queryDao
             .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr, includeDeleted))
       } else {
-        log.debugN(
+        log.debug(
           "currentEventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
           state.queryCount,
           persistenceId,
@@ -607,7 +606,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     }
 
     if (log.isDebugEnabled())
-      log.debugN(
+      log.debug(
         "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].",
         persistenceId,
         fromSequenceNr,
@@ -680,7 +679,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         settings.querySettings.refreshInterval)
 
       delay.foreach { d =>
-        log.debugN(
+        log.debug(
           "eventsByPersistenceId query [{}] for persistenceId [{}] delay next [{}] ms.",
           state.queryCount,
           persistenceId,
@@ -693,7 +692,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     def nextQuery(
         state: ByPersistenceIdState): (ByPersistenceIdState, Option[Source[SerializedJournalRow, NotUsed]]) = {
       if (state.latestSeqNr >= toSequenceNr) {
-        log.debugN(
+        log.debug(
           "eventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
           state.queryCount,
           persistenceId,
@@ -702,7 +701,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       } else {
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
-        log.debugN(
+        log.debug(
           "eventsByPersistenceId query [{}] for persistenceId [{}], from [{}]. Found [{}] rows in previous query.",
           newState.queryCount,
           persistenceId,
@@ -809,7 +808,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
 
         if (state.queryCount != 0 && log.isDebugEnabled())
-          log.debugN(
+          log.debug(
             "persistenceIds query [{}] after [{}]. Found [{}] rows in previous query.",
             state.queryCount,
             state.latestPid,

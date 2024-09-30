@@ -7,8 +7,8 @@ package akka.persistence.r2dbc.cleanup.javadsl
 import java.util.concurrent.CompletionStage
 import java.util.{ List => JList }
 
-import scala.collection.JavaConverters._
-import scala.compat.java8.FutureConverters._
+import scala.jdk.CollectionConverters._
+import scala.jdk.FutureConverters._
 
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
@@ -43,14 +43,14 @@ final class DurableStateCleanup private (delegate: scaladsl.DurableStateCleanup)
    * Delete the state related to one single `persistenceId`.
    */
   def deleteState(persistenceId: String, resetRevisionNumber: Boolean): CompletionStage[Done] = {
-    delegate.deleteState(persistenceId, resetRevisionNumber).toJava
+    delegate.deleteState(persistenceId, resetRevisionNumber).asJava
   }
 
   /**
    * Delete all states related to the given list of `persistenceIds`.
    */
   def deleteStates(persistenceIds: JList[String], resetRevisionNumber: Boolean): CompletionStage[Done] = {
-    delegate.deleteStates(persistenceIds.asScala.toVector, resetRevisionNumber).toJava
+    delegate.deleteStates(persistenceIds.asScala.toVector, resetRevisionNumber).asJava
   }
 
 }

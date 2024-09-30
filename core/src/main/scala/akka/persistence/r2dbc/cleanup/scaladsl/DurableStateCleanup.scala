@@ -4,20 +4,17 @@
 
 package akka.persistence.r2dbc.cleanup.scaladsl
 
-import scala.collection.immutable
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.collection.immutable
 import scala.util.Failure
 import scala.util.Success
-
 import org.slf4j.LoggerFactory
-
 import akka.Done
 import akka.actor.ClassicActorSystemProvider
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.LoggerOps
 import akka.annotation.ApiMayChange
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
@@ -73,7 +70,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
     if (resetRevisionNumber)
       stateDao
         .deleteState(persistenceId, revision = 0L, changeEvent = None) // hard delete without revision check
-        .map(_ => Done)(ExecutionContexts.parasitic)
+        .map(_ => Done)(ExecutionContext.parasitic)
     else {
       stateDao.readState(persistenceId).flatMap {
         case None =>
@@ -81,7 +78,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
         case Some(s) =>
           stateDao
             .deleteState(persistenceId, s.revision + 1, changeEvent = None)
-            .map(_ => Done)(ExecutionContexts.parasitic)
+            .map(_ => Done)(ExecutionContext.parasitic)
       }
     }
   }
@@ -106,7 +103,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
         case pid :: tail =>
           pidOperation(pid).flatMap { _ =>
             if (n % settings.cleanupSettings.logProgressEvery == 0)
-              log.infoN("Cleanup {} [{}] of [{}].", operationName, n, size)
+              log.info("Cleanup {} [{}] of [{}].", operationName, n, size)
             loop(tail, n + 1)
           }
       }
@@ -116,7 +113,7 @@ final class DurableStateCleanup(systemProvider: ClassicActorSystemProvider, conf
 
     result.onComplete {
       case Success(_) =>
-        log.info2("Cleanup completed {} of [{}] persistenceId.", operationName, size)
+        log.info("Cleanup completed {} of [{}] persistenceId.", operationName, size)
       case Failure(e) =>
         log.error(s"Cleanup {$operationName} failed.", e)
     }

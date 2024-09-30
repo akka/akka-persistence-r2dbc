@@ -18,7 +18,6 @@ import akka.actor.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
-import akka.dispatch.ExecutionContexts
 import akka.event.Logging
 import akka.persistence.AtomicWrite
 import akka.persistence.Persistence
@@ -196,7 +195,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
     writeAndPublishResult.onComplete { _ =>
       self ! WriteFinished(persistenceId, writeAndPublishResult)
     }
-    writeAndPublishResult.map(_ => Nil)(ExecutionContexts.parasitic)
+    writeAndPublishResult.map(_ => Nil)(ExecutionContext.parasitic)
   }
 
   private def publish(messages: immutable.Seq[AtomicWrite], dbTimestamp: Future[Instant]): Future[Done] =
@@ -211,7 +210,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
         }
 
       case None =>
-        dbTimestamp.map(_ => Done)(ExecutionContexts.parasitic)
+        dbTimestamp.map(_ => Done)(ExecutionContext.parasitic)
     }
 
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long): Future[Unit] = {
@@ -226,7 +225,7 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       case Some(f) =>
         log.debug("Write in progress for [{}], deferring replayMessages until write completed", persistenceId)
         // we only want to make write - replay sequential, not fail if previous write failed
-        f.recover { case _ => Done }(ExecutionContexts.parasitic)
+        f.recover { case _ => Done }(ExecutionContext.parasitic)
       case None => FutureDone
     }
     pendingWrite.flatMap { _ =>
