@@ -200,6 +200,8 @@ class EventsBySlicePubSubSpec
     }
 
     "turn FilteredPayload to filtered events with no payload" in new Setup {
+      pendingIfMoreThanOneDataPartition()
+
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query.eventsBySlices[String](this.entityType, 0, 1023, NoOffset).runWith(sinkProbe).request(10)
 
