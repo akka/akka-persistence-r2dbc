@@ -244,7 +244,7 @@ class EventsBySliceSpec
         val slice3 = query.sliceForPersistenceId(pid3)
         val slice4 = query.sliceForPersistenceId(pid4)
         val slices = Seq(slice1, slice2, slice3, slice4)
-        val t1 = InstantFactory.now()
+        val t1 = InstantFactory.now().minusSeconds(10)
         val t2 = t1.plusMillis(1)
 
         writeEvent(slice1, pid1, 1L, t1, "A1")
