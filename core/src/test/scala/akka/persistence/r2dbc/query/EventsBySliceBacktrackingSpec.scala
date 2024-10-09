@@ -37,7 +37,7 @@ import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
-import akka.util.JavaDurationConverters._
+import scala.jdk.DurationConverters._
 
 object EventsBySliceBacktrackingSpec {
   private val BufferSize = 10 // small buffer for testing
@@ -289,7 +289,7 @@ class EventsBySliceBacktrackingSpec
       // no backtracking
       result1.expectNoMessage()
 
-      val now = InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.asJava)
+      val now = InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.toJava)
       writeEvent(slice1, pid1, 101, now, "e1-101")
       writeEvent(slice2, pid2, 101, now.plusMillis(1), "e2-101")
 
@@ -373,7 +373,7 @@ class EventsBySliceBacktrackingSpec
       val timeZero = InstantFactory
         .now()
         .truncatedTo(ChronoUnit.SECONDS)
-        .minus(settings.querySettings.backtrackingBehindCurrentTime.asJava)
+        .minus(settings.querySettings.backtrackingBehindCurrentTime.toJava)
         .minusSeconds(10)
 
       // events around the buffer size (of 10) will share the same timestamp

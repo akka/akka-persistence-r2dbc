@@ -1,0 +1,2 @@
+# internals
+ProblemFilters.exclude[Problem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState*")
