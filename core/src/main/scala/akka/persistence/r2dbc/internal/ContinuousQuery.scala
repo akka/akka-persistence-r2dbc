@@ -29,8 +29,10 @@ private[r2dbc] object ContinuousQuery {
       updateState: (S, T) => S,
       delayNextQuery: S => Option[FiniteDuration],
       nextQuery: S => (S, Option[Source[T, NotUsed]]),
-      beforeQuery: S => Option[Future[S]] = (_: S) => None): Source[T, NotUsed] =
-    Source.fromGraph(new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery, beforeQuery))
+      beforeQuery: S => Option[Future[S]] = (_: S) => None,
+      heartbeat: S => Option[T] = (_: S) => None): Source[T, NotUsed] =
+    Source.fromGraph(
+      new ContinuousQuery[S, T](initialState, updateState, delayNextQuery, nextQuery, beforeQuery, heartbeat))
 
   private case object NextQuery
 
@@ -68,7 +70,8 @@ final private[r2dbc] class ContinuousQuery[S, T](
     updateState: (S, T) => S,
     delayNextQuery: S => Option[FiniteDuration],
     nextQuery: S => (S, Option[Source[T, NotUsed]]),
-    beforeQuery: S => Option[Future[S]])
+    beforeQuery: S => Option[Future[S]],
+    heartbeat: S => Option[T])
     extends GraphStage[SourceShape[T]] {
   import ContinuousQuery._
 
@@ -149,8 +152,12 @@ final private[r2dbc] class ContinuousQuery[S, T](
                   next()
                 }
             })
+            val sourceWithHeartbeat = heartbeat(newState) match {
+              case None    => source
+              case Some(h) => Source.single(h).concat(source)
+            }
             val graph = Source
-              .fromGraph(source)
+              .fromGraph(sourceWithHeartbeat)
               .to(sinkIn.sink)
             interpreter.subFusingMaterializer.materialize(graph)
             sinkIn.pull()
