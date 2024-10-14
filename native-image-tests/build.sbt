@@ -28,7 +28,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
   "com.typesafe.akka" %% "akka-serialization-jackson" % akkaVersion,
   "com.lightbend.akka" %% "akka-persistence-r2dbc" % akkaR2dbcVersion,
-  "ch.qos.logback" % "logback-classic" % "1.5.8",
+  "ch.qos.logback" % "logback-classic" % "1.5.10",
   // H2
   "com.h2database" % "h2" % "2.2.224",
   "io.r2dbc" % "r2dbc-h2" % "1.0.0.RELEASE")
