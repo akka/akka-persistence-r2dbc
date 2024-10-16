@@ -4,14 +4,18 @@
 
 package akka.persistence.r2dbc.internal
 
+import java.time.Clock
+
 import scala.collection.immutable
 import java.time.Instant
 import java.time.{ Duration => JDuration }
+
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.annotation.InternalApi
 import akka.persistence.query.Offset
@@ -39,6 +43,7 @@ import org.slf4j.Logger
         backtrackingCount = 0,
         latestBacktracking = TimestampOffset.Zero,
         latestBacktrackingSeenCount = 0,
+        latestBacktrackingWallClock = Instant.EPOCH,
         backtrackingExpectFiltered = 0,
         buckets = Buckets.empty,
         previous = TimestampOffset.Zero,
@@ -54,6 +59,7 @@ import org.slf4j.Logger
       backtrackingCount: Int,
       latestBacktracking: TimestampOffset,
       latestBacktrackingSeenCount: Int,
+      latestBacktrackingWallClock: Instant,
       backtrackingExpectFiltered: Int,
       buckets: Buckets,
       previous: TimestampOffset,
@@ -208,6 +214,8 @@ import org.slf4j.Logger
     dao: BySliceQuery.Dao[Row],
     createEnvelope: (TimestampOffset, Row) => Envelope,
     extractOffset: Envelope => TimestampOffset,
+    createHeartbeat: Instant => Option[Envelope],
+    clock: Clock,
     settings: R2dbcSettings,
     log: Logger)(implicit val ec: ExecutionContext) {
   import BySliceQuery._
@@ -228,8 +236,12 @@ import org.slf4j.Logger
       filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
-    def nextOffset(state: QueryState, envelope: Envelope): QueryState =
-      state.copy(latest = extractOffset(envelope), rowCount = state.rowCount + 1)
+    def nextOffset(state: QueryState, envelope: Envelope): QueryState = {
+      if (EnvelopeOrigin.isHeartbeatEvent(envelope))
+        state
+      else
+        state.copy(latest = extractOffset(envelope), rowCount = state.rowCount + 1)
+    }
 
     def nextQuery(state: QueryState, endTimestamp: Instant): (QueryState, Option[Source[Envelope, NotUsed]]) = {
       // Note that we can't know how many events with the same timestamp that are filtered out
@@ -333,39 +345,44 @@ import org.slf4j.Logger
         initialOffset.timestamp)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState = {
-      val offset = extractOffset(envelope)
-      if (state.backtracking) {
-        if (offset.timestamp.isBefore(state.latestBacktracking.timestamp))
-          throw new IllegalArgumentException(
-            s"Unexpected offset [$offset] before latestBacktracking [${state.latestBacktracking}].")
+      if (EnvelopeOrigin.isHeartbeatEvent(envelope))
+        state
+      else {
+        val offset = extractOffset(envelope)
+        if (state.backtracking) {
+          if (offset.timestamp.isBefore(state.latestBacktracking.timestamp))
+            throw new IllegalArgumentException(
+              s"Unexpected offset [$offset] before latestBacktracking [${state.latestBacktracking}].")
 
-        val newSeenCount =
-          if (offset.timestamp == state.latestBacktracking.timestamp &&
-            highestSeenSeqNr(state.previousBacktracking, offset) ==
-              highestSeenSeqNr(state.previousBacktracking, state.latestBacktracking))
-            state.latestBacktrackingSeenCount + 1
-          else 1
+          val newSeenCount =
+            if (offset.timestamp == state.latestBacktracking.timestamp &&
+              highestSeenSeqNr(state.previousBacktracking, offset) ==
+                highestSeenSeqNr(state.previousBacktracking, state.latestBacktracking))
+              state.latestBacktrackingSeenCount + 1
+            else 1
 
-        state.copy(
-          latestBacktracking = offset,
-          latestBacktrackingSeenCount = newSeenCount,
-          rowCount = state.rowCount + 1)
+          state.copy(
+            latestBacktracking = offset,
+            latestBacktrackingSeenCount = newSeenCount,
+            latestBacktrackingWallClock = clock.instant(),
+            rowCount = state.rowCount + 1)
 
-      } else {
-        if (offset.timestamp.isBefore(state.latest.timestamp))
-          throw new IllegalArgumentException(s"Unexpected offset [$offset] before latest [${state.latest}].")
+        } else {
+          if (offset.timestamp.isBefore(state.latest.timestamp))
+            throw new IllegalArgumentException(s"Unexpected offset [$offset] before latest [${state.latest}].")
 
-        if (log.isDebugEnabled()) {
-          if (state.latestBacktracking.seen.nonEmpty &&
-            offset.timestamp.isAfter(state.latestBacktracking.timestamp.plus(firstBacktrackingQueryWindow)))
-            log.debug(
-              "{} next offset is outside the backtracking window, latestBacktracking: [{}], offset: [{}]",
-              logPrefix,
-              state.latestBacktracking,
-              offset)
+          if (log.isDebugEnabled()) {
+            if (state.latestBacktracking.seen.nonEmpty &&
+              offset.timestamp.isAfter(state.latestBacktracking.timestamp.plus(firstBacktrackingQueryWindow)))
+              log.debug(
+                "{} next offset is outside the backtracking window, latestBacktracking: [{}], offset: [{}]",
+                logPrefix,
+                state.latestBacktracking,
+                offset)
+          }
+
+          state.copy(latest = offset, rowCount = state.rowCount + 1)
         }
-
-        state.copy(latest = offset, rowCount = state.rowCount + 1)
       }
     }
 
@@ -501,12 +518,23 @@ import org.slf4j.Logger
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 
+    def heartbeat(state: QueryState): Option[Envelope] = {
+      if (state.idleCount >= 1 && state.latestBacktrackingWallClock != Instant.EPOCH) {
+        // using wall clock to measure duration since the last backtracking event
+        val timestamp =
+          state.latestBacktracking.timestamp.plus(JDuration.between(state.latestBacktrackingWallClock, clock.instant()))
+        createHeartbeat(timestamp)
+      } else
+        None
+    }
+
     ContinuousQuery[QueryState, Envelope](
       initialState = QueryState.empty.copy(latest = initialOffset),
       updateState = nextOffset,
       delayNextQuery = delayNextQuery,
       nextQuery = nextQuery,
-      beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _))
+      beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
+      heartbeat = heartbeat)
   }
 
   private def beforeQuery(
