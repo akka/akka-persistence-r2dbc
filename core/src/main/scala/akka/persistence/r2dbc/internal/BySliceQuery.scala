@@ -43,11 +43,12 @@ import org.slf4j.Logger
         backtrackingCount = 0,
         latestBacktracking = TimestampOffset.Zero,
         latestBacktrackingSeenCount = 0,
-        latestBacktrackingWallClock = Instant.EPOCH,
         backtrackingExpectFiltered = 0,
         buckets = Buckets.empty,
         previous = TimestampOffset.Zero,
-        previousBacktracking = TimestampOffset.Zero)
+        previousBacktracking = TimestampOffset.Zero,
+        startTime = Instant.EPOCH,
+        startTimeWallClock = Instant.EPOCH)
   }
 
   final case class QueryState(
@@ -59,11 +60,12 @@ import org.slf4j.Logger
       backtrackingCount: Int,
       latestBacktracking: TimestampOffset,
       latestBacktrackingSeenCount: Int,
-      latestBacktrackingWallClock: Instant,
       backtrackingExpectFiltered: Int,
       buckets: Buckets,
       previous: TimestampOffset,
-      previousBacktracking: TimestampOffset) {
+      previousBacktracking: TimestampOffset,
+      startTime: Instant,
+      startTimeWallClock: Instant) {
 
     def backtracking: Boolean = backtrackingCount > 0
 
@@ -368,7 +370,6 @@ import org.slf4j.Logger
           state.copy(
             latestBacktracking = offset,
             latestBacktrackingSeenCount = newSeenCount,
-            latestBacktrackingWallClock = clock.instant(),
             rowCount = state.rowCount + 1)
 
         } else {
@@ -539,22 +540,33 @@ import org.slf4j.Logger
     }
 
     def heartbeat(state: QueryState): Option[Envelope] = {
-      if (state.idleCount >= 1 && state.latestBacktrackingWallClock != Instant.EPOCH) {
-        // using wall clock to measure duration since the last backtracking event
-        val timestamp =
-          state.latestBacktracking.timestamp.plus(JDuration.between(state.latestBacktrackingWallClock, clock.instant()))
+      if (state.idleCount >= 1 && state.latestBacktracking != TimestampOffset.Zero) {
+        // using wall clock to measure duration since the start time (database timestamp)
+        val timestamp = state.startTime.plus(JDuration.between(state.startTimeWallClock, clock.instant()))
         createHeartbeat(timestamp)
       } else
         None
     }
 
-    ContinuousQuery[QueryState, Envelope](
-      initialState = QueryState.empty.copy(latest = initialOffset),
-      updateState = nextOffset,
-      delayNextQuery = delayNextQuery,
-      nextQuery = nextQuery,
-      beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
-      heartbeat = heartbeat)
+    val currentTimestamp =
+      if (settings.useAppTimestamp) Future.successful(InstantFactory.now())
+      else dao.currentDbTimestamp(minSlice)
+
+    Source
+      .futureSource[Envelope, NotUsed] {
+        currentTimestamp.map { currentTime =>
+          val currentWallClock = clock.instant()
+          ContinuousQuery[QueryState, Envelope](
+            initialState = QueryState.empty
+              .copy(latest = initialOffset, startTime = currentTime, startTimeWallClock = currentWallClock),
+            updateState = nextOffset,
+            delayNextQuery = delayNextQuery,
+            nextQuery = nextQuery,
+            beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
+            heartbeat = heartbeat)
+        }
+      }
+      .mapMaterializedValue(_ => NotUsed)
   }
 
   private def beforeQuery(
