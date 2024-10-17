@@ -44,7 +44,8 @@ object EventsBySlicePubSubBacktrackingSpec {
 
         backtracking {
           behind-current-time = 3 s
-          window = 5 s
+          # enough space for heartbeats (previous query - behind current time)
+          window = 6 s
         }
       }
     }
@@ -141,7 +142,7 @@ class EventsBySlicePubSubBacktrackingSpec
       }
 
       // after idle it will emit heartbeat
-      Thread.sleep(5000)
+      Thread.sleep(6000)
       val heartbeatEnv = result.expectNext()
       heartbeatEnv.source shouldBe EnvelopeOrigin.SourceHeartbeat
       heartbeatEnv.slice shouldBe slice

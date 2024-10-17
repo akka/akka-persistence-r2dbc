@@ -47,8 +47,10 @@ import org.slf4j.Logger
         buckets = Buckets.empty,
         previous = TimestampOffset.Zero,
         previousBacktracking = TimestampOffset.Zero,
-        startTime = Instant.EPOCH,
-        startTimeWallClock = Instant.EPOCH)
+        startTimestamp = Instant.EPOCH,
+        startWallClock = Instant.EPOCH,
+        currentQueryWallClock = Instant.EPOCH,
+        previousQueryWallClock = Instant.EPOCH)
   }
 
   final case class QueryState(
@@ -64,8 +66,10 @@ import org.slf4j.Logger
       buckets: Buckets,
       previous: TimestampOffset,
       previousBacktracking: TimestampOffset,
-      startTime: Instant,
-      startTimeWallClock: Instant) {
+      startTimestamp: Instant,
+      startWallClock: Instant,
+      currentQueryWallClock: Instant,
+      previousQueryWallClock: Instant) {
 
     def backtracking: Boolean = backtrackingCount > 0
 
@@ -229,8 +233,9 @@ import org.slf4j.Logger
 
   private val backtrackingWindow = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)
   private val halfBacktrackingWindow = backtrackingWindow.dividedBy(2)
-  private val firstBacktrackingQueryWindow =
-    backtrackingWindow.plus(JDuration.ofMillis(settings.querySettings.backtrackingBehindCurrentTime.toMillis))
+  private val backtrackingBehindCurrentTime =
+    JDuration.ofMillis(settings.querySettings.backtrackingBehindCurrentTime.toMillis)
+  private val firstBacktrackingQueryWindow = backtrackingWindow.plus(backtrackingBehindCurrentTime)
   private val eventBucketCountInterval = JDuration.ofSeconds(60)
 
   def currentBySlices(
@@ -393,7 +398,7 @@ import org.slf4j.Logger
 
     def delayNextQuery(state: QueryState): Option[FiniteDuration] = {
       if (switchFromBacktracking(state)) {
-        // switch from from backtracking immediately
+        // switch from backtracking immediately
         None
       } else {
         val delay = ContinuousQuery.adjustNextDelay(
@@ -448,6 +453,8 @@ import org.slf4j.Logger
 
     def nextQuery(state: QueryState): (QueryState, Option[Source[Envelope, NotUsed]]) = {
       val newIdleCount = if (state.rowCount == 0) state.idleCount + 1 else 0
+      // only start tracking query wall clock (for heartbeats) after initial backtracking query
+      val newQueryWallClock = if (state.latestBacktracking != TimestampOffset.Zero) clock.instant() else Instant.EPOCH
       val newState =
         if (switchToBacktracking(state, newIdleCount)) {
           // switching to backtracking
@@ -464,7 +471,9 @@ import org.slf4j.Logger
             idleCount = newIdleCount,
             backtrackingCount = 1,
             latestBacktracking = fromOffset,
-            backtrackingExpectFiltered = state.latestBacktrackingSeenCount)
+            backtrackingExpectFiltered = state.latestBacktrackingSeenCount,
+            currentQueryWallClock = newQueryWallClock,
+            previousQueryWallClock = state.currentQueryWallClock)
         } else if (switchFromBacktracking(state)) {
           // switching from backtracking
           state.copy(
@@ -472,7 +481,9 @@ import org.slf4j.Logger
             rowCountSinceBacktracking = 0,
             queryCount = state.queryCount + 1,
             idleCount = newIdleCount,
-            backtrackingCount = 0)
+            backtrackingCount = 0,
+            currentQueryWallClock = newQueryWallClock,
+            previousQueryWallClock = state.currentQueryWallClock)
         } else {
           // continue
           val newBacktrackingCount = if (state.backtracking) state.backtrackingCount + 1 else 0
@@ -482,7 +493,9 @@ import org.slf4j.Logger
             queryCount = state.queryCount + 1,
             idleCount = newIdleCount,
             backtrackingCount = newBacktrackingCount,
-            backtrackingExpectFiltered = state.latestBacktrackingSeenCount)
+            backtrackingExpectFiltered = state.latestBacktrackingSeenCount,
+            currentQueryWallClock = newQueryWallClock,
+            previousQueryWallClock = state.currentQueryWallClock)
         }
 
       val behindCurrentTime =
@@ -540,9 +553,10 @@ import org.slf4j.Logger
     }
 
     def heartbeat(state: QueryState): Option[Envelope] = {
-      if (state.idleCount >= 1 && state.latestBacktracking != TimestampOffset.Zero) {
-        // using wall clock to measure duration since the start time (database timestamp)
-        val timestamp = state.startTime.plus(JDuration.between(state.startTimeWallClock, clock.instant()))
+      if (state.idleCount >= 1 && state.previousQueryWallClock != Instant.EPOCH) {
+        // using wall clock to measure duration since the start time (database timestamp) up to idle backtracking limit
+        val timestamp = state.startTimestamp.plus(
+          JDuration.between(state.startWallClock, state.previousQueryWallClock.minus(backtrackingBehindCurrentTime)))
         createHeartbeat(timestamp)
       } else
         None
@@ -558,7 +572,7 @@ import org.slf4j.Logger
           val currentWallClock = clock.instant()
           ContinuousQuery[QueryState, Envelope](
             initialState = QueryState.empty
-              .copy(latest = initialOffset, startTime = currentTime, startTimeWallClock = currentWallClock),
+              .copy(latest = initialOffset, startTimestamp = currentTime, startWallClock = currentWallClock),
             updateState = nextOffset,
             delayNextQuery = delayNextQuery,
             nextQuery = nextQuery,
