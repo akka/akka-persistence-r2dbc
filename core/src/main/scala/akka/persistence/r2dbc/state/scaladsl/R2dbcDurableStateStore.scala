@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.state.scaladsl
 
+import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 
@@ -87,6 +88,8 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
     if (settings.journalPublishEvents) Some(PubSub(typedSystem))
     else None
 
+  private val clock = Clock.systemUTC()
+
   private val bySlice: BySliceQuery[SerializedStateRow, DurableStateChange[A]] = {
     val createEnvelope: (TimestampOffset, SerializedStateRow) => DurableStateChange[A] = (offset, row) => {
       row.payload match {
@@ -108,7 +111,8 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
 
     val extractOffset: DurableStateChange[A] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
 
-    new BySliceQuery(stateDao, createEnvelope, extractOffset, settings, log)(typedSystem.executionContext)
+    new BySliceQuery(stateDao, createEnvelope, extractOffset, createHeartbeat = _ => None, clock, settings, log)(
+      typedSystem.executionContext)
   }
 
   override def getObject(persistenceId: String): Future[GetObjectResult[A]] = {
