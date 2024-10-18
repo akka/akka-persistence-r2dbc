@@ -166,7 +166,6 @@ class EventsBySlicePerfSpec
         val done: Future[Done] =
           query
             .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, NoOffset)
-            .filterNot(EnvelopeOrigin.fromHeartbeat)
             .scan(Set.empty[PidSeqNr]) { case (acc, env) =>
               val newAcc = acc + PidSeqNr(env.persistenceId, env.sequenceNr)
 

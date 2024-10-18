@@ -540,8 +540,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           // cache of seen pid/seqNr
           var seen = mutable.LinkedHashSet.empty[(String, Long)]
           env => {
-            if (EnvelopeOrigin.fromBacktracking(env) || EnvelopeOrigin.fromHeartbeat(env)) {
-              // don't deduplicate from backtracking or heartbeats
+            if (EnvelopeOrigin.fromBacktracking(env)) {
+              // don't deduplicate from backtracking
               env :: Nil
             } else {
               val entry = env.persistenceId -> env.sequenceNr
@@ -582,9 +582,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           env => {
             env.offset match {
               case t: TimestampOffset =>
-                if (EnvelopeOrigin.fromBacktracking(env) || EnvelopeOrigin.fromHeartbeat(env)) {
+                if (EnvelopeOrigin.fromBacktracking(env)) {
                   latestBacktracking = t.timestamp
                   env :: Nil
+                } else if (EnvelopeOrigin.fromHeartbeat(env)) {
+                  latestBacktracking = t.timestamp
+                  Nil // always drop heartbeats
                 } else if (EnvelopeOrigin.fromPubSub(env) && latestBacktracking == Instant.EPOCH) {
                   log.trace(
                     "Dropping pubsub event for persistenceId [{}] seqNr [{}] because no event from backtracking yet.",

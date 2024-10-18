@@ -562,6 +562,9 @@ import org.slf4j.Logger
         None
     }
 
+    val nextHeartbeat: QueryState => Option[Envelope] =
+      if (settings.journalPublishEvents) heartbeat else _ => None
+
     val currentTimestamp =
       if (settings.useAppTimestamp) Future.successful(InstantFactory.now())
       else dao.currentDbTimestamp(minSlice)
@@ -577,7 +580,7 @@ import org.slf4j.Logger
             delayNextQuery = delayNextQuery,
             nextQuery = nextQuery,
             beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
-            heartbeat = heartbeat)
+            heartbeat = nextHeartbeat)
         }
       }
       .mapMaterializedValue(_ => NotUsed)

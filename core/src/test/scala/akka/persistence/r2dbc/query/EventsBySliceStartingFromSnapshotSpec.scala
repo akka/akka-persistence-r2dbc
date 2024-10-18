@@ -31,8 +31,6 @@ import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 
-import akka.persistence.r2dbc.internal.EnvelopeOrigin
-
 object EventsBySliceStartingFromSnapshotSpec {
   sealed trait QueryType
   case object Live extends QueryType
@@ -89,9 +87,12 @@ class EventsBySliceStartingFromSnapshotSpec
         queryImpl: R2dbcReadJournal = query): Source[EventEnvelope[String], NotUsed] =
       queryType match {
         case Live =>
-          queryImpl
-            .eventsBySlicesStartingFromSnapshots[String, String](entityType, minSlice, maxSlice, offset, snap => snap)
-            .filterNot(EnvelopeOrigin.fromHeartbeat)
+          queryImpl.eventsBySlicesStartingFromSnapshots[String, String](
+            entityType,
+            minSlice,
+            maxSlice,
+            offset,
+            snap => snap)
         case Current =>
           queryImpl.currentEventsBySlicesStartingFromSnapshots[String, String](
             entityType,
