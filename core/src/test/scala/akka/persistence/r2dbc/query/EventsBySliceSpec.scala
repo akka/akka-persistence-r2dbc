@@ -49,8 +49,6 @@ import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
 
-import akka.persistence.r2dbc.internal.EnvelopeOrigin
-
 object EventsBySliceSpec {
   sealed trait QueryType
   case object Live extends QueryType
@@ -141,9 +139,7 @@ class EventsBySliceSpec
         queryImpl: R2dbcReadJournal = query): Source[EventEnvelope[String], NotUsed] =
       queryType match {
         case Live =>
-          queryImpl
-            .eventsBySlices[String](entityType, minSlice, maxSlice, offset)
-            .filterNot(EnvelopeOrigin.fromHeartbeat)
+          queryImpl.eventsBySlices[String](entityType, minSlice, maxSlice, offset)
         case Current =>
           queryImpl.currentEventsBySlices[String](entityType, minSlice, maxSlice, offset)
       }

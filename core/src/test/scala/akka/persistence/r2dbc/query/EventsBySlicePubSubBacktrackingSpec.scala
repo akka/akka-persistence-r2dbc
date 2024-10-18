@@ -81,16 +81,6 @@ class EventsBySlicePubSubBacktrackingSpec
       val result: TestSubscriber.Probe[EventEnvelope[String]] =
         query.eventsBySlices[String](this.entityType, slice, slice, NoOffset).runWith(sinkProbe).request(1000)
 
-      @tailrec def expectNextNonHeartbeat(attempt: Int = 1): EventEnvelope[String] = {
-        if (attempt >= 5)
-          throw new IllegalStateException("No next")
-        else
-          result.expectNext() match {
-            case env if env.source == EnvelopeOrigin.SourceHeartbeat => expectNextNonHeartbeat(attempt + 1)
-            case env                                                 => env
-          }
-      }
-
       val topicStatsProbe = createTestProbe[TopicImpl.TopicStats]()
       eventually {
         PubSub(typedSystem).eventTopic[String](this.entityType, slice) ! TopicImpl.GetTopicStats(topicStatsProbe.ref)
@@ -130,38 +120,28 @@ class EventsBySlicePubSubBacktrackingSpec
       }
       // and then the ordinary query
       for (i <- 11 to 20) {
-        val env = expectNextNonHeartbeat()
+        val env = result.expectNext()
         env.event shouldBe s"e-$i"
         env.source shouldBe EnvelopeOrigin.SourceQuery
       }
       // and backtracking
       for (i <- 11 to 20) {
-        val env = expectNextNonHeartbeat()
+        val env = result.expectNext()
         env.sequenceNr shouldBe i
         env.source shouldBe EnvelopeOrigin.SourceBacktracking
       }
 
       // after idle it will emit heartbeat
       Thread.sleep(6000)
-      val heartbeatEnv = result.expectNext()
-      heartbeatEnv.source shouldBe EnvelopeOrigin.SourceHeartbeat
-      heartbeatEnv.slice shouldBe slice
-      persistenceExt.sliceForPersistenceId(heartbeatEnv.persistenceId) shouldBe slice
-      heartbeatEnv.sequenceNr shouldBe 1L
-      heartbeatEnv.filtered shouldBe true
 
       // and because of the heartbeat it will accept PubSub even though it's now > backtracking.window
-      persister ! PersistWithAck("e-20", probe.ref)
-      // looking for the PubSub event, could be several heartbeats and other source
-      var gotIt = false
-      (1 to 10).foreach { _ =>
-        if (!gotIt) {
-          val env = result.expectNext()
-          if (env.source == EnvelopeOrigin.SourcePubSub)
-            gotIt = true
-        }
+      persister ! PersistWithAck("e-21", probe.ref)
+
+      {
+        val env = result.expectNext()
+        env.event shouldBe s"e-21"
+        env.source shouldBe EnvelopeOrigin.SourcePubSub
       }
-      gotIt shouldBe true
 
       result.cancel()
     }
