@@ -19,7 +19,7 @@ inThisBuild(
     developers += Developer(
       "contributors",
       "Contributors",
-      "https://gitter.im/akka/dev",
+      "akka.official@gmail.com",
       url("https://github.com/akka/akka-persistence-r2dbc/graphs/contributors")),
     releaseNotesURL := (
       if (isSnapshot.value) None
