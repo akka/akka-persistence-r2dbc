@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2024 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2022 - 2024 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package docs.home.sharding
 
 //#sharding-init
