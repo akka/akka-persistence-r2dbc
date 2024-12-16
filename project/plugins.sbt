@@ -12,7 +12,7 @@ addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.9.0")
 
 //// docs
 addSbtPlugin("com.lightbend.paradox" % "sbt-paradox-dependencies" % "0.2.4")
-addSbtPlugin("io.akka" % "sbt-paradox-akka" % "24.10.4")
+addSbtPlugin("io.akka" % "sbt-paradox-akka" % "24.10.6")
 addSbtPlugin("com.lightbend.sbt" % "sbt-publish-rsync" % "0.3")
 addSbtPlugin("com.github.sbt" % "sbt-unidoc" % "0.5.0")
 addSbtPlugin("com.github.sbt" % "sbt-site-paradox" % "1.7.0")
