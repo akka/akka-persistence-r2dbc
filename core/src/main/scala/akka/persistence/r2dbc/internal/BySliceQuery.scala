@@ -273,11 +273,9 @@ import org.slf4j.Logger
 
         if (state.queryCount != 0 && log.isDebugEnabled())
           log.debug(
-            "{} next query [{}] from slices [{} - {}], between time [{} - {}]. Found [{}] rows in previous query.",
+            "{} next query [{}], between time [{} - {}]. Found [{}] rows in previous query.",
             logPrefix,
             state.queryCount,
-            minSlice,
-            maxSlice,
             fromTimestamp,
             toTimestamp,
             state.rowCount)
@@ -300,11 +298,9 @@ import org.slf4j.Logger
       } else {
         if (log.isDebugEnabled)
           log.debug(
-            "{} query [{}] from slices [{} - {}] completed. Found [{}] rows in previous query.",
+            "{} query [{}] completed. Found [{}] rows in previous query.",
             logPrefix,
             state.queryCount,
-            minSlice,
-            maxSlice,
             state.rowCount)
 
         state -> None
@@ -319,13 +315,7 @@ import org.slf4j.Logger
       .futureSource[Envelope, NotUsed] {
         currentTimestamp.map { currentTime =>
           if (log.isDebugEnabled())
-            log.debug(
-              "{} query slices [{} - {}], from time [{}] until now [{}].",
-              logPrefix,
-              minSlice,
-              maxSlice,
-              initialOffset.timestamp,
-              currentTime)
+            log.debug("{} query, from time [{}] until now [{}].", logPrefix, initialOffset.timestamp, currentTime)
 
           ContinuousQuery[QueryState, Envelope](
             initialState = QueryState.empty.copy(latest = initialOffset),
@@ -348,12 +338,7 @@ import org.slf4j.Logger
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
-      log.debug(
-        "Starting {} query from slices [{} - {}], from time [{}].",
-        logPrefix,
-        minSlice,
-        maxSlice,
-        initialOffset.timestamp)
+      log.debug("{} starting query from time [{}].", logPrefix, initialOffset.timestamp)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState = {
       if (EnvelopeOrigin.isHeartbeatEvent(envelope))
@@ -408,13 +393,7 @@ import org.slf4j.Logger
 
         if (log.isDebugEnabled)
           delay.foreach { d =>
-            log.debug(
-              "{} query [{}] from slices [{} - {}] delay next [{}] ms.",
-              logPrefix,
-              state.queryCount,
-              minSlice,
-              maxSlice,
-              d.toMillis)
+            log.debug("{} query [{}] delay next [{}] ms.", logPrefix, state.queryCount, d.toMillis)
           }
 
         delay
@@ -517,12 +496,10 @@ import org.slf4j.Logger
           else
             ""
         log.debug(
-          "{} next query [{}]{} from slices [{} - {}], between time [{} - {}]. {}",
+          "{} next query [{}]{}, between time [{} - {}]. {}",
           logPrefix,
           newState.queryCount,
           backtrackingInfo,
-          minSlice,
-          maxSlice,
           fromTimestamp,
           toTimestamp.getOrElse("None"),
           if (newIdleCount >= 3) s"Idle in [$newIdleCount] queries."
@@ -617,12 +594,10 @@ import org.slf4j.Logger
           if (log.isDebugEnabled) {
             val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
             log.debug(
-              "{} retrieved [{}] event count buckets, with a total of [{}], from slices [{} - {}], from time [{}]",
+              "{} retrieved [{}] event count buckets, with a total of [{}], from time [{}]",
               logPrefix,
               counts.size,
               sum,
-              minSlice,
-              maxSlice,
               fromTimestamp)
           }
           newState

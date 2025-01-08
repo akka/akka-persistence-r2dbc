@@ -270,7 +270,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     bySlice(entityType, minSlice)
-      .currentBySlices("currentEventsBySlices", entityType, minSlice, maxSlice, offset)
+      .currentBySlices(
+        s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]: ",
+        entityType,
+        minSlice,
+        maxSlice,
+        offset)
   }
 
   /**
@@ -312,7 +317,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
     val dbSource =
-      bySlice[Event](entityType, minSlice).liveBySlices("eventsBySlices", entityType, minSlice, maxSlice, offset)
+      bySlice[Event](entityType, minSlice).liveBySlices(
+        s"[$entityType] eventsBySlices [$minSlice-$maxSlice]: ",
+        entityType,
+        minSlice,
+        maxSlice,
+        offset)
     if (settings.journalPublishEvents) {
       val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
       mergeDbAndPubSubSources(dbSource, pubSubSource)
@@ -345,7 +355,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
-        .currentBySlices("currentSnapshotsBySlices", entityType, minSlice, maxSlice, offset)
+        .currentBySlices(
+          s"[$entityType] currentSnapshotsBySlices [$minSlice-$maxSlice]: ",
+          entityType,
+          minSlice,
+          maxSlice,
+          offset)
 
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
@@ -368,7 +383,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             snapshotOffsets.size)
 
           bySlice(entityType, minSlice).currentBySlices(
-            "currentEventsBySlices",
+            s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]: ",
             entityType,
             minSlice,
             maxSlice,
@@ -402,7 +417,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
-        .currentBySlices("snapshotsBySlices", entityType, minSlice, maxSlice, offset)
+        .currentBySlices(
+          s"[$entityType] snapshotsBySlices [$minSlice-$maxSlice]: ",
+          entityType,
+          minSlice,
+          maxSlice,
+          offset)
 
     Source.fromGraph(
       new StartingFromSnapshotStage[Event](
@@ -426,7 +446,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
           val dbSource =
             bySlice[Event](entityType, minSlice).liveBySlices(
-              "eventsBySlices",
+              s"[$entityType] eventsBySlices [$minSlice-$maxSlice]: ",
               entityType,
               minSlice,
               maxSlice,
@@ -697,11 +717,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // EventTimestampQuery
   override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
-    queryDao.timestampOfEvent(persistenceId, sequenceNr)
+    val result = queryDao.timestampOfEvent(persistenceId, sequenceNr)
+    if (log.isDebugEnabled) {
+      result.foreach { t =>
+        log.debug("[{}] timestampOf seqNr [{}] is [{}]", persistenceId, sequenceNr, t)
+      }
+    }
+    result
   }
 
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
+    log.debug("[{}] loadEnvelope seqNr [{}]", persistenceId, sequenceNr)
     queryDao
       .loadEvent(persistenceId, sequenceNr, includePayload = true)
       .map {
