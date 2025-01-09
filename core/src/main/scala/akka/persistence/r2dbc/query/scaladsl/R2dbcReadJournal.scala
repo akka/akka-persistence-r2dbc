@@ -624,6 +624,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
                     env.sequenceNr)
                   Nil
                 } else {
+                  if (log.isDebugEnabled()) {
+                    if (latestBacktracking.isAfter(t.timestamp))
+                      log.debug(
+                        "Event from query for persistenceId [{}] seqNr [{}] timestamp [{}]" +
+                        " was before latest timestamp from backtracking or heartbeat [{}].",
+                        env.persistenceId,
+                        env.sequenceNr,
+                        t.timestamp,
+                        latestBacktracking)
+                  }
                   env :: Nil
                 }
               case _ =>
