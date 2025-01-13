@@ -368,16 +368,6 @@ import org.slf4j.Logger
           if (offset.timestamp.isBefore(state.latest.timestamp))
             throw new IllegalArgumentException(s"Unexpected offset [$offset] before latest [${state.latest}].")
 
-          if (log.isDebugEnabled()) {
-            if (state.latestBacktracking.seen.nonEmpty &&
-              offset.timestamp.isAfter(state.latestBacktracking.timestamp.plus(firstBacktrackingQueryWindow)))
-              log.debug(
-                "{} next offset is outside the backtracking window, latestBacktracking: [{}], offset: [{}]",
-                logPrefix,
-                state.latestBacktracking,
-                offset)
-          }
-
           state.copy(latest = offset, rowCount = state.rowCount + 1)
         }
       }
