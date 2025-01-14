@@ -159,18 +159,24 @@ import org.slf4j.Logger
 
     // Key is the epoch seconds for the start of the bucket.
     // Value is the number of entries in the bucket.
-    def add(bucketCounts: Seq[Bucket]): Buckets =
-      new Buckets(countByBucket ++ bucketCounts.iterator.map { case Bucket(startTime, count) => startTime -> count })
-
-    def clearUntil(time: Instant): Buckets = {
-      val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
-      val newCountByBucket = countByBucket.dropWhile { case (key, _) => epochSeconds >= key }
-      if (newCountByBucket.size == countByBucket.size)
-        this
-      else if (newCountByBucket.isEmpty)
-        new Buckets(immutable.SortedMap(countByBucket.last)) // keep last
+    def add(bucketCounts: Seq[Bucket]): Buckets = {
+      val newCountByBucket = countByBucket ++ bucketCounts.iterator.map { case Bucket(startTime, count) =>
+        startTime -> count
+      }
+      if (newCountByBucket.size > Buckets.Limit)
+        new Buckets(newCountByBucket.drop(newCountByBucket.size - Buckets.Limit))
       else
         new Buckets(newCountByBucket)
+    }
+
+    def nextStartTime: Option[Instant] = {
+      // we only expect the last 2 buckets to change from previous bucket count query
+      if (size < 2)
+        None
+      else {
+        val startSeconds = countByBucket.keysIterator.toVector(countByBucket.size - 2)
+        Some(Instant.ofEpochSecond(startSeconds))
+      }
     }
 
     def isEmpty: Boolean = countByBucket.isEmpty
@@ -581,17 +587,20 @@ import org.slf4j.Logger
         .findTimeForLimit(state.latest.timestamp, settings.querySettings.bufferSize)
         .isEmpty)) {
 
-      val fromTimestamp =
-        if (state.latestBacktracking.timestamp == Instant.EPOCH && state.latest.timestamp == Instant.EPOCH)
-          Instant.EPOCH
-        else if (state.latestBacktracking.timestamp == Instant.EPOCH)
-          state.latest.timestamp.minus(firstBacktrackingQueryWindow)
-        else
-          state.latestBacktracking.timestamp
+      val fromTimestamp = state.buckets.nextStartTime match {
+        case Some(t) if !dao.countBucketsMayChange => t
+        case _ =>
+          if (state.latestBacktracking.timestamp == Instant.EPOCH && state.latest.timestamp == Instant.EPOCH)
+            Instant.EPOCH
+          else if (state.latestBacktracking.timestamp == Instant.EPOCH)
+            state.latest.timestamp.minus(firstBacktrackingQueryWindow)
+          else
+            state.latestBacktracking.timestamp
+      }
 
       val futureState =
         dao.countBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit).map { counts =>
-          val newBuckets = state.buckets.clearUntil(fromTimestamp).add(counts)
+          val newBuckets = state.buckets.add(counts)
           val newState = state.copy(buckets = newBuckets)
           if (log.isDebugEnabled) {
             val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
