@@ -170,11 +170,10 @@ import org.slf4j.Logger
     }
 
     def nextStartTime: Option[Instant] = {
-      // we only expect the last 2 buckets to change from previous bucket count query
-      if (size < 2)
+      if (isEmpty)
         None
       else {
-        val startSeconds = countByBucket.keysIterator.toVector(countByBucket.size - 2)
+        val startSeconds = countByBucket.last._1 - BucketDurationSeconds
         Some(Instant.ofEpochSecond(startSeconds))
       }
     }
@@ -222,17 +221,12 @@ import org.slf4j.Logger
         fromTimestamp: Instant,
         limit: Int): Future[Seq[Bucket]]
 
-    protected def appendTwoEmptyBucketsIfMissing(
+    protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
         toTimestamp: Instant): IndexedSeq[Bucket] = {
-      import Buckets.BucketDurationSeconds
       val startTimeOfLastBucket = (toTimestamp.getEpochSecond / 10) * 10
-      val startTimeOf2ndLastBucket = ((toTimestamp.getEpochSecond - BucketDurationSeconds) / 10) * 10
-      if (buckets.last.startTime != startTimeOfLastBucket && buckets.reverseIterator
-          .drop(1)
-          .next()
-          .startTime != startTimeOf2ndLastBucket)
-        buckets :+ Bucket(startTimeOf2ndLastBucket, 0) :+ Bucket(startTimeOfLastBucket, 0)
+      if (buckets.last.startTime != startTimeOfLastBucket)
+        buckets :+ Bucket(startTimeOfLastBucket, 0)
       else
         buckets
     }

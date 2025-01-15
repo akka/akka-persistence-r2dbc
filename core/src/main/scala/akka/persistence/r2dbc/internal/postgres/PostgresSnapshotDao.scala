@@ -468,7 +468,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     if (toTimestamp == now)
       result
     else
-      result.map(appendTwoEmptyBucketsIfMissing(_, toTimestamp))
+      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
 
   }
 

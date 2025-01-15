@@ -892,7 +892,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     if (toTimestamp == now)
       result
     else
-      result.map(appendTwoEmptyBucketsIfMissing(_, toTimestamp))
+      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
   }
 
   private def additionalBindings(

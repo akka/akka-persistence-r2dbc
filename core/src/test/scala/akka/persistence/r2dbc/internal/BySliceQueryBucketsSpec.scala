@@ -18,7 +18,7 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
 
   private val startTime = InstantFactory.now()
   private val firstBucketStartTime = startTime.plusSeconds(60)
-  private val firstBucketStartEpochSeconds = firstBucketStartTime.toEpochMilli / 1000
+  private val firstBucketStartEpochSeconds = firstBucketStartTime.getEpochSecond
 
   private def bucketStartEpochSeconds(bucketIndex: Int): Long =
     firstBucketStartEpochSeconds + BucketDurationSeconds * bucketIndex
@@ -83,7 +83,8 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
 
       Buckets.empty
         .add(List(Bucket(bucketStartEpochSeconds(0), 101)))
-        .nextStartTime shouldBe None
+        .nextStartTime shouldBe Some(
+        firstBucketStartTime.minusSeconds(Buckets.BucketDurationSeconds).truncatedTo(ChronoUnit.SECONDS))
     }
 
   }

@@ -353,7 +353,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     if (toTimestamp == now)
       result
     else
-      result.map(appendTwoEmptyBucketsIfMissing(_, toTimestamp))
+      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
   }
 
   /**

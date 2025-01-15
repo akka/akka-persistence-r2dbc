@@ -58,7 +58,7 @@ class BucketCountSpec
       }
     }
 
-    "append 2 empty buckets if no events in the last buckets, before now" in {
+    "append empty bucket if no events in the last bucket, limit before now" in {
       pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
@@ -81,14 +81,12 @@ class BucketCountSpec
           .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
-        buckets.size shouldBe 12
+        buckets.size shouldBe 1
         buckets.head.startTime shouldBe bucketStartTime
         // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
         buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
         buckets.last.count shouldBe 0
-        buckets.dropRight(1).last.startTime shouldBe (bucketStartTime + limit * Buckets.BucketDurationSeconds)
-        buckets.dropRight(1).last.count shouldBe 0
-        buckets.map(_.count).toSet shouldBe Set(2, 0)
+        buckets.dropRight(1).map(_.count).toSet shouldBe Set(2)
         buckets.map(_.count).sum shouldBe (2 * 10)
       }
     }
