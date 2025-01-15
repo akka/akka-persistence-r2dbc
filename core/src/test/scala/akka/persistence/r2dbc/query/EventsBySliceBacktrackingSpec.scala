@@ -359,6 +359,17 @@ class EventsBySliceBacktrackingSpec
       // no backtracking
       result1.expectNoMessage()
 
+      val now = InstantFactory.now().minus(settings.querySettings.backtrackingBehindCurrentTime.toJava)
+      writeEvent(slice1, pid1, 31, now.plusMillis(1), "e1-31")
+      writeEvent(slice2, pid2, 31, now.plusMillis(2), "e2-31")
+
+      expect(result1.expectNext(), pid1, 31, Some("e1-31"))
+      expect(result1.expectNext(), pid2, 31, Some("e2-31"))
+
+      // backtracking events
+      expect(result1.expectNext(), pid1, 31, None)
+      expect(result1.expectNext(), pid2, 31, None)
+
       result1.cancel()
     }
 
