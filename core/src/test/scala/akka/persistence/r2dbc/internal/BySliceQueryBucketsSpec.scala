@@ -71,6 +71,22 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
       moreBuckets.size shouldBe Buckets.Limit
     }
 
+    "clear until time" in {
+      buckets.clearUntil(startTime).size shouldBe buckets.size
+      buckets.clearUntil(firstBucketStartTime).size shouldBe buckets.size
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(9)).size shouldBe buckets.size
+
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(10)).size shouldBe buckets.size - 1
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(11)).size shouldBe buckets.size - 1
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(19)).size shouldBe buckets.size - 1
+
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(31)).size shouldBe buckets.size - 3
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(100)).size shouldBe 1 // keep last
+
+      // don't change createdAt
+      buckets.clearUntil(firstBucketStartTime.plusSeconds(31)).createdAt shouldBe buckets.createdAt
+    }
+
     "provide start time for next query" in {
       Buckets.empty
         .add(List(Bucket(bucketStartEpochSeconds(0), 101), Bucket(bucketStartEpochSeconds(1), 202)))
