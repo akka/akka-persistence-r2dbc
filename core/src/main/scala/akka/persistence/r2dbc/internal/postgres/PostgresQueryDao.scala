@@ -23,6 +23,7 @@ import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.BucketDurationSeconds
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.QueryDao
@@ -324,8 +325,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       limit: Int): Future[Seq[Bucket]] = {
     val executor = executorProvider.executorFor(minSlice)
 
+    val now = InstantFactory.now() // not important to use database time
     val toTimestamp = {
-      val now = InstantFactory.now() // not important to use database time
       if (fromTimestamp == Instant.EPOCH)
         now
       else {
@@ -349,7 +350,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
-    result
+    if (toTimestamp == now)
+      result
+    else
+      result.map(appendTwoEmptyBucketsIfMissing(_, toTimestamp))
   }
 
   /**

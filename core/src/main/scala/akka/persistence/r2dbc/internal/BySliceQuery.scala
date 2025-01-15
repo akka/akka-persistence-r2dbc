@@ -222,6 +222,21 @@ import org.slf4j.Logger
         fromTimestamp: Instant,
         limit: Int): Future[Seq[Bucket]]
 
+    protected def appendTwoEmptyBucketsIfMissing(
+        buckets: IndexedSeq[Bucket],
+        toTimestamp: Instant): IndexedSeq[Bucket] = {
+      import Buckets.BucketDurationSeconds
+      val startTimeOfLastBucket = (toTimestamp.getEpochSecond / 10) * 10
+      val startTimeOf2ndLastBucket = ((toTimestamp.getEpochSecond - BucketDurationSeconds) / 10) * 10
+      if (buckets.last.startTime != startTimeOfLastBucket && buckets.reverseIterator
+          .drop(1)
+          .next()
+          .startTime != startTimeOf2ndLastBucket)
+        buckets :+ Bucket(startTimeOf2ndLastBucket, 0) :+ Bucket(startTimeOfLastBucket, 0)
+      else
+        buckets
+    }
+
   }
 }
 

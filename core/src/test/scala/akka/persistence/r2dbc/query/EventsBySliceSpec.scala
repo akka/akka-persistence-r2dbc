@@ -4,8 +4,6 @@
 
 package akka.persistence.r2dbc.query
 
-import java.time.Instant
-
 import scala.concurrent.Await
 
 import akka.Done
@@ -30,16 +28,9 @@ import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
 import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.PayloadCodec
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
-import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.TimestampCodec
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.internal.ReplicatedEventMetadata
-import akka.serialization.SerializationExtension
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.testkit.TestSubscriber
@@ -47,7 +38,6 @@ import akka.stream.testkit.scaladsl.TestSink
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
-import org.slf4j.LoggerFactory
 
 object EventsBySliceSpec {
   sealed trait QueryType
@@ -86,40 +76,6 @@ class EventsBySliceSpec
   override def typedSystem: ActorSystem[_] = system
 
   private val query = PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
-
-  implicit val payloadCodec: PayloadCodec = settings.codecSettings.JournalImplicits.journalPayloadCodec
-  implicit val timestampCodec: TimestampCodec = settings.codecSettings.JournalImplicits.timestampCodec
-  implicit val queryAdapter: QueryAdapter = settings.codecSettings.JournalImplicits.queryAdapter
-
-  private val stringSerializer = SerializationExtension(system).serializerFor(classOf[String])
-
-  private val log = LoggerFactory.getLogger(getClass)
-
-  // to be able to store events with specific timestamps
-  private def writeEvent(slice: Int, persistenceId: String, seqNr: Long, timestamp: Instant, event: String): Unit = {
-    log.debug("Write test event [{}] [{}] [{}] at time [{}]", persistenceId, seqNr, event, timestamp)
-
-    val insertEventSql = sql"""
-      INSERT INTO ${settings.journalTableWithSchema(slice)}
-      (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload)
-      VALUES (?, ?, ?, ?, ?, '', '', ?, '', ?)"""
-
-    val entityType = PersistenceId.extractEntityType(persistenceId)
-
-    val result = r2dbcExecutor(slice).updateOne("test writeEvent") { connection =>
-      connection
-        .createStatement(insertEventSql)
-        .bind(0, slice)
-        .bind(1, entityType)
-        .bind(2, persistenceId)
-        .bind(3, seqNr)
-        .bindTimestamp(4, timestamp)
-        .bind(5, stringSerializer.identifier)
-        .bindPayload(6, stringSerializer.toBinary(event))
-    }
-
-    result.futureValue shouldBe 1
-  }
 
   private class Setup {
     val entityType = nextEntityType()
