@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.internal
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
@@ -62,17 +63,27 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
       buckets.findTimeForLimit(firstBucketStartTime.plusSeconds(3), 1500) shouldBe None
     }
 
-    "clear until time" in {
-      buckets.clearUntil(startTime).size shouldBe buckets.size
-      buckets.clearUntil(firstBucketStartTime).size shouldBe buckets.size
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(9)).size shouldBe buckets.size
+    "add buckets with limit of number of buckets" in {
+      val manyBuckets = Buckets.empty.add((0 until Buckets.Limit).map(i => Bucket(bucketStartEpochSeconds(i), i)))
+      manyBuckets.size shouldBe Buckets.Limit
 
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(10)).size shouldBe buckets.size - 1
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(11)).size shouldBe buckets.size - 1
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(19)).size shouldBe buckets.size - 1
+      val moreBuckets = Buckets.empty.add((0 until Buckets.Limit + 10).map(i => Bucket(bucketStartEpochSeconds(i), i)))
+      moreBuckets.size shouldBe Buckets.Limit
+    }
 
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(31)).size shouldBe buckets.size - 3
-      buckets.clearUntil(firstBucketStartTime.plusSeconds(100)).size shouldBe 1 // keep last
+    "provide start time for next query" in {
+      Buckets.empty
+        .add(List(Bucket(bucketStartEpochSeconds(0), 101), Bucket(bucketStartEpochSeconds(1), 202)))
+        .nextStartTime shouldBe Some(firstBucketStartTime.truncatedTo(ChronoUnit.SECONDS))
+
+      buckets.nextStartTime shouldBe Some(
+        firstBucketStartTime.plusSeconds(4 * BucketDurationSeconds).truncatedTo(ChronoUnit.SECONDS))
+
+      Buckets.empty.nextStartTime shouldBe None
+
+      Buckets.empty
+        .add(List(Bucket(bucketStartEpochSeconds(0), 101)))
+        .nextStartTime shouldBe None
     }
 
   }
