@@ -81,7 +81,7 @@ class BucketCountSpec
           .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
-        buckets.size shouldBe 1
+        buckets.size shouldBe 11
         buckets.head.startTime shouldBe bucketStartTime
         // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
         buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
