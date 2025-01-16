@@ -305,11 +305,16 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       else
         "SELECT persistence_id, revision, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, state_ser_id, state_ser_manifest, state_payload "
 
+    val sliceFilter = {
+      if (settings.querySettings.explicitSliceRangeCondition) sliceCondition(minSlice, maxSlice)
+      else s"slice BETWEEN $minSlice AND $maxSlice"
+    }
+
     sql"""
       $selectColumns
       FROM $stateTable
       WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
+      AND $sliceFilter
       AND db_timestamp >= ? $maxDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       ORDER BY db_timestamp, revision
       LIMIT ?"""

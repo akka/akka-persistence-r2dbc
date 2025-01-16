@@ -99,11 +99,16 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         "SELECT slice, persistence_id, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, tags, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload "
     }
 
+    val sliceFilter = {
+      if (settings.querySettings.explicitSliceRangeCondition) sliceCondition(minSlice, maxSlice)
+      else s"slice BETWEEN $minSlice AND $maxSlice"
+    }
+
     sql"""
       $selectColumns
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
+      AND $sliceFilter
       AND db_timestamp >= ? $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
       AND deleted = false
       ORDER BY db_timestamp, seq_nr
