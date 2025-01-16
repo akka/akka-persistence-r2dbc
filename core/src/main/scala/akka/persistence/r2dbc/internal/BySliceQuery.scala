@@ -132,10 +132,10 @@ import org.slf4j.Logger
    * @param countByBucket
    *   Key is the epoch seconds for the start of the bucket. Value is the number of entries in the bucket.
    */
-  class Buckets(countByBucket: immutable.SortedMap[Buckets.EpochSeconds, Buckets.Count]) {
+  class Buckets(
+      countByBucket: immutable.SortedMap[Buckets.EpochSeconds, Buckets.Count],
+      val createdAt: Instant = InstantFactory.now()) {
     import Buckets.{ Bucket, BucketDurationSeconds, Count, EpochSeconds }
-
-    val createdAt: Instant = InstantFactory.now()
 
     def findTimeForLimit(from: Instant, atLeastCounts: Int): Option[Instant] = {
       val fromEpochSeconds = from.toEpochMilli / 1000
@@ -169,12 +169,22 @@ import org.slf4j.Logger
         new Buckets(newCountByBucket)
     }
 
+    def clearUntil(time: Instant): Buckets = {
+      val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
+      val newCountByBucket = countByBucket.dropWhile { case (key, _) => epochSeconds >= key }
+      if (newCountByBucket.size == countByBucket.size)
+        this
+      else if (newCountByBucket.isEmpty)
+        new Buckets(immutable.SortedMap(countByBucket.last), createdAt = this.createdAt) // keep last
+      else
+        new Buckets(newCountByBucket, createdAt = this.createdAt)
+    }
+
     def nextStartTime: Option[Instant] = {
-      // we only expect the last 2 buckets to change from previous bucket count query
-      if (size < 2)
+      if (isEmpty)
         None
       else {
-        val startSeconds = countByBucket.keysIterator.toVector(countByBucket.size - 2)
+        val startSeconds = countByBucket.last._1 - BucketDurationSeconds
         Some(Instant.ofEpochSecond(startSeconds))
       }
     }
@@ -222,6 +232,16 @@ import org.slf4j.Logger
         fromTimestamp: Instant,
         limit: Int): Future[Seq[Bucket]]
 
+    protected def appendEmptyBucketIfLastIsMissing(
+        buckets: IndexedSeq[Bucket],
+        toTimestamp: Instant): IndexedSeq[Bucket] = {
+      val startTimeOfLastBucket = (toTimestamp.getEpochSecond / 10) * 10
+      if (buckets.last.startTime != startTimeOfLastBucket)
+        buckets :+ Bucket(startTimeOfLastBucket, 0)
+      else
+        buckets
+    }
+
   }
 }
 
@@ -267,10 +287,14 @@ import org.slf4j.Logger
       // so continue until rowCount is 0. That means an extra query at the end to make sure there are no
       // more to fetch.
       if (state.queryCount == 0L || state.rowCount > 0) {
-        val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1, previous = state.latest)
-
         val fromTimestamp = state.latest.timestamp
         val fromSeqNr = highestSeenSeqNr(state.previous, state.latest)
+
+        val newState = state.copy(
+          rowCount = 0,
+          queryCount = state.queryCount + 1,
+          buckets = state.buckets.clearUntil(fromTimestamp),
+          previous = state.latest)
 
         val toTimestamp = newState.nextQueryToTimestamp(backtrackingWindow, settings.querySettings.bufferSize) match {
           case Some(t) =>
@@ -456,6 +480,7 @@ import org.slf4j.Logger
             backtrackingCount = 1,
             latestBacktracking = fromOffset,
             backtrackingExpectFiltered = state.latestBacktrackingSeenCount,
+            buckets = state.buckets.clearUntil(fromOffset.timestamp),
             currentQueryWallClock = newQueryWallClock,
             previousQueryWallClock = state.currentQueryWallClock,
             idleCountBeforeHeartbeat = newIdleCountBeforeHeartbeat)

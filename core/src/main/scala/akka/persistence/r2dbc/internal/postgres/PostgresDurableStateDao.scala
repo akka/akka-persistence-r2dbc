@@ -863,8 +863,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       fromTimestamp: Instant,
       limit: Int): Future[Seq[Bucket]] = {
 
+    val now = InstantFactory.now() // not important to use database time
     val toTimestamp = {
-      val now = InstantFactory.now() // not important to use database time
       if (fromTimestamp == Instant.EPOCH)
         now
       else {
@@ -889,8 +889,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
 
-    result
-
+    if (toTimestamp == now)
+      result
+    else
+      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
   }
 
   private def additionalBindings(
