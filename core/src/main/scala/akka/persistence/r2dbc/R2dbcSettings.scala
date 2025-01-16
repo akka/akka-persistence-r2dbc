@@ -507,6 +507,7 @@ final class QuerySettings(config: Config) {
   val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
   val cacheLatestEventTimestamp: Option[FiniteDuration] = config.optDuration("cache-latest-event-timestamp")
+  val estimateTimeRange: Boolean = config.getBoolean("estimate-time-range")
 }
 
 /**
