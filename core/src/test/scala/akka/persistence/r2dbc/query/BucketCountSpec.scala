@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.query
 
+import java.time.Instant
+
 import org.scalatest.wordspec.AnyWordSpecLike
 
 import akka.actor.testkit.typed.scaladsl.LogCapturing
@@ -38,7 +40,8 @@ class BucketCountSpec
       val slice2 = persistenceExt.sliceForPersistenceId(pid2)
 
       val startTime = InstantFactory.now().minusSeconds(3600)
-      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
+      // db epoch seconds is rounding, but Instant is not
+      val bucketStartTime = (startTime.plusMillis(500).getEpochSecond / 10) * 10
 
       (0 until 10).foreach { i =>
         writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
@@ -69,7 +72,8 @@ class BucketCountSpec
 
       val limit = 100
       val startTime = InstantFactory.now().minusSeconds(3600)
-      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
+      // db epoch seconds is rounding, but Instant is not
+      val bucketStartTime = (startTime.plusMillis(500).getEpochSecond / 10) * 10
 
       (0 until 10).foreach { i =>
         writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")

@@ -235,7 +235,8 @@ import org.slf4j.Logger
     protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
         toTimestamp: Instant): IndexedSeq[Bucket] = {
-      val startTimeOfLastBucket = (toTimestamp.getEpochSecond / 10) * 10
+      // db epoch seconds is rounding, but Instant is not
+      val startTimeOfLastBucket = (toTimestamp.plusMillis(500).getEpochSecond / 10) * 10
       if (buckets.last.startTime != startTimeOfLastBucket)
         buckets :+ Bucket(startTimeOfLastBucket, 0)
       else
