@@ -725,6 +725,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .mapMaterializedValue(_ => NotUsed)
   }
 
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[r2dbc] def internalLastEventByPersistenceId(
+      persistenceId: String,
+      toSequenceNr: Long,
+      includeDeleted: Boolean): Future[Option[SerializedJournalRow]] = {
+    queryDao.loadLastEvent(persistenceId, toSequenceNr, includeDeleted)
+  }
+
   // EventTimestampQuery
   override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
     val result = queryDao.timestampOfEvent(persistenceId, sequenceNr)

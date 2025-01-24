@@ -242,7 +242,7 @@ class EventsBySliceSpec
         val probe = testKit.createTestProbe[Done]()
         val entityType = nextEntityType()
         val entityId = "entity-1"
-        val persistenceId = PersistenceId(entityType, entityId)
+        val persistenceId = TestActors.replicatedEventSourcedPersistenceId(entityType, entityId)
         val slice = query.sliceForPersistenceId(persistenceId.id)
 
         val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))

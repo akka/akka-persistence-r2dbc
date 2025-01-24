@@ -38,6 +38,8 @@ object R2dbcSnapshotStore {
             .deserialize(serializedMeta.payload, serializedMeta.serializerId, serializedMeta.serializerManifest)
             .get)),
       serialization.deserialize(snap.snapshot, snap.serializerId, snap.serializerManifest).get)
+
+  private val FutureNone = Future.successful(None)
 }
 
 /**
@@ -49,6 +51,7 @@ object R2dbcSnapshotStore {
 @InternalApi
 private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) extends SnapshotStore {
   import R2dbcSnapshotStore.deserializeSnapshotRow
+  import R2dbcSnapshotStore.FutureNone
 
   private implicit val ec: ExecutionContext = context.dispatcher
   private val serialization: Serialization = SerializationExtension(context.system)
@@ -69,10 +72,14 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
   private val dao = settings.connectionFactorySettings.dialect.createSnapshotDao(executorProvider)
   private val queryDao = settings.connectionFactorySettings.dialect.createQueryDao(executorProvider)
 
-  def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] =
-    dao
-      .load(persistenceId, criteria)
-      .map(_.map(row => deserializeSnapshotRow(row, serialization)))
+  def loadAsync(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SelectedSnapshot]] = {
+    if (criteria.maxSequenceNr <= 0)
+      FutureNone
+    else
+      dao
+        .load(persistenceId, criteria)
+        .map(_.map(row => deserializeSnapshotRow(row, serialization)))
+  }
 
   def saveAsync(metadata: SnapshotMetadata, snapshot: Any): Future[Unit] = {
     val entityType = PersistenceId.extractEntityType(metadata.persistenceId)

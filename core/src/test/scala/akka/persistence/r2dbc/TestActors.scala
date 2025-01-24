@@ -14,6 +14,7 @@ import akka.persistence.typed.ReplicaId
 import akka.persistence.typed.ReplicationId
 import akka.persistence.typed.SnapshotCompleted
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
+import akka.persistence.typed.scaladsl.Recovery
 import akka.persistence.typed.scaladsl.ReplicatedEventSourcing
 import akka.persistence.typed.state.scaladsl.DurableStateBehavior
 
@@ -79,6 +80,16 @@ object TestActors {
             snapshotProbe ! metadata.sequenceNr
             Behaviors.same
           }
+      }
+    }
+
+    def withRecovery(pid: PersistenceId, recovery: Recovery): Behavior[Command] = {
+      Behaviors.setup { context =>
+        eventSourcedBehavior(pid, context)
+          .snapshotWhen { case (_, event, _) =>
+            event.toString.contains("snap")
+          }
+          .withRecovery(recovery)
       }
     }
 
@@ -198,8 +209,11 @@ object TestActors {
         ReplicationId(entityType, entityId, ReplicaId("dc-1")),
         Set(ReplicaId("dc-1")),
         R2dbcReadJournal.Identifier) { replicationContext =>
-        Persister.eventSourcedBehavior(PersistenceId(entityType, entityId), context)
+        Persister.eventSourcedBehavior(replicationContext.persistenceId, context)
       }
     }
   }
+
+  def replicatedEventSourcedPersistenceId(entityType: String, entityId: String): PersistenceId =
+    ReplicationId(entityType, entityId, ReplicaId("dc-1")).persistenceId
 }

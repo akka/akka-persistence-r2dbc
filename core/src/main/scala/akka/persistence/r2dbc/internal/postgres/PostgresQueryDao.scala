@@ -12,6 +12,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
+import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -137,7 +138,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectOneEventSql(slice: Int): String =
     sqlCache.get(slice, "selectOneEventSql") {
       sql"""
-      SELECT slice, entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
       FROM ${journalTable(slice)}
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
     }
@@ -145,15 +146,36 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectOneEventWithoutPayloadSql(slice: Int): String =
     sqlCache.get(slice, "selectOneEventWithoutPayloadSql") {
       sql"""
-      SELECT slice, entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       FROM ${journalTable(slice)}
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+    }
+
+  protected def selectLastEventSql(slice: Int): String =
+    sqlCache.get(slice, "selectLastEventSql") {
+      sql"""
+      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr <= ? AND deleted = $sqlFalse
+      ORDER BY seq_nr DESC
+      LIMIT 1"""
+    }
+
+  protected def selectLastEventIncludeDeletedSql(slice: Int): String =
+    sqlCache.get(slice, "selectLastEventIncludeDeletedSql") {
+      sql"""
+      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr <= ?
+      ORDER BY seq_nr DESC
+      LIMIT 1
+      """
     }
 
   protected def selectEventsSql(slice: Int): String =
     sqlCache.get(slice, "selectEventsSql") {
       sql"""
-      SELECT slice, entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       from ${journalTable(slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       AND deleted = false
@@ -164,7 +186,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectEventsIncludeDeletedSql(slice: Int): String =
     sqlCache.get(slice, "selectEventsIncludeDeletedSql") {
       sql"""
-      SELECT slice, entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
       from ${journalTable(slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       ORDER BY seq_nr
@@ -393,7 +415,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
             Some(row.getPayload("event_payload"))
           else None
         SerializedJournalRow(
-          slice = row.get[Integer]("slice", classOf[Integer]),
+          slice = slice,
           entityType = row.get("entity_type", classOf[String]),
           persistenceId,
           seqNr,
@@ -405,6 +427,42 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           writerUuid = "", // not need in this query
           tags = row.getTags("tags"),
           metadata = readMetadata(row))
+      })
+  }
+
+  override def loadLastEvent(
+      persistenceId: String,
+      toSeqNr: Long,
+      includeDeleted: Boolean): Future[Option[SerializedJournalRow]] = {
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    val selectSql = if (includeDeleted) selectLastEventIncludeDeletedSql(slice) else selectLastEventSql(slice)
+    executor.selectOne("select last event")(
+      connection => {
+        connection
+          .createStatement(selectSql)
+          .bind(0, persistenceId)
+          .bind(1, toSeqNr)
+      },
+      row => {
+        if (includeDeleted && row.get[java.lang.Boolean]("deleted", classOf[java.lang.Boolean])) {
+          // deleted row
+          deletedJournalRow(slice, persistenceId, row)
+        } else {
+          SerializedJournalRow(
+            slice = slice,
+            entityType = row.get("entity_type", classOf[String]),
+            persistenceId,
+            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+            dbTimestamp = row.getTimestamp("db_timestamp"),
+            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
+            payload = Some(row.getPayload("event_payload")),
+            serId = row.get[Integer]("event_ser_id", classOf[Integer]),
+            serManifest = row.get("event_ser_manifest", classOf[String]),
+            writerUuid = row.get("writer", classOf[String]),
+            tags = row.getTags("tags"),
+            metadata = readMetadata(row))
+        }
       })
   }
 
@@ -424,22 +482,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       row =>
         if (includeDeleted && row.get[java.lang.Boolean]("deleted", classOf[java.lang.Boolean])) {
           // deleted row
-          SerializedJournalRow(
-            slice = row.get[Integer]("slice", classOf[Integer]),
-            entityType = row.get("entity_type", classOf[String]),
-            persistenceId = persistenceId,
-            seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
-            dbTimestamp = row.getTimestamp("db_timestamp"),
-            readDbTimestamp = row.getTimestamp("read_db_timestamp"),
-            payload = None,
-            serId = 0,
-            serManifest = "",
-            writerUuid = "",
-            tags = Set.empty,
-            metadata = None)
+          deletedJournalRow(slice, persistenceId, row)
         } else {
           SerializedJournalRow(
-            slice = row.get[Integer]("slice", classOf[Integer]),
+            slice = slice,
             entityType = row.get("entity_type", classOf[String]),
             persistenceId = persistenceId,
             seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
@@ -457,6 +503,22 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       result.foreach(rows => log.debug("Read [{}] events for persistenceId [{}]", rows.size, persistenceId))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
+  private def deletedJournalRow(slice: Int, persistenceId: String, row: Row): SerializedJournalRow = {
+    SerializedJournalRow(
+      slice = slice,
+      entityType = row.get("entity_type", classOf[String]),
+      persistenceId = persistenceId,
+      seqNr = row.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]),
+      dbTimestamp = row.getTimestamp("db_timestamp"),
+      readDbTimestamp = row.getTimestamp("read_db_timestamp"),
+      payload = None,
+      serId = 0,
+      serManifest = "",
+      writerUuid = "",
+      tags = Set.empty,
+      metadata = None)
   }
 
   protected def bindPersistenceIdsForEntityTypeAfterSql(

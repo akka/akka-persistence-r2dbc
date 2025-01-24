@@ -155,6 +155,7 @@ class EventsByPersistenceIdSpec
         val probe = testKit.createTestProbe[Done]()
         val entityType = nextEntityType()
         val entityId = "entity-1"
+        val pid = TestActors.replicatedEventSourcedPersistenceId(entityType, entityId).id
 
         val persister = testKit.spawn(TestActors.replicatedEventSourcedPersister(entityType, entityId))
         persister ! Persister.PersistWithAck("e-1", probe.ref)
@@ -162,7 +163,7 @@ class EventsByPersistenceIdSpec
         persister ! Persister.PersistWithAck("e-2", probe.ref)
         probe.expectMessage(Done)
 
-        val sub = doQuery(PersistenceId(entityType, entityId).id, 0, Long.MaxValue)
+        val sub = doQuery(pid, 0, Long.MaxValue)
           .runWith(TestSink())
           .request(10)
 

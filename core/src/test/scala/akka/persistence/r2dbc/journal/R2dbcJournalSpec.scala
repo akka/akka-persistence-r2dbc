@@ -33,12 +33,14 @@ object R2dbcJournalSpec {
 }
 
 class R2dbcJournalSpec extends JournalSpec(R2dbcJournalSpec.config) with TestDbLifecycle {
-  override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
+  override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = false
+  override protected def supportsReplayOnlyLast: CapabilityFlag = true
   override def typedSystem: ActorSystem[_] = system.toTyped
 }
 
 class R2dbcJournalWithMetaSpec extends JournalSpec(R2dbcJournalSpec.configWithMeta) with TestDbLifecycle {
-  override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
-  protected override def supportsMetadata: CapabilityFlag = CapabilityFlag.on()
+  override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = false
+  protected override def supportsMetadata: CapabilityFlag = true
+  override protected def supportsReplayOnlyLast: CapabilityFlag = true
   override def typedSystem: ActorSystem[_] = system.toTyped
 }
