@@ -194,7 +194,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       1L,
       eventOption = None,
       timestamp.toEpochMilli,
-      eventMetadata = None,
+      _eventMetadata = None,
       entityType,
       slice,
       filtered = true,
@@ -723,6 +723,16 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         }
       }
       .mapMaterializedValue(_ => NotUsed)
+  }
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[r2dbc] def internalLastEventByPersistenceId(
+      persistenceId: String,
+      toSequenceNr: Long,
+      includeDeleted: Boolean): Future[Option[SerializedJournalRow]] = {
+    queryDao.loadLastEvent(persistenceId, toSequenceNr, includeDeleted)
   }
 
   // EventTimestampQuery

@@ -220,7 +220,11 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
 
   override def replayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(
       recoveryCallback: PersistentRepr => Unit): Future[Long] = {
-    log.debug("replayMessages [{}] [{}]", persistenceId, fromSequenceNr)
+    if (fromSequenceNr == -1)
+      log.debug("replayMessages [{}] [{}]", persistenceId, "last")
+    else
+      log.debug("replayMessages [{}] [{}]", persistenceId, fromSequenceNr)
+
     val pendingWrite = Option(writesInProgress.get(persistenceId)) match {
       case Some(f) =>
         log.debug("Write in progress for [{}], deferring replayMessages until write completed", persistenceId)
@@ -229,7 +233,23 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
       case None => FutureDone
     }
     pendingWrite.flatMap { _ =>
-      if (toSequenceNr == Long.MaxValue && max == Long.MaxValue) {
+      if (toSequenceNr <= 0 || max == 0) {
+        // no replay
+        journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
+      } else if (fromSequenceNr == -1) {
+        // recover from last event only
+        query.internalLastEventByPersistenceId(persistenceId, toSequenceNr, includeDeleted = true).map {
+          case Some(item) =>
+            // payload is empty for deleted item
+            if (item.payload.isDefined) {
+              val repr = deserializeRow(serialization, item)
+              recoveryCallback(repr)
+            }
+            item.seqNr
+          case None =>
+            0L
+        }
+      } else if (toSequenceNr == Long.MaxValue && max == Long.MaxValue) {
         // this is the normal case, highest sequence number from last event
         query
           .internalCurrentEventsByPersistenceId(
@@ -246,9 +266,6 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             }
             item.seqNr
           })
-      } else if (toSequenceNr <= 0) {
-        // no replay
-        journalDao.readHighestSequenceNr(persistenceId, fromSequenceNr)
       } else {
         // replay to custom sequence number
 
