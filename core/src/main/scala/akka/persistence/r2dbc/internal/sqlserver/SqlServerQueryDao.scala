@@ -163,6 +163,26 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
     stmt
   }
 
+  override protected def selectLastEventSql(slice: Int): String =
+    sqlCache.get(slice, "selectLastEventSql") {
+      sql"""
+      SELECT TOP(1) entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr <= ? AND deleted = $sqlFalse
+      ORDER BY seq_nr DESC
+      """
+    }
+
+  override protected def selectLastEventIncludeDeletedSql(slice: Int): String =
+    sqlCache.get(slice, "selectLastEventIncludeDeletedSql") {
+      sql"""
+      SELECT TOP(1) entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      FROM ${journalTable(slice)}
+      WHERE persistence_id = ? AND seq_nr <= ?
+      ORDER BY seq_nr DESC
+      """
+    }
+
   override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
     sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
       sql"""
