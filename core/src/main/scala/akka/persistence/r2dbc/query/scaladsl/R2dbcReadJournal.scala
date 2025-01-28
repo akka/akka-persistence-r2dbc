@@ -194,7 +194,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       1L,
       eventOption = None,
       timestamp.toEpochMilli,
-      eventMetadata = None,
+      _eventMetadata = None,
       entityType,
       slice,
       filtered = true,
