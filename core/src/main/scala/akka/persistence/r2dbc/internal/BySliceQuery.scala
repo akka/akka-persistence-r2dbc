@@ -237,7 +237,9 @@ import org.slf4j.Logger
         toTimestamp: Instant): IndexedSeq[Bucket] = {
       // db epoch seconds is rounding, but Instant is not
       val startTimeOfLastBucket = (toTimestamp.plusMillis(500).getEpochSecond / 10) * 10
-      if (buckets.last.startTime != startTimeOfLastBucket)
+      if (buckets.isEmpty)
+        Vector(Bucket(startTimeOfLastBucket, 0))
+      else if (buckets.last.startTime != startTimeOfLastBucket)
         buckets :+ Bucket(startTimeOfLastBucket, 0)
       else
         buckets
