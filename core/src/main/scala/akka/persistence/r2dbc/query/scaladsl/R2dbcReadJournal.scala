@@ -817,6 +817,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           "eventsByPersistenceId query [{}] for persistenceId [{}], from [{}]. Found [{}] rows in previous query.",
           newState.queryCount,
           persistenceId,
+          state.latestSeqNr + 1,
           state.rowCount)
 
         newState ->
