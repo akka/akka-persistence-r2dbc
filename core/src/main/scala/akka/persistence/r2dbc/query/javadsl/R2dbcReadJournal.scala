@@ -231,6 +231,23 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
   def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
     delegate.currentPersistenceIds(entityType, afterId, limit).asJava
 
+  /**
+   * Load the last event for the given `persistenceId` up to the given `toSeqNr`.
+   *
+   * @param persistenceId
+   *   The persistence id to load the last event for.
+   * @param toSeqNr
+   *   The sequence number to load the last event up to.
+   * @param includeDeleted
+   *   Whether to include deleted events.
+   */
+  def loadLastEvent(
+      persistenceId: String,
+      toSeqNr: Long,
+      includeDeleted: Boolean): CompletionStage[Option[ClassicEventEnvelope]] = {
+    delegate.loadLastEvent(persistenceId, toSeqNr, includeDeleted).asJava
+  }
+
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =
     delegate.timestampOf(persistenceId, sequenceNr).map(_.toJava)(ExecutionContext.parasitic).asJava
 
