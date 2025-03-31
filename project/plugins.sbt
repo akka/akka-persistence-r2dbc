@@ -8,7 +8,7 @@ addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.8.0")
 addDependencyTreePlugin
 
 // for releasing
-addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.9.2")
+addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.9.3")
 
 //// docs
 addSbtPlugin("com.lightbend.paradox" % "sbt-paradox-dependencies" % "0.2.4")
