@@ -493,6 +493,7 @@ final class QuerySettings(config: Config) {
   val persistenceIdsBufferSize: Int = config.getInt("persistence-ids.buffer-size")
   val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
+  val estimateTimeRange: Boolean = config.getBoolean("estimate-time-range")
 }
 
 /**
