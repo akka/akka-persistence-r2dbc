@@ -23,6 +23,7 @@ import akka.persistence.query.typed.javadsl.CurrentEventsByPersistenceIdStarting
 import akka.persistence.query.typed.javadsl.CurrentEventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.javadsl.EventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.javadsl.EventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.javadsl.LatestEventTimestampQuery
 import akka.persistence.query.typed.javadsl.{
   CurrentEventsByPersistenceIdTypedQuery,
   CurrentEventsBySliceQuery,
@@ -53,7 +54,8 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     with CurrentPersistenceIdsQuery
     with PagedPersistenceIdsQuery
     with EventsByPersistenceIdStartingFromSnapshotQuery
-    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery {
+    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery
+    with LatestEventTimestampQuery {
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     delegate.sliceForPersistenceId(persistenceId)
@@ -233,6 +235,13 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
 
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =
     delegate.timestampOf(persistenceId, sequenceNr).map(_.toJava)(ExecutionContext.parasitic).asJava
+
+  // LatestEventTimestampQuery
+  override def latestEventTimestamp(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int): CompletionStage[Optional[Instant]] =
+    delegate.latestEventTimestamp(entityType, minSlice, maxSlice).map(_.toJava)(ExecutionContext.parasitic).asJava
 
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): CompletionStage[EventEnvelope[Event]] =
     delegate.loadEnvelope[Event](persistenceId, sequenceNr).asJava

@@ -283,6 +283,37 @@ class EventsBySliceSpec
         query.timestampOf(persistenceId, 4L).futureValue.isDefined shouldBe false
       }
 
+      "support LatestEventTimestampQuery" in new Setup {
+        for (i <- 1 to 3) {
+          persister ! PersistWithAck(s"e-$i", probe.ref)
+          probe.expectMessage(Done)
+        }
+
+        // TODO: LatestEventTimestampQuery trait in Akka core
+        // query shouldBe a[LatestEventTimestampQuery]
+
+        {
+          // test all slice ranges, with the events expected in one of the ranges
+          val numRanges = 4
+          val rangeSize = 1024 / numRanges
+          val expectedRangeIndex = slice / rangeSize
+
+          def sliceRange(rangeIndex: Int): (Int, Int) = {
+            val minSlice = rangeIndex * rangeSize
+            val maxSlice = minSlice + rangeSize - 1
+            minSlice -> maxSlice
+          }
+
+          for (rangeIndex <- 0 until numRanges) {
+            val (minSlice, maxSlice) = sliceRange(rangeIndex)
+            val expectedTimestamp =
+              if (rangeIndex != expectedRangeIndex) None
+              else query.timestampOf(persistenceId, 3L).futureValue
+            query.latestEventTimestamp(entityType, minSlice, maxSlice).futureValue shouldBe expectedTimestamp
+          }
+        }
+      }
+
       "support LoadEventQuery" in new Setup {
         for (i <- 1 to 3) {
           persister ! PersistWithAck(s"e-$i", probe.ref)
