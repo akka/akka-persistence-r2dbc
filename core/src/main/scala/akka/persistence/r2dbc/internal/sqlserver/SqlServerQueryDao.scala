@@ -183,6 +183,17 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       """
     }
 
+  override protected def selectLatestEventTimestampSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectLatestEventTimestampSql-$minSlice-$maxSlice") {
+      sql"""
+      SELECT MAX(db_timestamp) AS latest_timestamp
+      FROM ${journalTable(minSlice)}
+      WHERE entity_type = ?
+      AND ${sliceCondition(minSlice, maxSlice)}
+      AND deleted = $sqlFalse
+      """
+    }
+
   override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
     sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
       sql"""
