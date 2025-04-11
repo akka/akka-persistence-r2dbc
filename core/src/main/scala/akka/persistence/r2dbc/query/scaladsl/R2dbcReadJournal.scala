@@ -58,6 +58,7 @@ import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
+import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 
 object R2dbcReadJournal {
@@ -83,7 +84,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with CurrentPersistenceIdsQuery
     with PagedPersistenceIdsQuery
     with EventsByPersistenceIdStartingFromSnapshotQuery
-    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery {
+    with CurrentEventsByPersistenceIdStartingFromSnapshotQuery
+    with LatestEventTimestampQuery {
   import R2dbcReadJournal.ByPersistenceIdState
   import R2dbcReadJournal.PersistenceIdsQueryState
 
@@ -746,9 +748,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     result
   }
 
-  // TODO: LatestEventTimestampQuery trait in Akka core
-  // override
-  def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
+  // LatestEventTimestampQuery
+  override def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
     val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
     if (log.isDebugEnabled) {
       result.foreach { timestamp =>
