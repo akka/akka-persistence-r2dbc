@@ -746,6 +746,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     result
   }
 
+  // TODO: LatestEventTimestampQuery trait in Akka core
+  // override
+  def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
+    val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
+    if (log.isDebugEnabled) {
+      result.foreach { timestamp =>
+        log.debug("[{}] latestEventTimestamp for slices [{} - {}] is [{}]", entityType, minSlice, maxSlice, timestamp)
+      }
+    }
+    result
+  }
+
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
     log.debug("[{}] loadEnvelope seqNr [{}]", persistenceId, sequenceNr)

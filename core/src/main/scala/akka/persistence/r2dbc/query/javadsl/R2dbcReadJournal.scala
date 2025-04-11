@@ -234,6 +234,11 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =
     delegate.timestampOf(persistenceId, sequenceNr).map(_.toJava)(ExecutionContext.parasitic).asJava
 
+  // TODO: LatestEventTimestampQuery interface in Akka core
+  // override
+  def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): CompletionStage[Optional[Instant]] =
+    delegate.latestEventTimestamp(entityType, minSlice, maxSlice).map(_.toJava)(ExecutionContext.parasitic).asJava
+
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): CompletionStage[EventEnvelope[Event]] =
     delegate.loadEnvelope[Event](persistenceId, sequenceNr).asJava
 
