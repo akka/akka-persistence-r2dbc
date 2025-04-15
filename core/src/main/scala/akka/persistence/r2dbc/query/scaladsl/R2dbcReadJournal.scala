@@ -924,6 +924,19 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(entityType, afterId, limit)
 
+  /**
+   * Load the last event for the given `persistenceId` up to the given `toSeqNr`.
+   *
+   * @param persistenceId
+   *   The persistence id to load the last event for.
+   * @param toSequenceNr
+   *   The sequence number to load the last event up to.
+   */
+  def loadLastEvent[Event](persistenceId: String, toSequenceNr: Long): Future[Option[EventEnvelope[Event]]] = {
+    internalLastEventByPersistenceId(persistenceId, toSequenceNr, includeDeleted = false).map(
+      _.map(deserializeBySliceRow))
+  }
+
   override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
