@@ -142,7 +142,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
-      AND deleted = false
+      AND deleted = $sqlFalse
       """
     }
 
@@ -414,7 +414,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           connection
             .createStatement(selectLatestEventTimestampSql(minSlice, maxSlice))
             .bind(0, entityType),
-        row => Option(row.getTimestamp("latest_timestamp")))
+        row => Option.when(row.get("latest_timestamp") ne null)(row.getTimestamp("latest_timestamp")))
       .map(_.flatten)(ExecutionContext.parasitic)
 
     if (log.isDebugEnabled)

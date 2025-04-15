@@ -18,6 +18,7 @@ import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
+import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
@@ -289,8 +290,7 @@ class EventsBySliceSpec
           probe.expectMessage(Done)
         }
 
-        // TODO: LatestEventTimestampQuery trait in Akka core
-        // query shouldBe a[LatestEventTimestampQuery]
+        query shouldBe a[LatestEventTimestampQuery]
 
         {
           // test all slice ranges, with the events expected in one of the ranges
