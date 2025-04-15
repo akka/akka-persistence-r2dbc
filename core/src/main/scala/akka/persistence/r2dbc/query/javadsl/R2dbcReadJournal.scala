@@ -236,16 +236,11 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
    *
    * @param persistenceId
    *   The persistence id to load the last event for.
-   * @param toSeqNr
+   * @param toSequenceNr
    *   The sequence number to load the last event up to.
-   * @param includeDeleted
-   *   Whether to include deleted events.
    */
-  def loadLastEvent(
-      persistenceId: String,
-      toSeqNr: Long,
-      includeDeleted: Boolean): CompletionStage[Option[ClassicEventEnvelope]] = {
-    delegate.loadLastEvent(persistenceId, toSeqNr, includeDeleted).asJava
+  def loadLastEvent[Event](persistenceId: String, toSequenceNr: Long): CompletionStage[Option[EventEnvelope[Event]]] = {
+    delegate.loadLastEvent[Event](persistenceId, toSequenceNr).asJava
   }
 
   override def timestampOf(persistenceId: String, sequenceNr: Long): CompletionStage[Optional[Instant]] =

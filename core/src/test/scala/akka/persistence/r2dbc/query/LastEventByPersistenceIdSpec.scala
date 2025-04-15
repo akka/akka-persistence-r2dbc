@@ -103,6 +103,45 @@ class LastEventByPersistenceIdSpec
     }
   }
 
+  "loadLastEvent" should {
+    "return last event" in {
+      val pid = nextPid()
+      val persister = testKit.spawn(Persister(pid))
+      val probe = testKit.createTestProbe[Done]()
+      val events = (1 to 3).map { i =>
+        val payload = s"e-$i"
+        persister ! PersistWithAck(payload, probe.ref)
+        probe.expectMessage(Done)
+        payload
+      }
+
+      val env = query.loadLastEvent[String](pid, Long.MaxValue).futureValue.get
+      env.event shouldBe events.last
+      env.sequenceNr shouldBe 3L
+    }
+
+    "return None when not exists" in {
+      val pid = nextPid()
+      query.loadLastEvent(pid, Long.MaxValue).futureValue shouldBe None
+    }
+
+    "return a specific event of the toSequenceNr" in {
+      val pid = nextPid()
+      val persister = testKit.spawn(Persister(pid))
+      val probe = testKit.createTestProbe[Done]()
+      val events = (1 to 3).map { i =>
+        val payload = s"e-$i"
+        persister ! PersistWithAck(payload, probe.ref)
+        probe.expectMessage(Done)
+        payload
+      }
+
+      val env = query.loadLastEvent[String](pid, toSequenceNr = 2L).futureValue.get
+      env.event shouldBe events(1)
+      env.sequenceNr shouldBe 2L
+    }
+  }
+
   "EventSourcedBehavior with Recovery." should {
     "recover from last event" in {
       val pid = PersistenceId.ofUniqueId(nextPid())

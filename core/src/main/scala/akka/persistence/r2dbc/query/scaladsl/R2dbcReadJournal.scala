@@ -916,16 +916,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *
    * @param persistenceId
    *   The persistence id to load the last event for.
-   * @param toSeqNr
+   * @param toSequenceNr
    *   The sequence number to load the last event up to.
-   * @param includeDeleted
-   *   Whether to include deleted events.
    */
-  def loadLastEvent(
-      persistenceId: String,
-      toSeqNr: Long,
-      includeDeleted: Boolean): Future[Option[ClassicEventEnvelope]] = {
-    queryDao.loadLastEvent(persistenceId, toSeqNr, includeDeleted).map(_.map(deserializeRow))
+  def loadLastEvent[Event](persistenceId: String, toSequenceNr: Long): Future[Option[EventEnvelope[Event]]] = {
+    internalLastEventByPersistenceId(persistenceId, toSequenceNr, includeDeleted = false).map(
+      _.map(deserializeBySliceRow))
   }
 
   override def currentPersistenceIds(): Source[String, NotUsed] = {
