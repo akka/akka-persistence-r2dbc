@@ -137,12 +137,22 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
 
   protected def selectLatestEventTimestampSql(minSlice: Int, maxSlice: Int): String =
     sqlCache.get(minSlice, s"selectLatestEventTimestampSql-$minSlice-$maxSlice") {
+      val table = journalTable(minSlice)
+
+      val sliceSelects = (minSlice to maxSlice)
+        .map { slice =>
+          s"""
+         SELECT MAX(db_timestamp) AS latest_timestamp
+           FROM $table
+           WHERE entity_type = ?
+           AND slice = $slice
+           AND deleted = $sqlFalse """
+        }
+        .mkString("""
+         UNION ALL""")
+
       sql"""
-      SELECT MAX(db_timestamp) AS latest_timestamp
-      FROM ${journalTable(minSlice)}
-      WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
-      AND deleted = $sqlFalse
+      SELECT MAX(latest_timestamp) AS latest_timestamp FROM ($sliceSelects) max_timestamps;
       """
     }
 
@@ -410,10 +420,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     val executor = executorProvider.executorFor(minSlice)
     val result = executor
       .selectOne(s"select latest event timestamp for entity type [$entityType] slice range [$minSlice - $maxSlice]")(
-        connection =>
-          connection
-            .createStatement(selectLatestEventTimestampSql(minSlice, maxSlice))
-            .bind(0, entityType),
+        connection => {
+          val stmt = connection.createStatement(selectLatestEventTimestampSql(minSlice, maxSlice))
+          // there is one select for each slice, so bind the entityType for each slice
+          (0 to (maxSlice - minSlice)).foldLeft(stmt)((s, i) => s.bind(i, entityType))
+        },
         row => Option.when(row.get("latest_timestamp") ne null)(row.getTimestamp("latest_timestamp")))
       .map(_.flatten)(ExecutionContext.parasitic)
 
