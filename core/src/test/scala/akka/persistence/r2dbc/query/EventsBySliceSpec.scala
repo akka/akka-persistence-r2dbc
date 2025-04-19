@@ -292,7 +292,11 @@ class EventsBySliceSpec
 
         query shouldBe a[LatestEventTimestampQuery]
 
-        List(1, 4, 1024).foreach { numRanges =>
+        val partitions = settings.numberOfDataPartitions
+        val testNumRanges =
+          if (partitions > 1) List(partitions, partitions * 2, 1024)
+          else List(1, 4, 1024)
+        testNumRanges.foreach { numRanges =>
           withClue(s"numRanges=$numRanges: ") {
             // test all slice ranges, with the events expected in one of the ranges
             val rangeSize = 1024 / numRanges
