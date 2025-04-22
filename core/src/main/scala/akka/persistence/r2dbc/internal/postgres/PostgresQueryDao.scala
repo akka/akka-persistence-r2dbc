@@ -135,14 +135,20 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
     }
 
-  protected def selectLatestEventTimestampSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"selectLatestEventTimestampSql-$minSlice-$maxSlice") {
+  protected def selectLatestEventTimestampSql(slice: Int): String =
+    sqlCache.get(slice, "selectLatestEventTimestampSql") {
       sql"""
-      SELECT MAX(db_timestamp) AS latest_timestamp
-      FROM ${journalTable(minSlice)}
-      WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
-      AND deleted = $sqlFalse
+      SELECT MAX(per_slice.latest_timestamp) AS latest_timestamp
+      FROM (
+        SELECT
+          (SELECT MAX(db_timestamp)
+           FROM ${journalTable(slice)}
+           WHERE entity_type = ?
+           AND slice = slice_range.slice
+           AND deleted = $sqlFalse) AS latest_timestamp
+        FROM (SELECT * FROM generate_series(?, ?)) AS slice_range(slice)
+      ) per_slice
+      WHERE per_slice.latest_timestamp IS NOT NULL;
       """
     }
 
@@ -412,8 +418,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       .selectOne(s"select latest event timestamp for entity type [$entityType] slice range [$minSlice - $maxSlice]")(
         connection =>
           connection
-            .createStatement(selectLatestEventTimestampSql(minSlice, maxSlice))
-            .bind(0, entityType),
+            .createStatement(selectLatestEventTimestampSql(minSlice))
+            .bind(0, entityType)
+            .bind(1, minSlice)
+            .bind(2, maxSlice),
         row => Option.when(row.get("latest_timestamp") ne null)(row.getTimestamp("latest_timestamp")))
       .map(_.flatten)(ExecutionContext.parasitic)
 

@@ -292,24 +292,29 @@ class EventsBySliceSpec
 
         query shouldBe a[LatestEventTimestampQuery]
 
-        {
-          // test all slice ranges, with the events expected in one of the ranges
-          val numRanges = 4
-          val rangeSize = 1024 / numRanges
-          val expectedRangeIndex = slice / rangeSize
+        val partitions = settings.numberOfDataPartitions
+        val testNumRanges =
+          if (partitions > 1) List(partitions, partitions * 2, 1024)
+          else List(1, 4, 1024)
+        testNumRanges.foreach { numRanges =>
+          withClue(s"numRanges=$numRanges: ") {
+            // test all slice ranges, with the events expected in one of the ranges
+            val rangeSize = 1024 / numRanges
+            val expectedRangeIndex = slice / rangeSize
 
-          def sliceRange(rangeIndex: Int): (Int, Int) = {
-            val minSlice = rangeIndex * rangeSize
-            val maxSlice = minSlice + rangeSize - 1
-            minSlice -> maxSlice
-          }
+            def sliceRange(rangeIndex: Int): (Int, Int) = {
+              val minSlice = rangeIndex * rangeSize
+              val maxSlice = minSlice + rangeSize - 1
+              minSlice -> maxSlice
+            }
 
-          for (rangeIndex <- 0 until numRanges) {
-            val (minSlice, maxSlice) = sliceRange(rangeIndex)
-            val expectedTimestamp =
-              if (rangeIndex != expectedRangeIndex) None
-              else query.timestampOf(persistenceId, 3L).futureValue
-            query.latestEventTimestamp(entityType, minSlice, maxSlice).futureValue shouldBe expectedTimestamp
+            for (rangeIndex <- 0 until numRanges) {
+              val (minSlice, maxSlice) = sliceRange(rangeIndex)
+              val expectedTimestamp =
+                if (rangeIndex != expectedRangeIndex) None
+                else query.timestampOf(persistenceId, 3L).futureValue
+              query.latestEventTimestamp(entityType, minSlice, maxSlice).futureValue shouldBe expectedTimestamp
+            }
           }
         }
       }
