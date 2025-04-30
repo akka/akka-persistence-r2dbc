@@ -786,7 +786,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
               minSlice,
               maxSlice,
               timestamp,
-              cacheTtl)
+              cacheTtl.toCoarsest)
             latestEventTimestampCache.put(cacheKey, CachedTimestamp(timestamp, now))
           }
           result
