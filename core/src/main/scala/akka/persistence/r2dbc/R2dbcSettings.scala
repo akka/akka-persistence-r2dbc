@@ -211,6 +211,17 @@ object R2dbcSettings {
     }
   }
 
+  /**
+   * INTERNAL API
+   */
+  private[akka] final implicit class ConfigOps(val config: Config) extends AnyVal {
+    def optDuration(path: String): Option[FiniteDuration] =
+      config.getString(path).toLowerCase(Locale.ROOT) match {
+        case "off" | "none" => None
+        case _              => Some(config.getDuration(path).toScala)
+      }
+  }
+
 }
 
 /**
@@ -484,6 +495,8 @@ final class R2dbcSettings private (
  */
 @InternalStableApi
 final class QuerySettings(config: Config) {
+  import R2dbcSettings.ConfigOps
+
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").toScala
   val behindCurrentTime: FiniteDuration = config.getDuration("behind-current-time").toScala
   val backtrackingEnabled: Boolean = config.getBoolean("backtracking.enabled")
@@ -493,6 +506,7 @@ final class QuerySettings(config: Config) {
   val persistenceIdsBufferSize: Int = config.getInt("persistence-ids.buffer-size")
   val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
+  val cacheLatestEventTimestamp: Option[FiniteDuration] = config.optDuration("cache-latest-event-timestamp")
 }
 
 /**
@@ -500,6 +514,8 @@ final class QuerySettings(config: Config) {
  */
 @InternalStableApi
 final class ConnectionPoolSettings(config: Config) {
+  import R2dbcSettings.ConfigOps
+
   val initialSize: Int = config.getInt("initial-size")
   val maxSize: Int = config.getInt("max-size")
   val maxIdleTime: FiniteDuration = config.getDuration("max-idle-time").toScala
@@ -510,11 +526,7 @@ final class ConnectionPoolSettings(config: Config) {
 
   val validationQuery: String = config.getString("validation-query")
 
-  val closeCallsExceeding: Option[FiniteDuration] =
-    config.getString("close-calls-exceeding").toLowerCase(Locale.ROOT) match {
-      case "off" => None
-      case _     => Some(config.getDuration("close-calls-exceeding").toScala)
-    }
+  val closeCallsExceeding: Option[FiniteDuration] = config.optDuration("close-calls-exceeding")
 }
 
 /**
