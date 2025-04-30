@@ -10,7 +10,8 @@ import akka.Done
 import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import akka.actor.typed.{ ActorRef, ActorSystem }
+import akka.actor.typed.ActorRef
+import akka.actor.typed.ActorSystem
 import akka.persistence.FilteredPayload
 import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
@@ -60,6 +61,12 @@ object EventsBySliceSpec {
       buffer-size = 4
       # for this extreme scenario it will add delay between each query for the live case
       refresh-interval = 20 millis
+    }
+
+    # for "cache LatestEventTimestampQuery results when configured" test
+    akka.persistence.r2dbc-cache-latest-event-timestamp = $${akka.persistence.r2dbc}
+    akka.persistence.r2dbc-cache-latest-event-timestamp.query {
+      cache-latest-event-timestamp = 1s
     }
     """))
       .withFallback(TestConfig.config)
@@ -317,6 +324,57 @@ class EventsBySliceSpec
             }
           }
         }
+      }
+
+      "cache LatestEventTimestampQuery results when configured" in {
+        val entityType = nextEntityType()
+        val pid = nextPid(entityType)
+        val slice = query.sliceForPersistenceId(pid)
+        val persister = spawn(TestActors.Persister(pid))
+        val probe = createTestProbe[Done]()
+
+        persister ! PersistWithAck("e1", probe.ref)
+        probe.expectMessage(Done)
+
+        val queryWithCache =
+          PersistenceQuery(system).readJournalFor[R2dbcReadJournal](
+            "akka.persistence.r2dbc-cache-latest-event-timestamp.query")
+
+        // first query will fetch from the database
+        val expectedTimestamp1 = queryWithCache.timestampOf(pid, 1L).futureValue
+        val timestamp1 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+        timestamp1 shouldBe expectedTimestamp1
+
+        persister ! PersistWithAck("e2", probe.ref)
+        probe.expectMessage(Done)
+
+        // second query will return cached result (when still within TTL of 1 second)
+        val timestamp2 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+        timestamp2 shouldBe timestamp1
+
+        // after clearing cache, will fetch the latest timestamp
+        queryWithCache.clearLatestEventTimestampCache()
+        val expectedTimestamp3 = queryWithCache.timestampOf(pid, 2L).futureValue
+        val timestamp3 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+        timestamp3 shouldBe expectedTimestamp3
+
+        persister ! PersistWithAck("e3", probe.ref)
+        probe.expectMessage(Done)
+
+        // make sure cached value has expired
+        Thread.sleep(1000)
+
+        // new result fetched from database after cache expiry
+        val expectedTimestamp4 = queryWithCache.timestampOf(pid, 3L).futureValue
+        val timestamp4 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+        timestamp4 shouldBe expectedTimestamp4
+
+        persister ! PersistWithAck("e4", probe.ref)
+        probe.expectMessage(Done)
+
+        // next query will return cached result again (when still within TTL of 1 second)
+        val timestamp5 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+        timestamp5 shouldBe timestamp4
       }
 
       "support LoadEventQuery" in new Setup {

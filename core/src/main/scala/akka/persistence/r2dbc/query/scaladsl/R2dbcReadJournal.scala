@@ -14,6 +14,7 @@ import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
@@ -40,6 +41,7 @@ import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdStartingFromSn
 import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.EventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.R2dbcSettings
@@ -48,6 +50,7 @@ import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
+import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
@@ -58,15 +61,19 @@ import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
-import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
-import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
-
 object R2dbcReadJournal {
   val Identifier = "akka.persistence.r2dbc.query"
 
   private final case class ByPersistenceIdState(queryCount: Int, rowCount: Int, latestSeqNr: Long)
 
   private final case class PersistenceIdsQueryState(queryCount: Int, rowCount: Int, latestPid: String)
+
+  // Caching for LatestEventTimestampQuery
+
+  private final case class EntitySliceRange(entityType: String, minSlice: Int, maxSlice: Int)
+
+  private final case class CachedTimestamp(timestamp: Option[Instant], cachedAt: Instant)
+
 }
 
 final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPath: String)
@@ -88,6 +95,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with LatestEventTimestampQuery {
   import R2dbcReadJournal.ByPersistenceIdState
   import R2dbcReadJournal.PersistenceIdsQueryState
+  import R2dbcReadJournal.EntitySliceRange
+  import R2dbcReadJournal.CachedTimestamp
 
   private val log = LoggerFactory.getLogger(getClass)
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
@@ -118,6 +127,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private val heartbeatPersistenceIds = new ConcurrentHashMap[(String, Int), String]()
   private val heartbeatUuid = UUID.randomUUID().toString
   log.debug("Using heartbeat UUID [{}]", heartbeatUuid)
+
+  // Optional caching of latestEventTimestamp results
+  private val latestEventTimestampCache = new ConcurrentHashMap[EntitySliceRange, CachedTimestamp]()
 
   private def heartbeatPersistenceId(entityType: String, slice: Int): String = {
     val key = entityType -> slice
@@ -750,14 +762,53 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // LatestEventTimestampQuery
   override def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
-    val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
-    if (log.isDebugEnabled) {
-      result.foreach { timestamp =>
-        log.debug("[{}] latestEventTimestamp for slices [{} - {}] is [{}]", entityType, minSlice, maxSlice, timestamp)
-      }
+    settings.querySettings.cacheLatestEventTimestamp match {
+      case Some(cacheTtl) if cacheTtl > Duration.Zero =>
+        val cacheKey = EntitySliceRange(entityType, minSlice, maxSlice)
+        val cachedValue = latestEventTimestampCache.get(cacheKey)
+        val expiry = Option(cachedValue).map(_.cachedAt.plusMillis(cacheTtl.toMillis))
+        val now = clock.instant()
+        if (expiry.exists(now.isBefore)) { // cache hit and not expired
+          log.debug(
+            "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (was cached at [{}])",
+            entityType,
+            minSlice,
+            maxSlice,
+            cachedValue.timestamp,
+            cachedValue.cachedAt)
+          Future.successful(cachedValue.timestamp)
+        } else { // cache miss or expired, fetch and cache
+          val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
+          result.foreach { timestamp =>
+            log.debug(
+              "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (caching with TTL [{}])",
+              entityType,
+              minSlice,
+              maxSlice,
+              timestamp,
+              cacheTtl.toCoarsest)
+            latestEventTimestampCache.put(cacheKey, CachedTimestamp(timestamp, now))
+          }
+          result
+        }
+      case _ => // caching disabled
+        val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
+        if (log.isDebugEnabled) {
+          result.foreach { timestamp =>
+            log.debug(
+              "[{}] latestEventTimestamp for slices [{} - {}] is [{}]",
+              entityType,
+              minSlice,
+              maxSlice,
+              timestamp)
+          }
+        }
+        result
     }
-    result
   }
+
+  /** INTERNAL API */
+  @InternalApi private[r2dbc] def clearLatestEventTimestampCache(): Unit = latestEventTimestampCache.clear()
 
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
