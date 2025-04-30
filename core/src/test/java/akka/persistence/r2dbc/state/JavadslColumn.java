@@ -19,11 +19,8 @@ public class JavadslColumn extends AdditionalColumn<String, Integer> {
 
   @Override
   public Binding<Integer> bind(Upsert<String> upsert) {
-    if (upsert.value().isEmpty())
-      return AdditionalColumn.bindNull();
-    else if (upsert.value().equals("SKIP"))
-      return AdditionalColumn.skip();
-    else
-      return new AdditionalColumn.BindValue(upsert.value().length());
+    if (upsert.value().isEmpty()) return AdditionalColumn.bindNull();
+    else if (upsert.value().equals("SKIP")) return AdditionalColumn.skip();
+    else return new AdditionalColumn.BindValue(upsert.value().length());
   }
 }

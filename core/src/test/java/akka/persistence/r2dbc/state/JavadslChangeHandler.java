@@ -9,7 +9,6 @@ import akka.persistence.query.DurableStateChange;
 import akka.persistence.query.UpdatedDurableState;
 import akka.persistence.r2dbc.session.javadsl.R2dbcSession;
 import akka.persistence.r2dbc.state.javadsl.ChangeHandler;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -21,7 +20,8 @@ public class JavadslChangeHandler implements ChangeHandler<String> {
       return session
           .updateOne(
               session
-                  .createStatement("insert into changes_test (pid, rev, the_value) values ($1, $2, $3)")
+                  .createStatement(
+                      "insert into changes_test (pid, rev, the_value) values ($1, $2, $3)")
                   .bind(0, upd.persistenceId())
                   .bind(1, upd.revision())
                   .bind(2, upd.value()))
