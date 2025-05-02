@@ -9,9 +9,9 @@ object Dependencies {
   val Scala3 = "3.3.4"
   val Scala2Versions = Seq(Scala213)
   val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
-  val AkkaVersion = System.getProperty("override.akka.version", "2.10.4")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.10.5")
   val AkkaVersionInDocs = VersionNumber(AkkaVersion).numbers match { case Seq(major, minor, _*) => s"$major.$minor" }
-  val AkkaPersistenceJdbcVersion = "5.5.0" // only in migration tool tests
+  val AkkaPersistenceJdbcVersion = "5.5.2" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.2.224"
   val R2dbcH2Version = "1.0.0.RELEASE"
