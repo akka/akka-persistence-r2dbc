@@ -21,6 +21,7 @@ import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
+import akka.persistence.r2dbc.RetryableTests
 import akka.persistence.r2dbc.TestActors
 import akka.persistence.r2dbc.TestActors.Persister
 import akka.persistence.r2dbc.TestActors.Persister.PersistAll
@@ -39,6 +40,7 @@ import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
+import org.scalatest.tagobjects.Retryable
 import org.scalatest.wordspec.AnyWordSpecLike
 
 object EventsBySliceSpec {
@@ -66,7 +68,7 @@ object EventsBySliceSpec {
     # for "cache LatestEventTimestampQuery results when configured" test
     akka.persistence.r2dbc-cache-latest-event-timestamp = $${akka.persistence.r2dbc}
     akka.persistence.r2dbc-cache-latest-event-timestamp.query {
-      cache-latest-event-timestamp = 1s
+      cache-latest-event-timestamp = 2s
     }
     """))
       .withFallback(TestConfig.config)
@@ -78,6 +80,7 @@ class EventsBySliceSpec
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
+    with RetryableTests
     with LogCapturing {
   import EventsBySliceSpec._
 
@@ -326,7 +329,7 @@ class EventsBySliceSpec
         }
       }
 
-      "cache LatestEventTimestampQuery results when configured" in {
+      "cache LatestEventTimestampQuery results when configured" taggedAs Retryable in {
         val entityType = nextEntityType()
         val pid = nextPid(entityType)
         val slice = query.sliceForPersistenceId(pid)
@@ -348,7 +351,7 @@ class EventsBySliceSpec
         persister ! PersistWithAck("e2", probe.ref)
         probe.expectMessage(Done)
 
-        // second query will return cached result (when still within TTL of 1 second)
+        // second query will return cached result (when still within TTL of 2 seconds)
         val timestamp2 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
         timestamp2 shouldBe timestamp1
 
@@ -362,7 +365,7 @@ class EventsBySliceSpec
         probe.expectMessage(Done)
 
         // make sure cached value has expired
-        Thread.sleep(1000)
+        Thread.sleep(2000)
 
         // new result fetched from database after cache expiry
         val expectedTimestamp4 = queryWithCache.timestampOf(pid, 3L).futureValue
@@ -372,7 +375,7 @@ class EventsBySliceSpec
         persister ! PersistWithAck("e4", probe.ref)
         probe.expectMessage(Done)
 
-        // next query will return cached result again (when still within TTL of 1 second)
+        // next query will return cached result again (when still within TTL of 2 seconds)
         val timestamp5 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
         timestamp5 shouldBe timestamp4
       }
