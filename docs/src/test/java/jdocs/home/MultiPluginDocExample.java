@@ -11,22 +11,20 @@ import akka.persistence.typed.javadsl.EventSourcedBehavior;
 
 public class MultiPluginDocExample {
 
-  static
+  public
   // #withPlugins
-  public class MyEntity extends EventSourcedBehavior<MyEntity.Command, MyEntity.Event, MyEntity.State> {
+  static class MyEntity
+      extends EventSourcedBehavior<MyEntity.Command, MyEntity.Event, MyEntity.State> {
     // #withPlugins
     public MyEntity(PersistenceId persistenceId) {
       super(persistenceId);
     }
 
-    interface Command {
-    }
+    interface Command {}
 
-    interface Event {
-    }
+    interface Event {}
 
-    static class State {
-    }
+    static class State {}
 
     @Override
     public State emptyState() {

@@ -4,7 +4,7 @@
 
 package jdocs.home.sharding;
 
-//#sharding-init
+// #sharding-init
 import akka.actor.typed.ActorSystem;
 import akka.actor.typed.Behavior;
 import akka.cluster.sharding.typed.SliceRangeShardAllocationStrategy;
@@ -13,12 +13,11 @@ import akka.cluster.sharding.typed.javadsl.Entity;
 import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
 import akka.persistence.Persistence;
 
-//#sharding-init
+// #sharding-init
 
 public class ShardingDocExample {
   public static class DeviceEntity {
-    public interface Command {
-    }
+    public interface Command {}
 
     public static final EntityTypeKey<Command> ENTITY_TYPE_KEY =
         EntityTypeKey.create(Command.class, "device");
@@ -31,12 +30,16 @@ public class ShardingDocExample {
   public static void example() {
     ActorSystem<?> system = null;
 
-    //#sharding-init
-    ClusterSharding.get(system).init(Entity.of(DeviceEntity.ENTITY_TYPE_KEY, entityContext ->
-            DeviceEntity.create(entityContext.getEntityId()))
-        .withMessageExtractor(new SliceRangeShardAllocationStrategy.ShardBySliceMessageExtractor<>(
-            DeviceEntity.ENTITY_TYPE_KEY.name(), Persistence.get(system)))
-        .withAllocationStrategy(new SliceRangeShardAllocationStrategy(10, 0.1)));
-   //#sharding-init
+    // #sharding-init
+    ClusterSharding.get(system)
+        .init(
+            Entity.of(
+                    DeviceEntity.ENTITY_TYPE_KEY,
+                    entityContext -> DeviceEntity.create(entityContext.getEntityId()))
+                .withMessageExtractor(
+                    new SliceRangeShardAllocationStrategy.ShardBySliceMessageExtractor<>(
+                        DeviceEntity.ENTITY_TYPE_KEY.name(), Persistence.get(system)))
+                .withAllocationStrategy(new SliceRangeShardAllocationStrategy(10, 0.1)));
+    // #sharding-init
   }
 }
