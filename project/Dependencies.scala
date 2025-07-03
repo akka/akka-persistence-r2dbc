@@ -46,7 +46,7 @@ object Dependencies {
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.7.3" % Test // BSD-2-Clause
+    val postgresql = "org.postgresql" % "postgresql" % "42.7.7" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.5.18" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
