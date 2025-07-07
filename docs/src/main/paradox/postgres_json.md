@@ -6,7 +6,7 @@ For example, then you can add secondary jsonb indexes on the payload content for
 
 @@@ note
 
-Using [Cluster Sharding's Remember Entities](https://doc.akka.io/libraries/akka-core/current/typed/cluster-sharding.html#remembering-entities) with JSONB is not supported and will lead to improper application behavior.
+Using @extref:[Cluster Sharding's Remember Entities](akka:typed/cluster-sharding.html#remembering-entities) with JSONB is not supported and will lead to improper application behavior.
 
 @@@
 
