@@ -4,6 +4,12 @@ By default, the serialized event, snapshot and durable state payloads, are store
 you can use `JSONB` column type to take advantage of PostgreSQL support for [JSON Types](https://www.postgresql.org/docs/current/datatype-json.html).
 For example, then you can add secondary jsonb indexes on the payload content for queries.
 
+@@@ note
+
+Using @extref:[Cluster Sharding's Remember Entities](akka:typed/cluster-sharding.html#remembering-entities) with JSONB is not supported and will lead to improper application behavior.
+
+@@@
+
 To enable `JSONB` payloads you need the following.
 
 1. Create the schema as shown in the Postgres JSONB tab in @ref:[Creating the schema](getting-started.md#schema).
