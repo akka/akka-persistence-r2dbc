@@ -1,5 +1,12 @@
 # Contributing to Akka Persistence R2DBC 
 
+## Build Token
+
+To build locally, you need to fetch a token at https://account.akka.io/token that you have to place into `~/.sbt/1.0/akka-commercial.sbt` file like this:
+```
+ThisBuild / resolvers += "lightbend-akka".at("your token resolver here")
+```
+
 ## Running the tests Postgres
 
 The tests expect a locally running database.
