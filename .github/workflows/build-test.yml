@@ -13,7 +13,7 @@ permissions:
 jobs:
   check-code-style:
     name: Checks
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -49,7 +49,7 @@ jobs:
 
   test-postgres:
     name: Run test with Postgres
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -89,7 +89,7 @@ jobs:
 
   test-postgres-jsonb:
     name: Run test with Postgres and JSONB payload
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -132,7 +132,7 @@ jobs:
 
   test-postgres-data-partitions:
     name: Run test with Postgres and several data partitions
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -173,7 +173,7 @@ jobs:
 
   test-yugabyte:
     name: Run tests with Yugabyte
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -215,7 +215,7 @@ jobs:
 
   test-h2:
     name: Run test with H2
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -250,7 +250,7 @@ jobs:
 
   test-sqlserver:
     name: Run test with SQL Server
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout
@@ -288,7 +288,7 @@ jobs:
 
   test-docs:
     name: Docs
-    runs-on: ubuntu-22.04
+    runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
       - name: Checkout

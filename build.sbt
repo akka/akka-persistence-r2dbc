@@ -29,7 +29,7 @@ inThisBuild(
     description := "An Akka Persistence backed by SQL database with R2DBC",
     // append -SNAPSHOT to version when isSnapshot
     dynverSonatypeSnapshots := true,
-    resolvers += "Akka library repository".at("https://repo.akka.io/maven"),
+    resolvers += "Akka library repository".at("https://repo.akka.io/maven/github_actions"),
     // add snapshot repo when Akka version overriden
     resolvers ++=
       (if (Dependencies.AkkaVersion.endsWith("-SNAPSHOT"))
