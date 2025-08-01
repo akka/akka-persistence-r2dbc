@@ -14,7 +14,6 @@ import akka.persistence.query.UpdatedDurableState;
 import akka.persistence.r2dbc.session.javadsl.R2dbcSession;
 import akka.persistence.r2dbc.state.javadsl.ChangeHandler;
 import io.r2dbc.spi.Statement;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -30,18 +29,18 @@ public class BlogPostCounts implements ChangeHandler<BlogPost.State> {
   private final ActorSystem<?> system;
 
   private final String incrementSql =
-      "INSERT INTO post_count (slice, cnt) VALUES ($1, 1) " +
-          "ON CONFLICT (slice) DO UPDATE SET cnt = excluded.cnt + 1";
+      "INSERT INTO post_count (slice, cnt) VALUES ($1, 1) "
+          + "ON CONFLICT (slice) DO UPDATE SET cnt = excluded.cnt + 1";
 
-  private final String decrementSql =
-      "UPDATE post_count SET cnt = cnt - 1 WHERE slice = $1";
+  private final String decrementSql = "UPDATE post_count SET cnt = cnt - 1 WHERE slice = $1";
 
   public BlogPostCounts(ActorSystem<?> system) {
     this.system = system;
   }
 
   @Override
-  public CompletionStage<Done> process(R2dbcSession session, DurableStateChange<BlogPost.State> change) {
+  public CompletionStage<Done> process(
+      R2dbcSession session, DurableStateChange<BlogPost.State> change) {
     if (change instanceof UpdatedDurableState) {
       return processUpdate(session, (UpdatedDurableState<BlogPost.State>) change);
     } else if (change instanceof DeletedDurableState) {
@@ -51,25 +50,22 @@ public class BlogPostCounts implements ChangeHandler<BlogPost.State> {
     }
   }
 
-  private CompletionStage<Done> processUpdate(R2dbcSession session, UpdatedDurableState<BlogPost.State> upd) {
+  private CompletionStage<Done> processUpdate(
+      R2dbcSession session, UpdatedDurableState<BlogPost.State> upd) {
     if (upd.value() instanceof BlogPost.PublishedState) {
       int slice = Persistence.get(system).sliceForPersistenceId(upd.persistenceId());
-      Statement stmt = session
-          .createStatement(incrementSql)
-          .bind(0, slice);
+      Statement stmt = session.createStatement(incrementSql).bind(0, slice);
       return session.updateOne(stmt).thenApply(count -> Done.getInstance());
     } else {
       return CompletableFuture.completedFuture(Done.getInstance());
     }
   }
 
-  private CompletionStage<Done> processDelete(R2dbcSession session, DeletedDurableState<BlogPost.State> del) {
+  private CompletionStage<Done> processDelete(
+      R2dbcSession session, DeletedDurableState<BlogPost.State> del) {
     int slice = Persistence.get(system).sliceForPersistenceId(del.persistenceId());
-    Statement stmt = session
-        .createStatement(decrementSql)
-        .bind(0, slice);
+    Statement stmt = session.createStatement(decrementSql).bind(0, slice);
     return session.updateOne(stmt).thenApply(count -> Done.getInstance());
   }
-
 }
 // #change-handler
