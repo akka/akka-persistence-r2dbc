@@ -9,14 +9,12 @@ import java.time.Instant
 import java.time.{ Duration => JDuration }
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-
 import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
@@ -36,6 +34,7 @@ import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdStartin
 import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdTypedQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceQuery
 import akka.persistence.query.typed.scaladsl.CurrentEventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.scaladsl.CurrentPersistenceIdsForEntityTypeQuery
 import akka.persistence.query.typed.scaladsl.EventTimestampQuery
 import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.scaladsl.EventsByPersistenceIdTypedQuery
@@ -92,7 +91,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     with PagedPersistenceIdsQuery
     with EventsByPersistenceIdStartingFromSnapshotQuery
     with CurrentEventsByPersistenceIdStartingFromSnapshotQuery
-    with LatestEventTimestampQuery {
+    with LatestEventTimestampQuery
+    with CurrentPersistenceIdsForEntityTypeQuery {
   import R2dbcReadJournal.ByPersistenceIdState
   import R2dbcReadJournal.PersistenceIdsQueryState
   import R2dbcReadJournal.EntitySliceRange
@@ -972,7 +972,10 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * @return
    *   A source containing all the persistence ids, limited as specified.
    */
-  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
+  override def currentPersistenceIds(
+      entityType: String,
+      afterId: Option[String],
+      limit: Long): Source[String, NotUsed] =
     queryDao.persistenceIds(entityType, afterId, limit)
 
   /**
