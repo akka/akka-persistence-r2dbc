@@ -103,7 +103,10 @@ def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.g
 
 lazy val core = (project in file("core"))
   .settings(common)
-  .settings(name := "akka-persistence-r2dbc", libraryDependencies ++= Dependencies.core)
+  .settings(
+    name := "akka-persistence-r2dbc",
+    libraryDependencies ++= Dependencies.core,
+    AutomaticModuleName.settings("akka.persistence.r2dbc"))
   .enablePlugins(AutomateHeaderPlugin)
   .disablePlugins(CiReleasePlugin)
 
@@ -111,6 +114,7 @@ lazy val migration = (project in file("migration"))
   .settings(common)
   .settings(
     name := "akka-persistence-r2dbc-migration",
+    AutomaticModuleName.settings("akka.persistence.r2dbc.migration"),
     Test / mainClass := Some("akka.persistence.r2dbc.migration.MigrationTool"),
     Test / run / fork := true,
     Test / run / javaOptions ++= {
