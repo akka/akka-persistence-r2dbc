@@ -22,6 +22,7 @@ jobs:
           - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
+          - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test"}
     steps:
       - name: Checkout
         # https://github.com/actions/checkout/releases
