@@ -8,11 +8,9 @@ import java.time.Instant
 import java.util
 import java.util.Optional
 import java.util.concurrent.CompletionStage
-
 import scala.concurrent.ExecutionContext
 import scala.jdk.FutureConverters._
 import scala.jdk.OptionConverters._
-
 import akka.NotUsed
 import akka.japi.Pair
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
@@ -21,6 +19,7 @@ import akka.persistence.query.javadsl._
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.javadsl.CurrentEventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.javadsl.CurrentEventsBySliceStartingFromSnapshotsQuery
+import akka.persistence.query.typed.javadsl.CurrentPersistenceIdsForEntityTypeQuery
 import akka.persistence.query.typed.javadsl.EventsByPersistenceIdStartingFromSnapshotQuery
 import akka.persistence.query.typed.javadsl.EventsBySliceStartingFromSnapshotsQuery
 import akka.persistence.query.typed.javadsl.LatestEventTimestampQuery
@@ -55,7 +54,8 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     with PagedPersistenceIdsQuery
     with EventsByPersistenceIdStartingFromSnapshotQuery
     with CurrentEventsByPersistenceIdStartingFromSnapshotQuery
-    with LatestEventTimestampQuery {
+    with LatestEventTimestampQuery
+    with CurrentPersistenceIdsForEntityTypeQuery {
 
   override def sliceForPersistenceId(persistenceId: String): Int =
     delegate.sliceForPersistenceId(persistenceId)
@@ -230,8 +230,11 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
    * @return
    *   A source containing all the persistence ids, limited as specified.
    */
-  def currentPersistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] =
-    delegate.currentPersistenceIds(entityType, afterId, limit).asJava
+  override def currentPersistenceIds(
+      entityType: String,
+      afterId: Optional[String],
+      limit: Long): Source[String, NotUsed] =
+    delegate.currentPersistenceIds(entityType, afterId.toScala, limit).asJava
 
   /**
    * Load the last event for the given `persistenceId` up to the given `toSeqNr`.
