@@ -29,7 +29,7 @@ object Dependencies {
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.2.RELEASE" // ApacheV2
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.0.7.RELEASE" // ApacheV2
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.0.RELEASE" // ApacheV2
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
@@ -46,7 +46,8 @@ object Dependencies {
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
 
-    val postgresql = "org.postgresql" % "postgresql" % "42.7.3" % Test // BSD-2-Clause
+    // Note: out of sync with r2dc-postgresql which depends on 42.7.2
+    val postgresql = "org.postgresql" % "postgresql" % "42.7.8" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.5.18" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
