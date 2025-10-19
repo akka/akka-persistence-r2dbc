@@ -24,6 +24,19 @@ jobs:
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test"}
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -82,6 +95,19 @@ jobs:
           # { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test" }
           - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -142,6 +168,19 @@ jobs:
           - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
