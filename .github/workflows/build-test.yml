@@ -16,6 +16,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -52,6 +65,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -92,6 +118,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -135,6 +174,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -176,6 +228,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -218,6 +283,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -253,6 +331,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
@@ -291,6 +382,19 @@ jobs:
     runs-on: Akka-Default
     if: github.repository == 'akka/akka-persistence-r2dbc'
     steps:
+      - name: Checkout Global Scripts
+        # This MUST be before the main checkout or else the dynver will not work
+        uses: actions/checkout@v4
+        with:
+          repository: akka/github-actions-scripts
+          path: scripts
+          fetch-depth: 0
+
+      - name: Setup global resolver
+        run: |
+          chmod +x ./scripts/setup_global_resolver.sh
+          ./scripts/setup_global_resolver.sh
+
       - name: Checkout
         # https://github.com/actions/checkout/releases
         # v4.1.1
