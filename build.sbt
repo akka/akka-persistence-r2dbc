@@ -28,8 +28,7 @@ inThisBuild(
     licenses := Seq(("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-r2dbc/main/LICENSE"))),
     description := "An Akka Persistence backed by SQL database with R2DBC",
     // append -SNAPSHOT to version when isSnapshot
-    dynverSonatypeSnapshots := true
-  ))
+    dynverSonatypeSnapshots := true))
 
 def common: Seq[Setting[_]] =
   Seq(
