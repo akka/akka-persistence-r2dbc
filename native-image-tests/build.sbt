@@ -2,7 +2,7 @@ name := "native-image-tests"
 
 version := "1.0"
 
-scalaVersion := "2.13.15"
+scalaVersion := "2.13.17"
 
 lazy val akkaVersion = sys.props.getOrElse("akka.version", "2.10.0")
 lazy val akkaR2dbcVersion = sys.props.getOrElse("akka.r2dbc.version", "1.2.3")
