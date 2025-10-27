@@ -18,8 +18,7 @@ object Dependencies {
   val SqlServerR2dbcVersion = "1.0.2.RELEASE"
   val SqlServerJdbcVersion = "7.4.1.jre8"
   // Java Platform version for JavaDoc creation
-  // sync with Java version in .github/workflows/release.yml#documentation
-  val JavaDocLinkVersion = 17
+  lazy val JavaDocLinkVersion = scala.util.Properties.javaSpecVersion
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
