@@ -1,0 +1,2 @@
+# incorrect Java method signature changed
+ProblemFilters.exclude[IncompatibleMethTypeProblem]("akka.persistence.r2dbc.query.javadsl.R2dbcReadJournal.currentPersistenceIds")
