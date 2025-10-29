@@ -10,6 +10,7 @@ inThisBuild(
   Seq(
     organization := "com.lightbend.akka",
     organizationName := "Lightbend Inc.",
+    organizationHomepage := Some(url("https://akka.io")),
     homepage := Some(url("https://doc.akka.io/libraries/akka-persistence-r2dbc/current")),
     scmInfo := Some(
       ScmInfo(
@@ -39,8 +40,7 @@ def common: Seq[Setting[_]] =
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
     Compile / javacOptions ++= Seq("-encoding", "UTF-8", "--release", "11"),
     Compile / scalacOptions ++= Seq("-release", "11"),
-    headerLicense := Some(
-      HeaderLicense.Custom("""Copyright (C) 2022 - 2025 Lightbend Inc. <https://www.lightbend.com>""")),
+    headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2022 - 2025 Lightbend Inc. <https://akka.io>""")),
     Test / logBuffered := false,
     Test / parallelExecution := false,
     // show full stack traces and test case durations
