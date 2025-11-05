@@ -1,13 +1,29 @@
-# R2DBC Plugin for Akka Persistence
+Akka
+====
+*Akka is a powerful platform that simplifies building and operating highly responsive, resilient, and scalable services.*
 
-The Akka family of projects is managed by teams at [Lightbend](https://lightbend.com/) with help from the community.
+
+The platform consists of
+* the [**Akka SDK**](https://doc.akka.io/java/index.html) for straightforward, rapid development with AI assist and automatic clustering. Services built with the Akka SDK are automatically clustered and can be deployed on any infrastructure.
+* and [**Akka Automated Operations**](https://doc.akka.io/operations/akka-platform.html), a managed solution that handles everything for Akka SDK services from auto-elasticity to multi-region high availability running safely within your VPC.
+
+The **Akka SDK** and **Akka Automated Operations** are built upon the foundational [**Akka libraries**](https://doc.akka.io/libraries/akka-dependencies/current/), providing the building blocks for distributed systems.
+
+
+R2DBC Plugin for Akka Persistence
+=================================
 
 [Akka Persistence](https://doc.akka.io/libraries/akka-core/current/scala/persistence.html) journal and snapshot 
 store for SQL datbases with RD2BC connectivity. 
 
-For questions please use the [discuss.akka.io](https://discuss.akka.io). Tag any new questions with `akka-persistence` and `r2dbc`.
+Reference Documentation
+-----------------------
 
-The documentation can be found [here](https://doc.akka.io/libraries/akka-persistence-r2dbc/current/index.html)
+The reference documentation for all Akka libraries is available via [doc.akka.io/libraries/](https://doc.akka.io/libraries/), details for the Akka R2DBC plugin
+for [Scala](https://doc.akka.io/libraries/akka-persistence-r2dbc/current/?language=scala) and [Java](https://doc.akka.io/libraries/akka-persistence-r2dbc/current/?language=java).
+
+The current versions of all Akka libraries are listed on the [Akka Dependencies](https://doc.akka.io/libraries/akka-dependencies/current/) page. Releases of the Akka R2DBC plugin library in this repository are listed on the [GitHub releases](https://github.com/akka/akka-persistence-r2dbc/releases) page.
+
 
 ## Project status
 
