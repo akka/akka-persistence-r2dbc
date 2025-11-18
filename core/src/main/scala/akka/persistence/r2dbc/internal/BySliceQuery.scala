@@ -5,12 +5,11 @@
 package akka.persistence.r2dbc.internal
 
 import java.time.Clock
-
-import scala.collection.immutable
 import java.time.Instant
 import java.time.{ Duration => JDuration }
 
 import scala.annotation.tailrec
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
@@ -87,9 +86,10 @@ import org.slf4j.Logger
       else
         latest.timestamp
 
-    def nextQueryFromSeqNr: Option[Long] =
-      if (backtracking) highestSeenSeqNr(previousBacktracking, latestBacktracking)
-      else highestSeenSeqNr(previous, latest)
+    def nextQueryFromSeqNr(backtrackingWindow: JDuration): Option[Long] =
+      if (backtracking && latest.timestamp.minus(backtrackingWindow).isAfter(latestBacktracking.timestamp)) None
+      else if (backtracking) highestSeenSeqNr(latestBacktracking)
+      else highestSeenSeqNr(latest)
 
     def nextQueryToTimestamp(backtrackingWindow: JDuration, atLeastNumberOfEvents: Int): Option[Instant] = {
       buckets.findTimeForLimit(nextQueryFromTimestamp(backtrackingWindow), atLeastNumberOfEvents) match {
@@ -105,11 +105,8 @@ import org.slf4j.Logger
     }
   }
 
-  // only filter by highest seen seq nr when the next query is the same timestamp (or when unknown for initial queries)
-  private def highestSeenSeqNr(previous: TimestampOffset, latest: TimestampOffset): Option[Long] =
-    Option.when((previous == TimestampOffset.Zero || previous.timestamp == latest.timestamp) && latest.seen.nonEmpty) {
-      latest.seen.values.max
-    }
+  private def highestSeenSeqNr(offset: TimestampOffset): Option[Long] =
+    Option.when(offset.seen.nonEmpty)(offset.seen.values.max)
 
   object Buckets {
     type EpochSeconds = Long
@@ -291,7 +288,7 @@ import org.slf4j.Logger
       // more to fetch.
       if (state.queryCount == 0L || state.rowCount > 0) {
         val fromTimestamp = state.latest.timestamp
-        val fromSeqNr = highestSeenSeqNr(state.previous, state.latest)
+        val fromSeqNr = highestSeenSeqNr(state.latest)
 
         val newState = state.copy(
           rowCount = 0,
@@ -387,8 +384,7 @@ import org.slf4j.Logger
 
           val newSeenCount =
             if (offset.timestamp == state.latestBacktracking.timestamp &&
-              highestSeenSeqNr(state.previousBacktracking, offset) ==
-                highestSeenSeqNr(state.previousBacktracking, state.latestBacktracking))
+              highestSeenSeqNr(offset) == highestSeenSeqNr(state.latestBacktracking))
               state.latestBacktrackingSeenCount + 1
             else 1
 
@@ -426,7 +422,7 @@ import org.slf4j.Logger
     }
 
     def switchFromBacktracking(state: QueryState): Boolean = {
-      state.backtracking && state.rowCount < settings.querySettings.bufferSize - state.backtrackingExpectFiltered
+      state.backtracking && (state.rowCount == 0 || state.rowCount < settings.querySettings.bufferSize - state.backtrackingExpectFiltered)
     }
 
     def switchToBacktracking(state: QueryState, newIdleCount: Long): Boolean = {
@@ -518,7 +514,7 @@ import org.slf4j.Logger
         else settings.querySettings.behindCurrentTime
 
       val fromTimestamp = newState.nextQueryFromTimestamp(backtrackingWindow)
-      val fromSeqNr = newState.nextQueryFromSeqNr
+      val fromSeqNr = newState.nextQueryFromSeqNr(backtrackingWindow)
       val toTimestamp = newState.nextQueryToTimestamp(backtrackingWindow, settings.querySettings.bufferSize)
 
       if (log.isDebugEnabled()) {
@@ -532,12 +528,13 @@ import org.slf4j.Logger
           else
             ""
         log.debug(
-          "{} next query [{}]{}, between time [{} - {}]. {}",
+          "{} next query [{}]{} between time [{} - {}]{}. {}",
           logPrefix,
           newState.queryCount,
           backtrackingInfo,
           fromTimestamp,
           toTimestamp.getOrElse("None"),
+          fromSeqNr.fold("")(seqNr => s" from seq nr $seqNr"),
           if (newIdleCount >= 3) s"Idle in [$newIdleCount] queries."
           else if (state.backtracking) s"Found [${state.rowCount}] rows in previous backtracking query."
           else s"Found [${state.rowCount}] rows in previous query.")

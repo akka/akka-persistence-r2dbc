@@ -1,0 +1,2 @@
+# internal query state changes
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.BySliceQuery#QueryState.nextQueryFromSeqNr")

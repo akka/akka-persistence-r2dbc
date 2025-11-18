@@ -7,9 +7,7 @@ package akka.persistence.r2dbc.query
 import java.time.temporal.ChronoUnit
 
 import scala.concurrent.duration._
-
-import com.typesafe.config.ConfigFactory
-import org.scalatest.wordspec.AnyWordSpecLike
+import scala.jdk.DurationConverters._
 
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -27,7 +25,8 @@ import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
-import scala.jdk.DurationConverters._
+import com.typesafe.config.ConfigFactory
+import org.scalatest.wordspec.AnyWordSpecLike
 
 object EventsBySliceBacktrackingSpec {
   private val BufferSize = 10 // small buffer for testing
@@ -46,6 +45,8 @@ class EventsBySliceBacktrackingSpec
     with TestDbLifecycle
     with TestData
     with LogCapturing {
+
+  import EventsBySliceBacktrackingSpec._
 
   override def typedSystem: ActorSystem[_] = system
 
@@ -385,6 +386,62 @@ class EventsBySliceBacktrackingSpec
         envelope.sequenceNr shouldBe seqNr
         envelope.source shouldBe EnvelopeOrigin.SourceBacktracking
       }
+    }
+
+    "not get stuck in backtracking when buffer-size events with same timestamp are all filtered" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = nextEntityType()
+      val pid = nextPid(entityType)
+      val slice = query.sliceForPersistenceId(pid)
+      val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+
+      // use times in the past well outside behind-current-time
+      val t1 = InstantFactory
+        .now()
+        .truncatedTo(ChronoUnit.SECONDS)
+        .minus(settings.querySettings.backtrackingBehindCurrentTime.toJava)
+        .minusSeconds(10)
+
+      // exactly buffer-size events persisted together at same timestamp
+      (1 to BufferSize).foreach { seqNr =>
+        writeEvent(slice, pid, seqNr, t1, s"event-$pid-$seqNr")
+      }
+
+      val result: TestSubscriber.Probe[EventEnvelope[String]] =
+        query
+          .eventsBySlices[String](entityType, 0, persistenceExt.numberOfSlices - 1, NoOffset)
+          .runWith(sinkProbe)
+          .request(BufferSize * 2 + 1)
+
+      // process all events with normal query
+      val lastOffset = (1 to BufferSize).foldLeft(NoOffset: Offset) { (_, seqNr) =>
+        val envelope = result.expectNext()
+        envelope.persistenceId shouldBe pid
+        envelope.sequenceNr shouldBe seqNr
+        envelope.source shouldBe EnvelopeOrigin.SourceQuery
+        envelope.offset
+      }
+
+      // process all events with backtracking query
+      (1 to BufferSize).foreach { seqNr =>
+        val envelope = result.expectNext()
+        envelope.persistenceId shouldBe pid
+        envelope.sequenceNr shouldBe seqNr
+        envelope.source shouldBe EnvelopeOrigin.SourceBacktracking
+      }
+
+      // write a subsequent event to trigger continued queries and verify we're not stuck
+      val t2 = t1.plusMillis(100)
+      val seqNr = BufferSize + 1
+      writeEvent(slice, pid, seqNr, t1.plusMillis(100), s"event-$pid-$seqNr")
+
+      val envelope = result.expectNext(10.seconds)
+      envelope.persistenceId shouldBe pid
+      envelope.sequenceNr shouldBe seqNr
+      envelope.source shouldBe EnvelopeOrigin.SourceQuery
+
+      result.cancel()
     }
 
   }
