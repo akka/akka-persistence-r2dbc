@@ -115,11 +115,11 @@ class BucketCountSpec
       buckets.head.startTime shouldBe 1746024900L
       buckets.head.count shouldBe 36
 
-      buckets.find(_.startTime == 1746026590L).get.count shouldBe 10
+      buckets.find(_.startTime == 1746026590L).get.count shouldBe 10L
       buckets.find(_.startTime == 1746026600L) shouldBe None
-      buckets.find(_.startTime == 1746026610L).get.count shouldBe 105
+      buckets.find(_.startTime == 1746026610L).get.count shouldBe 105L
       buckets.find(_.startTime == 1746026620L) shouldBe None
-      buckets.find(_.startTime == 1746026630L).get.count shouldBe 2
+      buckets.find(_.startTime == 1746026630L).get.count shouldBe 2L
 
       (1746024900L to 1746026700L by 10).foreach { epochSeconds =>
         val count = r2dbcExecutor
@@ -129,10 +129,10 @@ class BucketCountSpec
               s"and slice BETWEEN 960 AND 975 " +
               s"and db_timestamp >= '${Instant.ofEpochSecond(epochSeconds)}' " +
               s"and db_timestamp < '${Instant.ofEpochSecond(epochSeconds + 10)}' "),
-            _.get(0, classOf[java.lang.Long]))
+            _.get(0, classOf[java.lang.Long]).longValue())
           .futureValue
-          .getOrElse(0)
-        if (count == 0)
+          .getOrElse(0L)
+        if (count == 0L)
           buckets.find(_.startTime == epochSeconds) shouldBe None
         else
           buckets.find(_.startTime == epochSeconds).get.count shouldBe count
