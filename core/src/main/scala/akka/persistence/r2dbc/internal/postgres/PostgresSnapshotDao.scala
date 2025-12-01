@@ -392,7 +392,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
         s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.numberOfDataPartitions}] data partitions." + CorrelationId.toLogText(correlationId))
+        s"of the [${settings.numberOfDataPartitions}] data partitions" + CorrelationId.toLogText(correlationId))
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(

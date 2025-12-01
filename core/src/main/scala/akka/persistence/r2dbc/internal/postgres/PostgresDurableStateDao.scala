@@ -657,7 +657,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
         s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.numberOfDataPartitions}] data partitions." + CorrelationId.toLogText(correlationId))
+        s"of the [${settings.numberOfDataPartitions}] data partitions" + CorrelationId.toLogText(correlationId))
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select stateBySlices [$minSlice - $maxSlice]")(

@@ -12,7 +12,7 @@ import akka.annotation.InternalApi
 @InternalApi
 object CorrelationId {
   def toLogText(correlationid: Option[String]) = correlationid match {
-    case Some(id) => s"[correlation $id]"
+    case Some(id) => s", correlation [$id]"
     case None     => ""
   }
 }
