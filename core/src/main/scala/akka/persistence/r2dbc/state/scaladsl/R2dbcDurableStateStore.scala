@@ -309,6 +309,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
     bySlice.currentBySlices(
       s"[$entityType] currentChangesBySlices [$minSlice-$maxSlice]: ",
+      None,
       entityType,
       minSlice,
       maxSlice,
@@ -321,6 +322,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
       offset: Offset): Source[DurableStateChange[A], NotUsed] =
     bySlice.liveBySlices(
       s"[$entityType] changesBySlices [$minSlice-$maxSlice]: ",
+      None,
       entityType,
       minSlice,
       maxSlice,

@@ -26,6 +26,7 @@ import akka.persistence.Persistence
 import akka.persistence.SerializedEvent
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.query.Offset
+import akka.persistence.query.QueryCorrelationId
 import akka.persistence.query.TimestampOffset
 import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.scaladsl._
@@ -46,6 +47,7 @@ import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
+import akka.persistence.r2dbc.internal.CorrelationId
 import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
@@ -283,9 +285,12 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
     bySlice(entityType, minSlice)
       .currentBySlices(
-        s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]: ",
+        s"[$entityType]$correlationIdText currentEventsBySlices [$minSlice-$maxSlice]: ",
+        correlationId,
         entityType,
         minSlice,
         maxSlice,
@@ -330,16 +335,19 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       minSlice: Int,
       maxSlice: Int,
       offset: Offset): Source[EventEnvelope[Event], NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
     val dbSource =
       bySlice[Event](entityType, minSlice).liveBySlices(
-        s"[$entityType] eventsBySlices [$minSlice-$maxSlice]: ",
+        s"[$entityType]$correlationIdText eventsBySlices [$minSlice-$maxSlice]: ",
+        correlationId,
         entityType,
         minSlice,
         maxSlice,
         offset)
     if (settings.journalPublishEvents) {
       val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
-      mergeDbAndPubSubSources(dbSource, pubSubSource)
+      mergeDbAndPubSubSources(dbSource, pubSubSource, correlationId)
     } else
       dbSource
   }
@@ -366,11 +374,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("currentEventsBySlicesStartingFromSnapshots")
     val timestampOffset = toTimestampOffset(offset)
-
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
         .currentBySlices(
-          s"[$entityType] currentSnapshotsBySlices [$minSlice-$maxSlice]: ",
+          s"[$entityType]$correlationIdText currentSnapshotsBySlices [$minSlice-$maxSlice]: ",
+          correlationId,
           entityType,
           minSlice,
           maxSlice,
@@ -398,6 +408,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
           bySlice(entityType, minSlice).currentBySlices(
             s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]: ",
+            correlationId,
             entityType,
             minSlice,
             maxSlice,
@@ -428,11 +439,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("eventsBySlicesStartingFromSnapshots")
     val timestampOffset = toTimestampOffset(offset)
-
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
     val snapshotSource =
       snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
         .currentBySlices(
-          s"[$entityType] snapshotsBySlices [$minSlice-$maxSlice]: ",
+          s"[$entityType]$correlationIdText snapshotsBySlices [$minSlice-$maxSlice]: ",
+          correlationId,
           entityType,
           minSlice,
           maxSlice,
@@ -454,13 +467,14 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             }
 
           log.debug(
-            "eventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
+            s"eventsBySlicesStartingFromSnapshots $correlationIdText initOffset [{}] with [{}] snapshots",
             initOffset,
             snapshotOffsets.size)
 
           val dbSource =
             bySlice[Event](entityType, minSlice).liveBySlices(
-              s"[$entityType] eventsBySlices [$minSlice-$maxSlice]: ",
+              s"[$entityType]$correlationIdText eventsBySlices [$minSlice-$maxSlice]: ",
+              correlationId,
               entityType,
               minSlice,
               maxSlice,
@@ -474,7 +488,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             // know when memory of that Map can be released or the filter function would have to be shared
             // and thread safe, which is not worth it.
             val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
-            mergeDbAndPubSubSources(dbSource, pubSubSource)
+            mergeDbAndPubSubSources(dbSource, pubSubSource, correlationId)
           } else
             dbSource
         }))
@@ -550,13 +564,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   private def mergeDbAndPubSubSources[Event, Snapshot](
       dbSource: Source[EventEnvelope[Event], NotUsed],
-      pubSubSource: Source[EventEnvelope[Event], NotUsed]) = {
+      pubSubSource: Source[EventEnvelope[Event], NotUsed],
+      correlationId: Option[String]) = {
     dbSource
       .mergePrioritized(pubSubSource, leftPriority = 1, rightPriority = 10)
       .via(
         skipPubSubTooFarAhead(
           settings.querySettings.backtrackingEnabled,
-          JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+          JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis),
+          correlationId))
       .via(deduplicate(settings.querySettings.deduplicateCapacity))
   }
 
@@ -605,7 +621,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    */
   @InternalApi private[akka] def skipPubSubTooFarAhead[Event](
       enabled: Boolean,
-      maxAheadOfBacktracking: JDuration): Flow[EventEnvelope[Event], EventEnvelope[Event], NotUsed] = {
+      maxAheadOfBacktracking: JDuration,
+      correlationId: Option[String]): Flow[EventEnvelope[Event], EventEnvelope[Event], NotUsed] = {
     if (!enabled)
       Flow[EventEnvelope[Event]]
     else
@@ -624,29 +641,32 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
                   Nil // always drop heartbeats
                 } else if (EnvelopeOrigin.fromPubSub(env) && latestBacktracking == Instant.EPOCH) {
                   log.trace(
-                    "Dropping pubsub event for persistenceId [{}] seqNr [{}] because no event from backtracking yet.",
+                    "Dropping pubsub event for persistenceId [{}] seqNr [{}] because no event from backtracking yet.{}",
                     env.persistenceId,
-                    env.sequenceNr)
+                    env.sequenceNr,
+                    CorrelationId.toLogText(correlationId))
                   Nil
                 } else if (EnvelopeOrigin.fromPubSub(env) && JDuration
                     .between(latestBacktracking, t.timestamp)
                     .compareTo(maxAheadOfBacktracking) > 0) {
                   // drop from pubsub when too far ahead from backtracking
                   log.debug(
-                    "Dropping pubsub event for persistenceId [{}] seqNr [{}] because too far ahead of backtracking.",
+                    "Dropping pubsub event for persistenceId [{}] seqNr [{}] because too far ahead of backtracking.{}",
                     env.persistenceId,
-                    env.sequenceNr)
+                    env.sequenceNr,
+                    CorrelationId.toLogText(correlationId))
                   Nil
                 } else {
                   if (log.isDebugEnabled()) {
                     if (latestBacktracking.isAfter(t.timestamp))
                       log.debug(
                         "Event from query for persistenceId [{}] seqNr [{}] timestamp [{}]" +
-                        " was before latest timestamp from backtracking or heartbeat [{}].",
+                        " was before latest timestamp from backtracking or heartbeat [{}].{}",
                         env.persistenceId,
                         env.sequenceNr,
                         t.timestamp,
-                        latestBacktracking)
+                        latestBacktracking,
+                        CorrelationId.toLogText(correlationId))
                   }
                   env :: Nil
                 }
@@ -660,17 +680,21 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   override def currentEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] =
-    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+      toSequenceNr: Long): Source[ClassicEventEnvelope, NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr, correlationId = correlationId)
       .map(deserializeRow)
+  }
 
   @ApiMayChange
   override def currentEventsByPersistenceIdTyped[Event](
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] =
-    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+      toSequenceNr: Long): Source[EventEnvelope[Event], NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr, correlationId = correlationId)
       .map(deserializeBySliceRow[Event])
+  }
 
   /**
    * INTERNAL API: Used by both journal replay and currentEventsByPersistenceId
@@ -680,7 +704,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       fromSequenceNr: Long,
       toSequenceNr: Long,
       readHighestSequenceNr: Boolean = true,
-      includeDeleted: Boolean = false): Source[SerializedJournalRow, NotUsed] = {
+      includeDeleted: Boolean = false,
+      correlationId: Option[String] = None): Source[SerializedJournalRow, NotUsed] = {
+    lazy val correlationLogText = CorrelationId.toLogText(QueryCorrelationId.get())
 
     def updateState(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
@@ -693,22 +719,24 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
         if (state.queryCount != 0 && log.isDebugEnabled())
           log.debug(
-            "currentEventsByPersistenceId query [{}] for persistenceId [{}], from [{}] to [{}]. Found [{}] rows in previous query.",
+            "currentEventsByPersistenceId query [{}] for persistenceId [{}], from [{}] to [{}]. Found [{}] rows in previous query.{}",
             state.queryCount,
             persistenceId,
             state.latestSeqNr + 1,
             highestSeqNr,
-            state.rowCount)
+            state.rowCount,
+            correlationLogText)
 
         newState -> Some(
           queryDao
-            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr, includeDeleted))
+            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, highestSeqNr, includeDeleted, correlationId))
       } else {
         log.debug(
-          "currentEventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
+          "currentEventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.{}",
           state.queryCount,
           persistenceId,
-          state.rowCount)
+          state.rowCount,
+          correlationLogText)
 
         state -> None
       }
@@ -716,10 +744,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
     if (log.isDebugEnabled())
       log.debug(
-        "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].",
+        "currentEventsByPersistenceId query for persistenceId [{}], from [{}] to [{}].{}",
         persistenceId,
         fromSequenceNr,
-        toSequenceNr)
+        toSequenceNr,
+        correlationLogText)
 
     val highestSeqNrFut =
       if (readHighestSequenceNr && toSequenceNr == Long.MaxValue)
@@ -746,15 +775,17 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       persistenceId: String,
       toSequenceNr: Long,
       includeDeleted: Boolean): Future[Option[SerializedJournalRow]] = {
-    queryDao.loadLastEvent(persistenceId, toSequenceNr, includeDeleted)
+    queryDao.loadLastEvent(persistenceId, toSequenceNr, includeDeleted, None)
   }
 
   // EventTimestampQuery
   override def timestampOf(persistenceId: String, sequenceNr: Long): Future[Option[Instant]] = {
-    val result = queryDao.timestampOfEvent(persistenceId, sequenceNr)
+    val correlationId = QueryCorrelationId.get()
+    val result = queryDao.timestampOfEvent(persistenceId, sequenceNr, correlationId)
     if (log.isDebugEnabled) {
+      lazy val correlationLogText = CorrelationId.toLogText(QueryCorrelationId.get())
       result.foreach { t =>
-        log.debug("[{}] timestampOf seqNr [{}] is [{}]", persistenceId, sequenceNr, t)
+        log.debug("[{}] timestampOf seqNr [{}] is [{}]{}", persistenceId, sequenceNr, t, correlationLogText)
       }
     }
     result
@@ -762,6 +793,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   // LatestEventTimestampQuery
   override def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
+    val correlationId = QueryCorrelationId.get()
+    lazy val correlationLogText = CorrelationId.toLogText(QueryCorrelationId.get())
     settings.querySettings.cacheLatestEventTimestamp match {
       case Some(cacheTtl) if cacheTtl > Duration.Zero =>
         val cacheKey = EntitySliceRange(entityType, minSlice, maxSlice)
@@ -770,37 +803,40 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         val now = clock.instant()
         if (expiry.exists(now.isBefore)) { // cache hit and not expired
           log.debug(
-            "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (was cached at [{}])",
+            "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (was cached at [{}]){}",
             entityType,
             minSlice,
             maxSlice,
             cachedValue.timestamp,
-            cachedValue.cachedAt)
+            cachedValue.cachedAt,
+            correlationLogText)
           Future.successful(cachedValue.timestamp)
         } else { // cache miss or expired, fetch and cache
-          val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
+          val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice, correlationId)
           result.foreach { timestamp =>
             log.debug(
-              "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (caching with TTL [{}])",
+              "[{}] latestEventTimestamp for slices [{} - {}] is [{}] (caching with TTL [{}]){}",
               entityType,
               minSlice,
               maxSlice,
               timestamp,
-              cacheTtl.toCoarsest)
+              cacheTtl.toCoarsest,
+              correlationLogText)
             latestEventTimestampCache.put(cacheKey, CachedTimestamp(timestamp, now))
           }
           result
         }
       case _ => // caching disabled
-        val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice)
+        val result = queryDao.latestEventTimestamp(entityType, minSlice, maxSlice, correlationId)
         if (log.isDebugEnabled) {
           result.foreach { timestamp =>
             log.debug(
-              "[{}] latestEventTimestamp for slices [{} - {}] is [{}]",
+              "[{}] latestEventTimestamp for slices [{} - {}] is [{}]{}",
               entityType,
               minSlice,
               maxSlice,
-              timestamp)
+              timestamp,
+              correlationLogText)
           }
         }
         result
@@ -812,9 +848,13 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   //LoadEventQuery
   override def loadEnvelope[Event](persistenceId: String, sequenceNr: Long): Future[EventEnvelope[Event]] = {
-    log.debug("[{}] loadEnvelope seqNr [{}]", persistenceId, sequenceNr)
+    val correlationId = QueryCorrelationId.get()
+    if (log.isDebugEnabled()) {
+      val correlationLogText = CorrelationId.toLogText(QueryCorrelationId.get())
+      log.debug("[{}] loadEnvelope seqNr [{}]{}", persistenceId, sequenceNr, correlationLogText)
+    }
     queryDao
-      .loadEvent(persistenceId, sequenceNr, includePayload = true)
+      .loadEvent(persistenceId, sequenceNr, includePayload = true, correlationId)
       .map {
         case Some(row) => deserializeBySliceRow(row)
         case None =>
@@ -841,9 +881,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private def internalEventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
-      toSequenceNr: Long): Source[SerializedJournalRow, NotUsed] = {
-
-    log.debug("Starting eventsByPersistenceId query for persistenceId [{}], from [{}].", persistenceId, fromSequenceNr)
+      toSequenceNr: Long,
+      correlationId: Option[String] = None): Source[SerializedJournalRow, NotUsed] = {
+    lazy val correlationLogText = CorrelationId.toLogText(QueryCorrelationId.get())
+    if (log.isDebugEnabled)
+      log.debug(
+        "Starting eventsByPersistenceId query for persistenceId [{}], from [{}].{}",
+        persistenceId,
+        fromSequenceNr,
+        correlationLogText)
 
     def nextOffset(state: ByPersistenceIdState, row: SerializedJournalRow): ByPersistenceIdState =
       state.copy(rowCount = state.rowCount + 1, latestSeqNr = row.seqNr)
@@ -854,12 +900,15 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         settings.querySettings.bufferSize,
         settings.querySettings.refreshInterval)
 
-      delay.foreach { d =>
-        log.debug(
-          "eventsByPersistenceId query [{}] for persistenceId [{}] delay next [{}] ms.",
-          state.queryCount,
-          persistenceId,
-          d.toMillis)
+      if (log.isDebugEnabled) {
+        delay.foreach { d =>
+          log.debug(
+            "eventsByPersistenceId query [{}] for persistenceId [{}] delay next [{}] ms.{}",
+            state.queryCount,
+            persistenceId,
+            d.toMillis,
+            correlationLogText)
+        }
       }
 
       delay
@@ -868,26 +917,35 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     def nextQuery(
         state: ByPersistenceIdState): (ByPersistenceIdState, Option[Source[SerializedJournalRow, NotUsed]]) = {
       if (state.latestSeqNr >= toSequenceNr) {
-        log.debug(
-          "eventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.",
-          state.queryCount,
-          persistenceId,
-          state.rowCount)
+        if (log.isDebugEnabled) {
+          log.debug(
+            "eventsByPersistenceId query [{}] for persistenceId [{}] completed. Found [{}] rows in previous query.{}",
+            state.queryCount,
+            persistenceId,
+            state.rowCount,
+            correlationLogText)
+        }
         state -> None
       } else {
         val newState = state.copy(rowCount = 0, queryCount = state.queryCount + 1)
-
-        log.debug(
-          "eventsByPersistenceId query [{}] for persistenceId [{}], from [{}]. Found [{}] rows in previous query.",
-          newState.queryCount,
-          persistenceId,
-          state.latestSeqNr + 1,
-          state.rowCount)
-
+        if (log.isDebugEnabled) {
+          log.debug(
+            "eventsByPersistenceId query [{}] for persistenceId [{}], from [{}]. Found [{}] rows in previous query.{}",
+            newState.queryCount,
+            persistenceId,
+            state.latestSeqNr + 1,
+            state.rowCount,
+            correlationLogText)
+        }
         newState ->
         Some(
           queryDao
-            .eventsByPersistenceId(persistenceId, state.latestSeqNr + 1, toSequenceNr, includeDeleted = false))
+            .eventsByPersistenceId(
+              persistenceId,
+              state.latestSeqNr + 1,
+              toSequenceNr,
+              includeDeleted = false,
+              correlationId = correlationId))
       }
     }
 
@@ -904,6 +962,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       toSequenceNr: Long,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("currentEventsByPersistenceIdStartingFromSnapshot")
+    val correlationId = QueryCorrelationId.get()
     Source
       .futureSource(snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest).map {
         case Some(snapshotRow) =>
@@ -912,13 +971,26 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             val snapshotEnv = createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
             Source
               .single(snapshotEnv)
-              .concat(internalCurrentEventsByPersistenceId(persistenceId, snapshotEnv.sequenceNr + 1, toSequenceNr)
-                .map(deserializeBySliceRow[Event]))
+              .concat(
+                internalCurrentEventsByPersistenceId(
+                  persistenceId,
+                  snapshotEnv.sequenceNr + 1,
+                  toSequenceNr,
+                  correlationId = correlationId)
+                  .map(deserializeBySliceRow[Event]))
           } else
-            internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+            internalCurrentEventsByPersistenceId(
+              persistenceId,
+              fromSequenceNr,
+              toSequenceNr,
+              correlationId = correlationId)
               .map(deserializeBySliceRow[Event])
         case None =>
-          internalCurrentEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+          internalCurrentEventsByPersistenceId(
+            persistenceId,
+            fromSequenceNr,
+            toSequenceNr,
+            correlationId = correlationId)
             .map(deserializeBySliceRow[Event])
 
       })
@@ -931,6 +1003,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       toSequenceNr: Long,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("eventsByPersistenceIdStartingFromSnapshot")
+    val correlationId = QueryCorrelationId.get()
     Source
       .futureSource(snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest).map {
         case Some(snapshotRow) =>
@@ -939,13 +1012,18 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             val snapshotEnv = createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
             Source
               .single(snapshotEnv)
-              .concat(internalEventsByPersistenceId(persistenceId, snapshotEnv.sequenceNr + 1, toSequenceNr)
-                .map(deserializeBySliceRow[Event]))
+              .concat(
+                internalEventsByPersistenceId(
+                  persistenceId,
+                  snapshotEnv.sequenceNr + 1,
+                  toSequenceNr,
+                  correlationId = correlationId)
+                  .map(deserializeBySliceRow[Event]))
           } else
-            internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+            internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr, correlationId = correlationId)
               .map(deserializeBySliceRow[Event])
         case None =>
-          internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr)
+          internalEventsByPersistenceId(persistenceId, fromSequenceNr, toSequenceNr, correlationId = correlationId)
             .map(deserializeBySliceRow[Event])
 
       })

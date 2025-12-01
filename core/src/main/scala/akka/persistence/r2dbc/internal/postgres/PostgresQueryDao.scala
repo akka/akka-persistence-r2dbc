@@ -5,18 +5,15 @@
 package akka.persistence.r2dbc.internal.postgres
 
 import java.time.Instant
-
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -25,6 +22,7 @@ import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.BucketDurationSeconds
+import akka.persistence.r2dbc.internal.CorrelationId
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.QueryDao
@@ -287,7 +285,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): Source[SerializedJournalRow, NotUsed] = {
+      backtracking: Boolean,
+      correlationId: Option[String]): Source[SerializedJournalRow, NotUsed] = {
 
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
@@ -337,8 +336,15 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
             tags = row.getTags("tags"),
             metadata = readMetadata(row)))
 
-    if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] events from slices [{} - {}]", rows.size, minSlice, maxSlice))
+    if (log.isDebugEnabled) {
+      result.foreach(rows =>
+        log.debug(
+          "Read [{}] events from slices [{} - {}]{}",
+          rows.size,
+          minSlice,
+          maxSlice,
+          CorrelationId.toLogText(correlationId)))
+    }
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -361,7 +367,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      limit: Int): Future[Seq[Bucket]] = {
+      limit: Int,
+      correlationId: Option[String]): Future[Seq[Bucket]] = {
     val executor = executorProvider.executorFor(minSlice)
 
     val now = InstantFactory.now() // not important to use database time
@@ -387,7 +394,13 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+      result.foreach(rows =>
+        log.debug(
+          "Read [{}] bucket counts from slices [{} - {}]{}",
+          rows.size,
+          minSlice,
+          maxSlice,
+          CorrelationId.toLogText(correlationId)))
 
     if (toTimestamp == now)
       result
@@ -400,7 +413,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
    */
   override def countBucketsMayChange: Boolean = false
 
-  override def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]] = {
+  override def timestampOfEvent(
+      persistenceId: String,
+      seqNr: Long,
+      correlationId: Option[String]): Future[Option[Instant]] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor.selectOne("select timestampOfEvent")(
@@ -412,7 +428,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       row => row.getTimestamp("db_timestamp"))
   }
 
-  override def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]] = {
+  override def latestEventTimestamp(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      correlationId: Option[String]): Future[Option[Instant]] = {
     val executor = executorProvider.executorFor(minSlice)
     val result = executor
       .selectOne(s"select latest event timestamp for entity type [$entityType] slice range [$minSlice - $maxSlice]")(
@@ -428,11 +448,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     if (log.isDebugEnabled)
       result.foreach(timestamp =>
         log.debug(
-          "Latest event timestamp for entity type [{}] slice range [{} - {}]: [{}]",
+          "Latest event timestamp for entity type [{}] slice range [{} - {}]: [{}]{}",
           entityType,
           minSlice,
           maxSlice,
-          timestamp))
+          timestamp,
+          CorrelationId.toLogText(correlationId)))
 
     result
   }
@@ -440,7 +461,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   override def loadEvent(
       persistenceId: String,
       seqNr: Long,
-      includePayload: Boolean): Future[Option[SerializedJournalRow]] = {
+      includePayload: Boolean,
+      correlationId: Option[String]): Future[Option[SerializedJournalRow]] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor.selectOne("select one event")(
@@ -475,7 +497,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   override def loadLastEvent(
       persistenceId: String,
       toSeqNr: Long,
-      includeDeleted: Boolean): Future[Option[SerializedJournalRow]] = {
+      includeDeleted: Boolean,
+      correlationId: Option[String]): Future[Option[SerializedJournalRow]] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val selectSql = if (includeDeleted) selectLastEventIncludeDeletedSql(slice) else selectLastEventSql(slice)
@@ -512,7 +535,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long,
-      includeDeleted: Boolean): Source[SerializedJournalRow, NotUsed] = {
+      includeDeleted: Boolean,
+      correlationId: Option[String]): Source[SerializedJournalRow, NotUsed] = {
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val result = executor.select(s"select eventsByPersistenceId [$persistenceId]")(
@@ -542,7 +566,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         })
 
     if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] events for persistenceId [{}]", rows.size, persistenceId))
+      result.foreach(rows =>
+        log.debug(
+          "Read [{}] events for persistenceId [{}]{}",
+          rows.size,
+          persistenceId,
+          CorrelationId.toLogText(correlationId)))
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }

@@ -50,7 +50,7 @@ class BucketCountSpec
 
       val buckets =
         dao
-          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, Buckets.Limit)
+          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, Buckets.Limit, None)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
         buckets.size shouldBe 10
@@ -82,7 +82,7 @@ class BucketCountSpec
 
       val buckets =
         dao
-          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit)
+          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit, None)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
         buckets.size shouldBe 11

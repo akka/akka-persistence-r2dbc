@@ -226,7 +226,8 @@ class EventsBySlicePubSubSpec
           .via(
             query.skipPubSubTooFarAhead(
               enabled = true,
-              maxAheadOfBacktracking = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis)))
+              maxAheadOfBacktracking = JDuration.ofMillis(settings.querySettings.backtrackingWindow.toMillis),
+              correlationId = None))
           .toMat(TestSink[EventEnvelope[String]]())(Keep.both)
           .run()
       out.request(100)

@@ -5,16 +5,13 @@
 package akka.persistence.r2dbc.internal.postgres
 
 import java.time.Instant
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
-
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -23,6 +20,7 @@ import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
+import akka.persistence.r2dbc.internal.CorrelationId
 import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
@@ -389,11 +387,12 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): Source[SerializedSnapshotRow, NotUsed] = {
+      backtracking: Boolean,
+      correlationId: Option[String]): Source[SerializedSnapshotRow, NotUsed] = {
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
         s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+        s"of the [${settings.numberOfDataPartitions}] data partitions." + CorrelationId.toLogText(correlationId))
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(
@@ -403,8 +402,11 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       },
       collectSerializedSnapshot(entityType, _))
 
-    if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] snapshots from slices [{} - {}]", rows.size, minSlice, maxSlice))
+    if (log.isDebugEnabled) {
+      val correlationText = CorrelationId.toLogText(correlationId)
+      result.foreach(rows =>
+        log.debug("Read [{}] snapshots from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
+    }
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -436,7 +438,8 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      limit: Int): Future[Seq[Bucket]] = {
+      limit: Int,
+      correlationId: Option[String]): Future[Seq[Bucket]] = {
 
     val now = InstantFactory.now() // not important to use database time
     val toTimestamp = {
@@ -462,8 +465,11 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         Bucket(bucketStartEpochSeconds, count)
       })
 
-    if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+    if (log.isDebugEnabled) {
+      val correlationText = CorrelationId.toLogText(correlationId)
+      result.foreach(rows =>
+        log.debug("Read [{}] bucket counts from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
+    }
 
     if (toTimestamp == now)
       result
