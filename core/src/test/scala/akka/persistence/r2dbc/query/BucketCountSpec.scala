@@ -95,6 +95,51 @@ class BucketCountSpec
       }
     }
 
+    // reproducer of bucket timestamp rounding bug with "real" test data
+    "count events in 10 second buckets for interesting timestamp pattern" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = "deal"
+
+      val startTime = Instant.parse("2025-04-30T14:54:41.569186Z")
+
+      TestData.oldEventsWithInterestingTimestampPattern.foreach { case (t, pid, seqNr) =>
+        writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, seqNr, Instant.parse(t), s"e-$seqNr")
+      }
+
+      val buckets =
+        dao
+          .countBuckets(entityType, 960, 975, startTime, Buckets.Limit)
+          .futureValue
+
+      buckets.head.startTime shouldBe 1746024900L
+      buckets.head.count shouldBe 36
+
+      buckets.find(_.startTime == 1746026590L).get.count shouldBe 10L
+      buckets.find(_.startTime == 1746026600L) shouldBe None
+      buckets.find(_.startTime == 1746026610L).get.count shouldBe 105L
+      buckets.find(_.startTime == 1746026620L) shouldBe None
+      buckets.find(_.startTime == 1746026630L).get.count shouldBe 2L
+
+      (1746024900L to 1746026700L by 10).foreach { epochSeconds =>
+        val count = r2dbcExecutor
+          .selectOne("select count")(
+            _.createStatement(
+              s"select count(*) from ${settings.journalTableWithSchema(960)} where entity_type = 'deal' " +
+              s"and slice BETWEEN 960 AND 975 " +
+              s"and db_timestamp >= '${Instant.ofEpochSecond(epochSeconds)}' " +
+              s"and db_timestamp < '${Instant.ofEpochSecond(epochSeconds + 10)}' "),
+            _.get(0, classOf[java.lang.Long]).longValue())
+          .futureValue
+          .getOrElse(0L)
+        if (count == 0L)
+          buckets.find(_.startTime == epochSeconds) shouldBe None
+        else
+          buckets.find(_.startTime == epochSeconds).get.count shouldBe count
+      }
+
+    }
+
   }
 
 }

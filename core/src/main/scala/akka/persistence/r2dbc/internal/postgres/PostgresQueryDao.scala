@@ -118,7 +118,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
     sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
       sql"""
-      SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+      SELECT floor(extract(EPOCH from db_timestamp) / 10)::BIGINT AS bucket, count(*) AS count
       FROM ${journalTable(minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
