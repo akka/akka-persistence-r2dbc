@@ -109,7 +109,7 @@ class BucketCountSpec
 
       val buckets =
         dao
-          .countBuckets(entityType, 960, 975, startTime, Buckets.Limit)
+          .countBuckets(entityType, 960, 975, startTime, Buckets.Limit, None)
           .futureValue
 
       buckets.head.startTime shouldBe 1746024900L

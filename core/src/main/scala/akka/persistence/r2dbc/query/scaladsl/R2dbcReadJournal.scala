@@ -407,7 +407,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             snapshotOffsets.size)
 
           bySlice(entityType, minSlice).currentBySlices(
-            s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]: ",
+            s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
             correlationId,
             entityType,
             minSlice,
