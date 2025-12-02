@@ -40,8 +40,7 @@ class BucketCountSpec
       val slice2 = persistenceExt.sliceForPersistenceId(pid2)
 
       val startTime = InstantFactory.now().minusSeconds(3600)
-      // db epoch seconds is rounding, but Instant is not
-      val bucketStartTime = (startTime.plusMillis(500).getEpochSecond / 10) * 10
+      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
 
       (0 until 10).foreach { i =>
         writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
@@ -72,8 +71,7 @@ class BucketCountSpec
 
       val limit = 100
       val startTime = InstantFactory.now().minusSeconds(3600)
-      // db epoch seconds is rounding, but Instant is not
-      val bucketStartTime = (startTime.plusMillis(500).getEpochSecond / 10) * 10
+      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
 
       (0 until 10).foreach { i =>
         writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
@@ -87,9 +85,45 @@ class BucketCountSpec
       withClue(s"startTime $startTime ($bucketStartTime): ") {
         buckets.size shouldBe 11
         buckets.head.startTime shouldBe bucketStartTime
+        buckets.last.count shouldBe 0
         // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
         buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
+        buckets.dropRight(1).map(_.count).toSet shouldBe Set(2)
+        buckets.map(_.count).sum shouldBe (2 * 10)
+      }
+    }
+
+    "append empty bucket if no events in the last bucket, where timestamp is at the end of the bucket" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = nextEntityType()
+      val pid1 = nextPid(entityType)
+      val pid2 = nextPid(entityType)
+      val slice1 = persistenceExt.sliceForPersistenceId(pid1)
+      val slice2 = persistenceExt.sliceForPersistenceId(pid2)
+
+      val limit = 100
+      val startTime = Instant.parse("2025-12-02T08:38:49.508Z")
+      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
+      bucketStartTime shouldBe 1764664720L
+      Instant.ofEpochSecond(1764664720L) shouldBe Instant.parse("2025-12-02T08:38:40.000Z")
+
+      (0 until 10).foreach { i =>
+        writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
+        writeEvent(slice2, pid2, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
+      }
+
+      val buckets =
+        dao
+          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit, None)
+          .futureValue
+      withClue(s"startTime $startTime ($bucketStartTime): ") {
+        buckets.size shouldBe 11
+        buckets.head.startTime shouldBe bucketStartTime
         buckets.last.count shouldBe 0
+        // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
+        buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
+        buckets.last.startTime shouldBe 1764665730L
         buckets.dropRight(1).map(_.count).toSet shouldBe Set(2)
         buckets.map(_.count).sum shouldBe (2 * 10)
       }
