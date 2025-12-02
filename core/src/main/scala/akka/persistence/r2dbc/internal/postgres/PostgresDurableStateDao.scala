@@ -7,21 +7,18 @@ package akka.persistence.r2dbc.internal.postgres
 import java.lang
 import java.time.Instant
 import java.util
-
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
-
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.R2dbcDataIntegrityViolationException
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import akka.Done
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
@@ -36,6 +33,7 @@ import akka.persistence.r2dbc.internal.AdditionalColumnFactory
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.ChangeHandlerFactory
+import akka.persistence.r2dbc.internal.CorrelationId
 import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.DurableStateDao
 import akka.persistence.r2dbc.internal.InstantFactory
@@ -654,11 +652,12 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       fromSeqNr: Option[Long],
       toTimestamp: Option[Instant],
       behindCurrentTime: FiniteDuration,
-      backtracking: Boolean): Source[SerializedStateRow, NotUsed] = {
+      backtracking: Boolean,
+      correlationId: Option[String]): Source[SerializedStateRow, NotUsed] = {
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
       throw new IllegalArgumentException(
         s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+        s"of the [${settings.numberOfDataPartitions}] data partitions" + CorrelationId.toLogText(correlationId))
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select stateBySlices [$minSlice - $maxSlice]")(
@@ -705,8 +704,11 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
             tags = Set.empty // tags not fetched in queries (yet)
           ))
 
-    if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] durable states from slices [{} - {}]", rows.size, minSlice, maxSlice))
+    if (log.isDebugEnabled) {
+      val correlationText = CorrelationId.toLogText(correlationId)
+      result.foreach(rows =>
+        log.debug("Read [{}] durable states from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
+    }
 
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
@@ -861,7 +863,8 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
-      limit: Int): Future[Seq[Bucket]] = {
+      limit: Int,
+      correlationId: Option[String]): Future[Seq[Bucket]] = {
 
     val now = InstantFactory.now() // not important to use database time
     val toTimestamp = {
@@ -886,8 +889,11 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
         Bucket(bucketStartEpochSeconds, count)
       })
 
-    if (log.isDebugEnabled)
-      result.foreach(rows => log.debug("Read [{}] bucket counts from slices [{} - {}]", rows.size, minSlice, maxSlice))
+    if (log.isDebugEnabled) {
+      val correlationText = CorrelationId.toLogText(correlationId)
+      result.foreach(rows =>
+        log.debug("Read [{}] bucket counts from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
+    }
 
     if (toTimestamp == now)
       result

@@ -214,7 +214,8 @@ import org.slf4j.Logger
         fromSeqNr: Option[Long], // for events with same timestamp as `fromTimestamp`
         toTimestamp: Option[Instant],
         behindCurrentTime: FiniteDuration,
-        backtracking: Boolean): Source[SerializedRow, NotUsed]
+        backtracking: Boolean,
+        correlationId: Option[String]): Source[SerializedRow, NotUsed]
 
     /**
      * For Durable State we always refresh the bucket counts at the interval. For Event Sourced we know that they don't
@@ -227,7 +228,8 @@ import org.slf4j.Logger
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
-        limit: Int): Future[Seq[Bucket]]
+        limit: Int,
+        correlationId: Option[String]): Future[Seq[Bucket]]
 
     protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
@@ -268,6 +270,7 @@ import org.slf4j.Logger
 
   def currentBySlices(
       logPrefix: String,
+      correlationId: Option[String],
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -322,7 +325,8 @@ import org.slf4j.Logger
               fromSeqNr,
               toTimestamp = Some(toTimestamp),
               behindCurrentTime = Duration.Zero,
-              backtracking = false)
+              backtracking = false,
+              correlationId)
             .filter { row =>
               filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
             }
@@ -354,7 +358,7 @@ import org.slf4j.Logger
             updateState = nextOffset,
             delayNextQuery = _ => None,
             nextQuery = state => nextQuery(state, currentTime),
-            beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _))
+            beforeQuery = beforeQuery(logPrefix, correlationId, entityType, minSlice, maxSlice, _))
         }
       }
       .mapMaterializedValue(_ => NotUsed)
@@ -362,6 +366,7 @@ import org.slf4j.Logger
 
   def liveBySlices(
       logPrefix: String,
+      correlationId: Option[String],
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -555,7 +560,8 @@ import org.slf4j.Logger
             fromSeqNr,
             toTimestamp,
             behindCurrentTime,
-            backtracking = newState.backtracking)
+            backtracking = newState.backtracking,
+            correlationId)
           .filter { row =>
             filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
           }
@@ -589,7 +595,7 @@ import org.slf4j.Logger
             updateState = nextOffset,
             delayNextQuery = delayNextQuery,
             nextQuery = nextQuery,
-            beforeQuery = beforeQuery(logPrefix, entityType, minSlice, maxSlice, _),
+            beforeQuery = beforeQuery(logPrefix, correlationId, entityType, minSlice, maxSlice, _),
             heartbeat = nextHeartbeat)
         }
       }
@@ -598,6 +604,7 @@ import org.slf4j.Logger
 
   private def beforeQuery(
       logPrefix: String,
+      correlationId: Option[String],
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
@@ -624,7 +631,7 @@ import org.slf4j.Logger
       }
 
       val futureState =
-        dao.countBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit).map { counts =>
+        dao.countBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit, correlationId).map { counts =>
           val newBuckets = state.buckets.add(counts)
           val newState = state.copy(buckets = newBuckets)
           if (log.isDebugEnabled) {

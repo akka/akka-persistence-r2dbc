@@ -23,19 +23,32 @@ private[r2dbc] trait QueryDao extends BySliceQuery.Dao[SerializedJournalRow] {
    */
   override def countBucketsMayChange: Boolean = false
 
-  def timestampOfEvent(persistenceId: String, seqNr: Long): Future[Option[Instant]]
+  def timestampOfEvent(persistenceId: String, seqNr: Long, correlationId: Option[String]): Future[Option[Instant]]
 
-  def latestEventTimestamp(entityType: String, minSlice: Int, maxSlice: Int): Future[Option[Instant]]
+  def latestEventTimestamp(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      correlationId: Option[String]): Future[Option[Instant]]
 
-  def loadEvent(persistenceId: String, seqNr: Long, includePayload: Boolean): Future[Option[SerializedJournalRow]]
+  def loadEvent(
+      persistenceId: String,
+      seqNr: Long,
+      includePayload: Boolean,
+      correlationId: Option[String]): Future[Option[SerializedJournalRow]]
 
-  def loadLastEvent(persistenceId: String, toSeqNr: Long, includeDeleted: Boolean): Future[Option[SerializedJournalRow]]
+  def loadLastEvent(
+      persistenceId: String,
+      toSeqNr: Long,
+      includeDeleted: Boolean,
+      correlationId: Option[String]): Future[Option[SerializedJournalRow]]
 
   def eventsByPersistenceId(
       persistenceId: String,
       fromSequenceNr: Long,
       toSequenceNr: Long,
-      includeDeleted: Boolean): Source[SerializedJournalRow, NotUsed]
+      includeDeleted: Boolean,
+      correlationId: Option[String]): Source[SerializedJournalRow, NotUsed]
 
   def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed]
 

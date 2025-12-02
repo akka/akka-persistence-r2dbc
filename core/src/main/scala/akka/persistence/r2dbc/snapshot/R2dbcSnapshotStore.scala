@@ -100,7 +100,7 @@ private[r2dbc] final class R2dbcSnapshotStore(cfg: Config, cfgPath: String) exte
 
     val correspondingEvent: Future[Option[JournalDao.SerializedJournalRow]] =
       if (settings.querySettings.startFromSnapshotEnabled)
-        queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false)
+        queryDao.loadEvent(metadata.persistenceId, metadata.sequenceNr, includePayload = false, correlationId = None)
       else
         Future.successful(None)
 
