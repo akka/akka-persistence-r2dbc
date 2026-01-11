@@ -100,7 +100,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     }
 
     val sliceFilter = {
-      if (settings.querySettings.explicitSliceRangeCondition) sliceCondition(minSlice, maxSlice)
+      if (settings.querySettings.estimateTimeRange) sliceCondition(minSlice, maxSlice)
       else s"slice BETWEEN $minSlice AND $maxSlice"
     }
 

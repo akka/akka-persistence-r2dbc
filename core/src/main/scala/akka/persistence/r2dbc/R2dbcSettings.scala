@@ -508,7 +508,6 @@ final class QuerySettings(config: Config) {
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
   val cacheLatestEventTimestamp: Option[FiniteDuration] = config.optDuration("cache-latest-event-timestamp")
   val estimateTimeRange: Boolean = config.getBoolean("estimate-time-range")
-  val explicitSliceRangeCondition: Boolean = config.getBoolean("explicit-slice-range-condition")
 }
 
 /**
