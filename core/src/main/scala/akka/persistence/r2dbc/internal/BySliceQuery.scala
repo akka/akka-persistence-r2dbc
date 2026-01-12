@@ -135,23 +135,27 @@ import org.slf4j.Logger
     import Buckets.{ Bucket, BucketDurationSeconds, Count, EpochSeconds }
 
     def findTimeForLimit(from: Instant, atLeastCounts: Int): Option[Instant] = {
-      val fromEpochSeconds = from.toEpochMilli / 1000
-      val iter = countByBucket.iterator.dropWhile { case (key, _) => fromEpochSeconds >= key }
-
-      @tailrec def sumUntilFilled(key: EpochSeconds, sum: Count): (EpochSeconds, Count) = {
-        if (iter.isEmpty || sum >= atLeastCounts)
-          key -> sum
-        else {
-          val (nextKey, count) = iter.next()
-          sumUntilFilled(nextKey, sum + count)
-        }
-      }
-
-      val (key, sum) = sumUntilFilled(fromEpochSeconds, 0)
-      if (sum >= atLeastCounts)
-        Some(Instant.ofEpochSecond(key + BucketDurationSeconds))
-      else
+      if (isEmpty) {
         None
+      } else {
+        val fromEpochSeconds = from.toEpochMilli / 1000
+        val iter = countByBucket.iterator.dropWhile { case (key, _) => fromEpochSeconds >= key }
+
+        @tailrec def sumUntilFilled(key: EpochSeconds, sum: Count): (EpochSeconds, Count) = {
+          if (iter.isEmpty || sum >= atLeastCounts)
+            key -> sum
+          else {
+            val (nextKey, count) = iter.next()
+            sumUntilFilled(nextKey, sum + count)
+          }
+        }
+
+        val (key, sum) = sumUntilFilled(fromEpochSeconds, 0)
+        if (sum >= atLeastCounts)
+          Some(Instant.ofEpochSecond(key + BucketDurationSeconds))
+        else
+          None
+      }
     }
 
     // Key is the epoch seconds for the start of the bucket.
@@ -167,14 +171,18 @@ import org.slf4j.Logger
     }
 
     def clearUntil(time: Instant): Buckets = {
-      val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
-      val newCountByBucket = countByBucket.dropWhile { case (key, _) => epochSeconds >= key }
-      if (newCountByBucket.size == countByBucket.size)
+      if (isEmpty) {
         this
-      else if (newCountByBucket.isEmpty)
-        new Buckets(immutable.SortedMap(countByBucket.last), createdAt = this.createdAt) // keep last
-      else
-        new Buckets(newCountByBucket, createdAt = this.createdAt)
+      } else {
+        val epochSeconds = time.minusSeconds(BucketDurationSeconds).toEpochMilli / 1000
+        val newCountByBucket = countByBucket.dropWhile { case (key, _) => epochSeconds >= key }
+        if (newCountByBucket.size == countByBucket.size)
+          this
+        else if (newCountByBucket.isEmpty)
+          new Buckets(immutable.SortedMap(countByBucket.last), createdAt = this.createdAt) // keep last
+        else
+          new Buckets(newCountByBucket, createdAt = this.createdAt)
+      }
     }
 
     def nextStartTime: Option[Instant] = {
@@ -609,7 +617,8 @@ import org.slf4j.Logger
       maxSlice: Int,
       state: QueryState): Option[Future[QueryState]] = {
     // Don't run this too frequently
-    if ((state.buckets.isEmpty || JDuration
+    if (settings.querySettings.estimateTimeRange &&
+      (state.buckets.isEmpty || JDuration
         .between(state.buckets.createdAt, InstantFactory.now())
         .compareTo(eventBucketCountInterval) > 0) &&
       // For Durable State we always refresh the bucket counts at the interval. For Event Sourced we know
