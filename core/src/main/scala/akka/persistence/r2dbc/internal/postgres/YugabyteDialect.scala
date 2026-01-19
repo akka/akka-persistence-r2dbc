@@ -40,7 +40,7 @@ private[r2dbc] object YugabyteDialect extends Dialect {
     new PostgresJournalDao(executorProvider)
 
   override def createSnapshotDao(executorProvider: R2dbcExecutorProvider): SnapshotDao =
-    new YugabyteSnapshotDao(executorProvider)
+    new PostgresSnapshotDao(executorProvider)
 
   override def createQueryDao(executorProvider: R2dbcExecutorProvider): QueryDao =
     new YugabyteQueryDao(executorProvider)

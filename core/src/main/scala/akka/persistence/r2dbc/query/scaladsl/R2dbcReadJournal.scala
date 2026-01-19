@@ -28,7 +28,6 @@ import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.query.Offset
 import akka.persistence.query.QueryCorrelationId
 import akka.persistence.query.TimestampOffset
-import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.query.typed.scaladsl.CurrentEventsByPersistenceIdStartingFromSnapshotQuery
@@ -230,23 +229,6 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     }
   }
 
-  private def snapshotsBySlice[Snapshot, Event](
-      entityType: String,
-      minSlice: Int,
-      transformSnapshot: Snapshot => Event): BySliceQuery[SerializedSnapshotRow, EventEnvelope[Event]] = {
-    val createEnvelope: (TimestampOffset, SerializedSnapshotRow) => EventEnvelope[Event] =
-      (offset, row) => createEnvelopeFromSnapshot(row, offset, transformSnapshot)
-
-    val extractOffset: EventEnvelope[Event] => TimestampOffset = env => env.offset.asInstanceOf[TimestampOffset]
-
-    val createHeartbeat: Instant => Option[EventEnvelope[Event]] = { timestamp =>
-      Some(createEventEnvelopeHeartbeat(entityType, minSlice, timestamp).asInstanceOf[EventEnvelope[Event]])
-    }
-
-    new BySliceQuery(snapshotDao, createEnvelope, extractOffset, createHeartbeat, clock, settings, log)(
-      typedSystem.executionContext)
-  }
-
   private def createEnvelopeFromSnapshot[Snapshot, Event](
       row: SerializedSnapshotRow,
       offset: TimestampOffset,
@@ -354,13 +336,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
 
   /**
    * Same as `currentEventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing
-   * number of events that have to be loaded. This can be useful if the consumer start from zero without any previously
-   * processed offset or if it has been disconnected for a long while and its offset is far behind.
+   * number of events that have to be processed. This can be useful if the consumer start from zero without any
+   * previously processed offset or if it has been disconnected for a long while and its offset is far behind.
    *
-   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
-   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
-   *
-   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   * Snapshot events and ordinary events are interleaved, skipping events before known snapshots. After emitting the
+   * snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
    *
    * To use `currentEventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
@@ -373,59 +353,39 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       offset: Offset,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("currentEventsBySlicesStartingFromSnapshots")
-    val timestampOffset = toTimestampOffset(offset)
     val correlationId = QueryCorrelationId.get()
     val correlationIdText = CorrelationId.toLogText(correlationId)
-    val snapshotSource =
-      snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
+
+    val eventSource =
+      bySlice[Event](entityType, minSlice)
         .currentBySlices(
-          s"[$entityType] currentSnapshotsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
+          s"[$entityType] currentEventsBySlicesStartingFromSnapshots [$minSlice-$maxSlice]$correlationIdText: ",
           correlationId,
           entityType,
           minSlice,
           maxSlice,
           offset)
 
-    Source.fromGraph(
-      new StartingFromSnapshotStage[Event](
-        snapshotSource,
-        { snapshotOffsets =>
-          val initOffset =
-            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
-              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
-              TimestampOffset(minTimestamp, Map.empty)
-            } else {
-              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
-              // but there can still be events between the given `offset` parameter and the min timestamp of the
-              // snapshots and those would then be missed
-              offset
-            }
-
-          log.debug(
-            "currentEventsBySlicesStartingFromSnapshots initOffset [{}] with [{}] snapshots",
-            initOffset,
-            snapshotOffsets.size)
-
-          bySlice(entityType, minSlice).currentBySlices(
-            s"[$entityType] currentEventsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
-            correlationId,
-            entityType,
-            minSlice,
-            maxSlice,
-            initOffset,
-            filterEventsBeforeSnapshots(snapshotOffsets, backtrackingEnabled = false))
-        }))
+    eventSource
+      .via(
+        Flow.fromGraph(
+          new StartingFromSnapshotStage[Event](
+            loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
+            createEnvelope = snapshotRow => {
+              val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
+              createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
+            })))
   }
 
   /**
    * Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
-   * events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
-   * offset or if it has been disconnected for a long while and its offset is far behind.
+   * events that have to be processed. This can be useful if the consumer start from zero without any previously
+   * processed offset or if it has been disconnected for a long while and its offset is far behind.
    *
-   * First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
-   * snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+   * The snapshots are transformed to events with the given `transformSnapshot` function.
    *
-   * After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+   * Snapshot events and ordinary events are interleaved, skipping events before known snapshots. After emitting the
+   * snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
    *
    * To use `eventsBySlicesStartingFromSnapshots` you must enable configuration
    * `akka.persistence.r2dbc.query.start-from-snapshot.enabled` and follow instructions in migration guide
@@ -438,87 +398,33 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       offset: Offset,
       transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed] = {
     checkStartFromSnapshotEnabled("eventsBySlicesStartingFromSnapshots")
-    val timestampOffset = toTimestampOffset(offset)
     val correlationId = QueryCorrelationId.get()
     val correlationIdText = CorrelationId.toLogText(correlationId)
-    val snapshotSource =
-      snapshotsBySlice[Snapshot, Event](entityType, minSlice, transformSnapshot)
-        .currentBySlices(
-          s"[$entityType] snapshotsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
-          correlationId,
-          entityType,
-          minSlice,
-          maxSlice,
-          offset)
 
-    Source.fromGraph(
-      new StartingFromSnapshotStage[Event](
-        snapshotSource,
-        { snapshotOffsets =>
-          val initOffset =
-            if (timestampOffset == TimestampOffset.Zero && snapshotOffsets.nonEmpty) {
-              val minTimestamp = snapshotOffsets.valuesIterator.minBy { case (_, timestamp) => timestamp }._2
-              TimestampOffset(minTimestamp, Map.empty)
-            } else {
-              // don't adjust because then there is a risk that there was no found snapshot for a persistenceId
-              // but there can still be events between the given `offset` parameter and the min timestamp of the
-              // snapshots and those would then be missed
-              offset
-            }
+    val dbSource =
+      bySlice[Event](entityType, minSlice).liveBySlices(
+        s"[$entityType] eventsBySlicesStartingFromSnapshots [$minSlice-$maxSlice]$correlationIdText: ",
+        correlationId,
+        entityType,
+        minSlice,
+        maxSlice,
+        offset)
+    val eventSource =
+      if (settings.journalPublishEvents) {
+        val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
+        mergeDbAndPubSubSources(dbSource, pubSubSource, correlationId)
+      } else
+        dbSource
 
-          log.debug(
-            s"eventsBySlicesStartingFromSnapshots $correlationIdText initOffset [{}] with [{}] snapshots",
-            initOffset,
-            snapshotOffsets.size)
-
-          val dbSource =
-            bySlice[Event](entityType, minSlice).liveBySlices(
-              s"[$entityType] eventsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
-              correlationId,
-              entityType,
-              minSlice,
-              maxSlice,
-              initOffset,
-              filterEventsBeforeSnapshots(snapshotOffsets, settings.querySettings.backtrackingEnabled))
-
-          if (settings.journalPublishEvents) {
-            // Note that events via PubSub are not filtered by snapshotOffsets. It's unlikely that
-            // Those will be earlier than the snapshots and duplicates must be handled downstream in that case.
-            // If we would use the filterEventsBeforeSnapshots function for PubSub it would be difficult to
-            // know when memory of that Map can be released or the filter function would have to be shared
-            // and thread safe, which is not worth it.
-            val pubSubSource = eventsBySlicesPubSubSource[Event](entityType, minSlice, maxSlice)
-            mergeDbAndPubSubSources(dbSource, pubSubSource, correlationId)
-          } else
-            dbSource
-        }))
-  }
-
-  /**
-   * Stateful filter function that decides if (persistenceId, seqNr, source) should be emitted by
-   * `eventsBySlicesStartingFromSnapshots` and `currentEventsBySlicesStartingFromSnapshots`.
-   */
-  private def filterEventsBeforeSnapshots(
-      snapshotOffsets: Map[String, (Long, Instant)],
-      backtrackingEnabled: Boolean): (String, Long, String) => Boolean = {
-    var _snapshotOffsets = snapshotOffsets
-    (persistenceId, seqNr, source) => {
-      if (_snapshotOffsets.isEmpty)
-        true
-      else
-        _snapshotOffsets.get(persistenceId) match {
-          case None                     => true
-          case Some((snapshotSeqNr, _)) =>
-            //  release memory by removing from the _snapshotOffsets Map
-            if (seqNr == snapshotSeqNr &&
-              ((backtrackingEnabled && source == EnvelopeOrigin.SourceBacktracking) ||
-              (!backtrackingEnabled && source == EnvelopeOrigin.SourceQuery))) {
-              _snapshotOffsets -= persistenceId
-            }
-
-            seqNr > snapshotSeqNr
-        }
-    }
+    eventSource
+      .via(
+        Flow.fromGraph(
+          new StartingFromSnapshotStage[Event](
+            loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
+            createEnvelope = snapshotRow => {
+              val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
+              createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
+            })))
   }
 
   private def checkStartFromSnapshotEnabled(methodName: String): Unit =
@@ -562,7 +468,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   private def deserializeEvent[Event](se: SerializedEvent): Event =
     serialization.deserialize(se.bytes, se.serializerId, se.serializerManifest).get.asInstanceOf[Event]
 
-  private def mergeDbAndPubSubSources[Event, Snapshot](
+  private def mergeDbAndPubSubSources[Event](
       dbSource: Source[EventEnvelope[Event], NotUsed],
       pubSubSource: Source[EventEnvelope[Event], NotUsed],
       correlationId: Option[String]) = {

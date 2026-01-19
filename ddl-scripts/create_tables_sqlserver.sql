@@ -42,12 +42,6 @@ IF object_id('snapshot') is null
 	  PRIMARY KEY(persistence_id)
 	);
 
--- `snapshot_slice_idx` is only needed if the slice based queries are used together with snapshot as starting point
-IF NOT EXISTS(SELECT * FROM sys.indexes WHERE name = 'snapshot_slice_idx' AND object_id = OBJECT_ID('snapshot'))
-    BEGIN
-        CREATE INDEX snapshot_slice_idx ON snapshot(slice, entity_type, db_timestamp);
-    END;
-
 IF object_id('durable_state') is null
 	CREATE TABLE durable_state (
 	  slice INT NOT NULL,

@@ -273,8 +273,7 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset,
-      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
+      offset: Offset): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     def nextOffset(state: QueryState, envelope: Envelope): QueryState = {
@@ -326,9 +325,6 @@ import org.slf4j.Logger
               behindCurrentTime = Duration.Zero,
               backtracking = false,
               correlationId)
-            .filter { row =>
-              filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
-            }
             .via(deserializeAndAddOffset(state.latest)))
       } else {
         if (log.isDebugEnabled)
@@ -369,8 +365,7 @@ import org.slf4j.Logger
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset,
-      filterEventsBeforeSnapshots: (String, Long, String) => Boolean = (_, _, _) => true): Source[Envelope, NotUsed] = {
+      offset: Offset): Source[Envelope, NotUsed] = {
     val initialOffset = toTimestampOffset(offset)
 
     if (log.isDebugEnabled())
@@ -561,9 +556,6 @@ import org.slf4j.Logger
             behindCurrentTime,
             backtracking = newState.backtracking,
             correlationId)
-          .filter { row =>
-            filterEventsBeforeSnapshots(row.persistenceId, row.seqNr, row.source)
-          }
           .via(deserializeAndAddOffset(newState.currentOffset)))
     }
 

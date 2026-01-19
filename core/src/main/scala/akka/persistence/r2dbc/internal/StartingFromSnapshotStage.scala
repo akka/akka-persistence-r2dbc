@@ -4,17 +4,19 @@
 
 package akka.persistence.r2dbc.internal
 
-import java.time.Instant
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
-import akka.NotUsed
 import akka.annotation.InternalApi
-import akka.persistence.query.TimestampOffset.toTimestampOffset
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.stream.Attributes
+import akka.stream.FlowShape
+import akka.stream.Inlet
 import akka.stream.Outlet
-import akka.stream.SourceShape
-import akka.stream.scaladsl.Keep
-import akka.stream.scaladsl.Source
 import akka.stream.stage.GraphStage
 import akka.stream.stage.GraphStageLogic
 import akka.stream.stage.InHandler
@@ -23,81 +25,90 @@ import akka.stream.stage.OutHandler
 /**
  * INTERNAL API
  */
-@InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
-    snapshotSource: Source[EventEnvelope[Event], NotUsed],
-    primarySource: Map[String, (Long, Instant)] => Source[EventEnvelope[Event], NotUsed])
-    extends GraphStage[SourceShape[EventEnvelope[Event]]] {
+@InternalApi private[r2dbc] object StartingFromSnapshotStage {
+  private case class SnapshotState(seqNr: Long, emitted: Boolean)
+}
 
+/**
+ * INTERNAL API
+ */
+@InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
+    loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
+    createEnvelope: SerializedSnapshotRow => EventEnvelope[Event])
+    extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
+  import StartingFromSnapshotStage._
+
+  val in: Inlet[EventEnvelope[Event]] = Inlet("in")
   val out: Outlet[EventEnvelope[Event]] = Outlet("out")
 
-  override val shape: SourceShape[EventEnvelope[Event]] = SourceShape(out)
+  override val shape: FlowShape[EventEnvelope[Event], EventEnvelope[Event]] =
+    FlowShape(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
-    new GraphStageLogic(shape) { self =>
-      setHandler(
-        out,
-        new OutHandler {
-          override def onPull(): Unit = {
-            val snapshotHandler = new SnapshotHandler
-            setHandler(out, snapshotHandler)
+    new GraphStageLogic(shape) with InHandler with OutHandler { self =>
+      private implicit def ec: ExecutionContext = materializer.executionContext
 
-            subFusingMaterializer.materialize(
-              snapshotSource.toMat(snapshotHandler.subSink.sink)(Keep.left),
-              inheritedAttributes)
+      private var snapshotState = Map.empty[String, SnapshotState]
+
+      private val loadSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[SerializedSnapshotRow])]] {
+        case Success((env, Some(snap))) =>
+          if (env.sequenceNr == snap.seqNr) {
+            push(out, createEnvelope(snap))
+            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = true))
+          } else if (env.sequenceNr > snap.seqNr) {
+            // event is ahead of snapshot, emit event
+            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = false))
+            push(out, env)
+          } else {
+            // snapshot will be emitted later, ignore event
+            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = false))
+            pull(in)
           }
-        })
-
-      class SnapshotHandler extends OutHandler with InHandler {
-        private var snapshotOffsets = Map.empty[String, (Long, Instant)]
-
-        val subSink = new SubSinkInlet[EventEnvelope[Event]]("snapshots")
-        subSink.pull()
-        subSink.setHandler(this)
-
-        override def onPull(): Unit = {
-          subSink.pull()
-        }
-
-        override def onPush(): Unit = {
-          val env = subSink.grab()
-          snapshotOffsets =
-            snapshotOffsets.updated(env.persistenceId, env.sequenceNr -> toTimestampOffset(env.offset).timestamp)
+        case Success((env, None)) =>
+          // no snapshot, emit event
+          snapshotState = snapshotState.updated(env.persistenceId, SnapshotState(0L, emitted = true))
           push(out, env)
-        }
 
-        override def onUpstreamFinish(): Unit = {
-          val primaryHandler = new PrimaryHandler(isAvailable(out))
-          self.setHandler(out, primaryHandler)
+        case Failure(exc) =>
+          failStage(exc)
+      }
 
-          subFusingMaterializer.materialize(
-            primarySource(snapshotOffsets).toMat(primaryHandler.subSink.sink)(Keep.left),
-            inheritedAttributes)
-        }
+      override def onPush(): Unit = {
+        val env = grab(in)
+        snapshotState.get(env.persistenceId) match {
+          case Some(s) =>
+            val eventIsAfterSnapshot = env.sequenceNr > s.seqNr
 
-        override def onDownstreamFinish(cause: Throwable): Unit = {
-          subSink.cancel(cause)
-          completeStage()
+            if (eventIsAfterSnapshot) {
+              // event is after snapshot, emit event
+              // we can't ignore it when snapshot is not emitted, because it might have been emitted in
+              // previous incarnation, but then the stream was restarted
+              push(out, env)
+            } else if (!s.emitted && env.sequenceNr == s.seqNr) {
+              // trigger emit of snapshot
+              loadCorrespondingSnapshot(env)
+            } else {
+              // event is before (or same as) snapshot, ignore
+              pull(in)
+            }
+
+          case None =>
+            loadCorrespondingSnapshot(env)
         }
       }
 
-      class PrimaryHandler(pullImmediately: Boolean) extends OutHandler with InHandler {
-        val subSink = new SubSinkInlet[EventEnvelope[Event]]("snapshots")
-        if (pullImmediately) subSink.pull()
-        subSink.setHandler(this)
-
-        override def onPull(): Unit = {
-          subSink.pull()
-        }
-
-        override def onPush(): Unit = {
-          push(out, subSink.grab())
-        }
-
-        override def onDownstreamFinish(cause: Throwable): Unit = {
-          subSink.cancel(cause)
-          completeStage()
-        }
+      private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
+        loadSnapshot(env.persistenceId)
+          .map(result => (env, result))(ExecutionContext.parasitic)
+          .onComplete(loadSnapshotCallback.invoke)
       }
+
+      override def onPull(): Unit = {
+        pull(in)
+      }
+
+      setHandler(in, this)
+      setHandler(out, this)
 
     }
 

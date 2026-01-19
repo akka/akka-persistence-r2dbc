@@ -5,35 +5,31 @@
 package akka.persistence.r2dbc.internal.postgres
 
 import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.duration.FiniteDuration
+
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import akka.NotUsed
+
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.SnapshotSelectionCriteria
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
-import akka.persistence.r2dbc.internal.CorrelationId
-import akka.persistence.r2dbc.internal.InstantFactory
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
-import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao
 import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
-import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
+import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichRow
+import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
 import akka.persistence.typed.PersistenceId
-import akka.stream.scaladsl.Source
 
 /**
  * INTERNAL API
@@ -50,8 +46,9 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   protected val settings: R2dbcSettings = executorProvider.settings
   protected val system: ActorSystem[_] = executorProvider.system
   implicit protected val ec: ExecutionContext = executorProvider.ec
-  import SnapshotDao._
   import settings.codecSettings.SnapshotImplicits._
+
+  import SnapshotDao._
 
   protected def log: Logger = PostgresSnapshotDao.log
 
@@ -164,36 +161,6 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       WHERE persistence_id = ?
       $maxSeqNrCondition $minSeqNrCondition $maxTimestampCondition $minTimestampCondition"""
   }
-
-  private val currentDbTimestampSql =
-    sql"SELECT CURRENT_TIMESTAMP AS db_timestamp"
-
-  protected def snapshotsBySlicesRangeSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"snapshotsBySlicesRangeSql-$minSlice-$maxSlice") {
-      sql"""
-      SELECT slice, persistence_id, seq_nr, db_timestamp, write_timestamp, snapshot, ser_id, ser_manifest, tags, meta_payload, meta_ser_id, meta_ser_manifest
-      FROM ${snapshotTable(minSlice)}
-      WHERE entity_type = ?
-      AND ${sliceCondition(minSlice, maxSlice)}
-      AND db_timestamp >= ?
-      ORDER BY db_timestamp, seq_nr
-      LIMIT ?"""
-    }
-
-  protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
-      sql"""
-       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
-       FROM ${snapshotTable(minSlice)}
-       WHERE entity_type = ?
-       AND ${sliceCondition(minSlice, maxSlice)}
-       AND db_timestamp >= ? AND db_timestamp <= ?
-       GROUP BY bucket ORDER BY bucket LIMIT ?
-       """
-    }
-
-  protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
-    s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
   private def collectSerializedSnapshot(entityType: String, row: Row): SerializedSnapshotRow = {
     val writeTimestamp = row.get[java.lang.Long]("write_timestamp", classOf[java.lang.Long])
@@ -349,133 +316,5 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       statement
     }
   }.map(_ => ())(ExecutionContext.parasitic)
-
-  /**
-   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
-   */
-  override def currentDbTimestamp(slice: Int): Future[Instant] = {
-    val executor = executorProvider.executorFor(slice)
-    executor
-      .selectOne("select current db timestamp")(
-        connection => connection.createStatement(currentDbTimestampSql),
-        row => row.getTimestamp("db_timestamp"))
-      .map {
-        case Some(time) => time
-        case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
-      }
-  }
-
-  protected def bindSnapshotsBySlicesRangeSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      bufferSize: Int): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-      .bind(2, settings.querySettings.bufferSize)
-  }
-
-  /**
-   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
-   */
-  override def rowsBySlices(
-      entityType: String,
-      minSlice: Int,
-      maxSlice: Int,
-      fromTimestamp: Instant,
-      fromSeqNr: Option[Long],
-      toTimestamp: Option[Instant],
-      behindCurrentTime: FiniteDuration,
-      backtracking: Boolean,
-      correlationId: Option[String]): Source[SerializedSnapshotRow, NotUsed] = {
-    if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
-      throw new IllegalArgumentException(
-        s"Slice range [$minSlice-$maxSlice] spans over more than one " +
-        s"of the [${settings.numberOfDataPartitions}] data partitions" + CorrelationId.toLogText(correlationId))
-
-    val executor = executorProvider.executorFor(minSlice)
-    val result = executor.select(s"select snapshotsBySlices [$minSlice - $maxSlice]")(
-      connection => {
-        val stmt = connection.createStatement(snapshotsBySlicesRangeSql(minSlice, maxSlice))
-        bindSnapshotsBySlicesRangeSql(stmt, entityType, fromTimestamp, settings.querySettings.bufferSize)
-      },
-      collectSerializedSnapshot(entityType, _))
-
-    if (log.isDebugEnabled) {
-      val correlationText = CorrelationId.toLogText(correlationId)
-      result.foreach(rows =>
-        log.debug("Read [{}] snapshots from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
-    }
-
-    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
-  }
-
-  /**
-   * Counts for a bucket may become inaccurate when existing snapshots are updated since the timestamp is changed. This
-   * is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
-   */
-  override def countBucketsMayChange: Boolean = true
-
-  protected def bindSelectBucketsSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      toTimestamp: Instant,
-      limit: Int): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-      .bindTimestamp(2, toTimestamp)
-      .bind(3, limit)
-  }
-
-  /**
-   * This is used from `BySliceQuery`, i.e. only if settings.querySettings.startFromSnapshotEnabled
-   */
-  override def countBuckets(
-      entityType: String,
-      minSlice: Int,
-      maxSlice: Int,
-      fromTimestamp: Instant,
-      limit: Int,
-      correlationId: Option[String]): Future[Seq[Bucket]] = {
-
-    val now = InstantFactory.now() // not important to use database time
-    val toTimestamp = {
-      if (fromTimestamp == Instant.EPOCH)
-        now
-      else {
-        // max buckets, just to have some upper bound
-        val t = fromTimestamp.plusSeconds(Buckets.BucketDurationSeconds * limit + Buckets.BucketDurationSeconds)
-        if (t.isAfter(now)) now else t
-      }
-    }
-
-    val executor = executorProvider.executorFor(minSlice)
-
-    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
-      connection => {
-        val stmt = connection.createStatement(selectBucketsSql(minSlice, maxSlice))
-        bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
-      },
-      row => {
-        val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
-        val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong
-        Bucket(bucketStartEpochSeconds, count)
-      })
-
-    if (log.isDebugEnabled) {
-      val correlationText = CorrelationId.toLogText(correlationId)
-      result.foreach(rows =>
-        log.debug("Read [{}] bucket counts from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
-    }
-
-    if (toTimestamp == now)
-      result
-    else
-      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
-
-  }
 
 }
