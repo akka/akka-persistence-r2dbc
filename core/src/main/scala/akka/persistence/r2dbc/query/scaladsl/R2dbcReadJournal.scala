@@ -370,6 +370,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .via(
         Flow.fromGraph(
           new StartingFromSnapshotStage[Event](
+            cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
             createEnvelope = snapshotRow => {
               val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
@@ -420,6 +421,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       .via(
         Flow.fromGraph(
           new StartingFromSnapshotStage[Event](
+            cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
             createEnvelope = snapshotRow => {
               val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))

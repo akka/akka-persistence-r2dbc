@@ -21,6 +21,7 @@ import akka.stream.stage.GraphStage
 import akka.stream.stage.GraphStageLogic
 import akka.stream.stage.InHandler
 import akka.stream.stage.OutHandler
+import akka.util.RecencyList
 
 /**
  * INTERNAL API
@@ -33,6 +34,7 @@ import akka.stream.stage.OutHandler
  * INTERNAL API
  */
 @InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
+    cacheCapacity: Int,
     loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
     createEnvelope: SerializedSnapshotRow => EventEnvelope[Event])
     extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
@@ -49,27 +51,42 @@ import akka.stream.stage.OutHandler
       private implicit def ec: ExecutionContext = materializer.executionContext
 
       private var snapshotState = Map.empty[String, SnapshotState]
+      private val recency = RecencyList.emptyWithNanoClock[String]
+      private var inProgress = false
+
+      private def updateState(persistenceId: String, seqNr: Long, emitted: Boolean): Unit = {
+        snapshotState = snapshotState.updated(persistenceId, SnapshotState(seqNr, emitted))
+        recency.update(persistenceId)
+        if (recency.size > cacheCapacity)
+          recency.removeLeastRecent().foreach { pid =>
+            snapshotState -= pid
+          }
+      }
 
       private val loadSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[SerializedSnapshotRow])]] {
         case Success((env, Some(snap))) =>
+          inProgress = false
           if (env.sequenceNr == snap.seqNr) {
             push(out, createEnvelope(snap))
-            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = true))
+            updateState(snap.persistenceId, snap.seqNr, emitted = true)
           } else if (env.sequenceNr > snap.seqNr) {
             // event is ahead of snapshot, emit event
-            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = false))
+            updateState(snap.persistenceId, snap.seqNr, emitted = false)
             push(out, env)
           } else {
             // snapshot will be emitted later, ignore event
-            snapshotState = snapshotState.updated(snap.persistenceId, SnapshotState(snap.seqNr, emitted = false))
-            pull(in)
+            updateState(snap.persistenceId, snap.seqNr, emitted = false)
+            tryPullOrComplete()
           }
+
         case Success((env, None)) =>
+          inProgress = false
           // no snapshot, emit event
-          snapshotState = snapshotState.updated(env.persistenceId, SnapshotState(0L, emitted = true))
+          updateState(env.persistenceId, 0L, emitted = true)
           push(out, env)
 
         case Failure(exc) =>
+          inProgress = false
           failStage(exc)
       }
 
@@ -89,7 +106,7 @@ import akka.stream.stage.OutHandler
               loadCorrespondingSnapshot(env)
             } else {
               // event is before (or same as) snapshot, ignore
-              pull(in)
+              tryPullOrComplete()
             }
 
           case None =>
@@ -97,14 +114,27 @@ import akka.stream.stage.OutHandler
         }
       }
 
+      override def onUpstreamFinish(): Unit = {
+        if (!inProgress)
+          super.onUpstreamFinish()
+      }
+
+      private def tryPullOrComplete(): Unit = {
+        if (isClosed(in))
+          completeStage()
+        else
+          pull(in)
+      }
+
       private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
+        inProgress = true
         loadSnapshot(env.persistenceId)
           .map(result => (env, result))(ExecutionContext.parasitic)
           .onComplete(loadSnapshotCallback.invoke)
       }
 
       override def onPull(): Unit = {
-        pull(in)
+        tryPullOrComplete()
       }
 
       setHandler(in, this)
