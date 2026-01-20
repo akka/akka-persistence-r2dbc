@@ -256,7 +256,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       .selectOne(s"sequenceNumberOfSnapshot [$persistenceId]")(
         _.createStatement(selectSeqNrSql(slice))
           .bind(0, persistenceId),
-        _.get("seq_nr", classOf[java.lang.Long]))
+        _.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]))
   }
 
   protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {
