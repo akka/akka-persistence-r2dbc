@@ -35,6 +35,7 @@ import akka.util.RecencyList
  */
 @InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
     cacheCapacity: Int,
+    sequenceNumberOfSnapshot: String => Future[Option[Long]],
     loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
     createEnvelope: SerializedSnapshotRow => EventEnvelope[Event])
     extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
@@ -61,6 +62,33 @@ import akka.util.RecencyList
           recency.removeLeastRecent().foreach { pid =>
             snapshotState -= pid
           }
+      }
+
+      private val seqNrOfSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[Long])]] {
+        case Success((env, Some(seqNr))) =>
+          inProgress = false
+          if (env.sequenceNr == seqNr) {
+            // snapshot should be emitted, load full snapshot
+            loadCorrespondingSnapshot(env)
+          } else if (env.sequenceNr > seqNr) {
+            // event is ahead of snapshot, emit event
+            updateState(env.persistenceId, seqNr, emitted = false)
+            push(out, env)
+          } else {
+            // snapshot will be emitted later, ignore event
+            updateState(env.persistenceId, seqNr, emitted = false)
+            tryPullOrComplete()
+          }
+
+        case Success((env, None)) =>
+          inProgress = false
+          // no snapshot, emit event
+          updateState(env.persistenceId, 0L, emitted = true)
+          push(out, env)
+
+        case Failure(exc) =>
+          inProgress = false
+          failStage(exc)
       }
 
       private val loadSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[SerializedSnapshotRow])]] {
@@ -110,7 +138,7 @@ import akka.util.RecencyList
             }
 
           case None =>
-            loadCorrespondingSnapshot(env)
+            seqNrOfCorrespondingSnapshot(env)
         }
       }
 
@@ -124,6 +152,13 @@ import akka.util.RecencyList
           completeStage()
         else
           pull(in)
+      }
+
+      private def seqNrOfCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
+        inProgress = true
+        sequenceNumberOfSnapshot(env.persistenceId)
+          .map(result => (env, result))(ExecutionContext.parasitic)
+          .onComplete(seqNrOfSnapshotCallback.invoke)
       }
 
       private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {

@@ -137,6 +137,16 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
       createSql // no cache
   }
 
+  protected def selectSeqNrSql(slice: Int): String = {
+    sqlCache.get(slice, "selectSeqNrSql") {
+      sql"""
+        SELECT seq_nr
+        FROM ${snapshotTable(slice)}
+        WHERE persistence_id = ?
+        LIMIT 1"""
+    }
+  }
+
   private def deleteSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
     // not caching, too many combinations
 
@@ -237,6 +247,16 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         },
         collectSerializedSnapshot(entityType, _))
       .map(_.headOption)(ExecutionContext.parasitic)
+  }
+
+  override def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]] = {
+    val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val executor = executorProvider.executorFor(slice)
+    executor
+      .selectOne(s"sequenceNumberOfSnapshot [$persistenceId]")(
+        _.createStatement(selectSeqNrSql(slice))
+          .bind(0, persistenceId),
+        _.get("seq_nr", classOf[java.lang.Long]))
   }
 
   protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {

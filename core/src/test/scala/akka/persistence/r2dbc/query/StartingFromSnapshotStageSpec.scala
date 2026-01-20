@@ -11,6 +11,7 @@ import scala.concurrent.Future
 
 import org.scalatest.wordspec.AnyWordSpecLike
 
+import akka.NotUsed
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -68,21 +69,50 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
       Set.empty,
       None)
 
-  def findEnvelope(persistenceId: PersistenceId, envelopes: Vector[EventEnvelope[Any]]): Option[EventEnvelope[Any]] =
+  def findEnvelope(
+      persistenceId: PersistenceId,
+      envelopes: IndexedSeq[EventEnvelope[Any]]): Option[EventEnvelope[Any]] =
     envelopes.find(env => env.persistenceId == persistenceId.id)
 
   def findEnvelope(
       persistenceId: PersistenceId,
       seqNr: Long,
-      envelopes: Vector[EventEnvelope[Any]],
+      envelopes: IndexedSeq[EventEnvelope[Any]],
       source: String = ""): Option[EventEnvelope[Any]] =
     envelopes.find(env => env.persistenceId == persistenceId.id && env.sequenceNr == seqNr && env.source == source)
 
-  "StartingFromSnapshotStage" must {
-    "emit envelopes from snapshots and from ordinary events" in {
-      val snapshotEnvelopes = Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidC, 1, "snap-c1"))
+  private abstract class Setup {
+    def snapshotEnvelopes: IndexedSeq[EventEnvelope[Any]]
+    def eventEnvelopes: IndexedSeq[EventEnvelope[Any]]
 
-      val eventEnvelopes = Vector(
+    def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
+      Future.successful(
+        findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(createSerializedSnapshotRow))
+
+    def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]] =
+      Future.successful(findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(_.sequenceNr))
+
+    def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
+      findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
+        .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
+
+    def source(cacheCapacity: Int = 10000): Source[EventEnvelope[Any], NotUsed] =
+      Source(eventEnvelopes)
+        .via(
+          Flow.fromGraph(
+            new StartingFromSnapshotStage(
+              cacheCapacity,
+              sequenceNumberOfSnapshot,
+              loadSnapshot,
+              createEnvelopeFromSnapshotRow)))
+  }
+
+  "StartingFromSnapshotStage" must {
+    "emit envelopes from snapshots and from ordinary events" in new Setup {
+      override lazy val snapshotEnvelopes =
+        Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidC, 1, "snap-c1"))
+
+      override lazy val eventEnvelopes = Vector(
         createEnvelope(pidA, 1, "a1"),
         createEnvelope(pidA, 2, "a2"),
         createEnvelope(pidA, 3, "a3"),
@@ -92,21 +122,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
         createEnvelope(pidC, 1, "c1"),
         createEnvelope(pidC, 2, "c2"))
 
-      def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
-        Future.successful(
-          findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(createSerializedSnapshotRow))
-
-      def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-        findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
-          .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
-
-      val source =
-        Source(eventEnvelopes)
-          .via(
-            Flow.fromGraph(
-              new StartingFromSnapshotStage(cacheCapacity = 10000, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-      val probe = source.runWith(TestSink())
+      val probe = source().runWith(TestSink())
       probe.request(100)
 
       probe.expectNext(findEnvelope(pidA, 2, snapshotEnvelopes).get)
@@ -122,10 +138,11 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
       probe.expectComplete()
     }
 
-    "handle backtracking envelopes" in {
-      val snapshotEnvelopes = Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidC, 1, "snap-c1"))
+    "handle backtracking envelopes" in new Setup {
+      override lazy val snapshotEnvelopes =
+        Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidC, 1, "snap-c1"))
 
-      val eventEnvelopes = Vector(
+      override lazy val eventEnvelopes = Vector(
         createEnvelope(pidA, 1, "a1"),
         createEnvelope(pidA, 1, "bt-a1", source = EnvelopeOrigin.SourceBacktracking),
         createEnvelope(pidA, 2, "a2"),
@@ -143,21 +160,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
         createEnvelope(pidC, 2, "c2"),
         createEnvelope(pidC, 2, "c2", source = EnvelopeOrigin.SourceBacktracking))
 
-      def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
-        Future.successful(
-          findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(createSerializedSnapshotRow))
-
-      def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-        findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
-          .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
-
-      val source =
-        Source(eventEnvelopes)
-          .via(
-            Flow.fromGraph(
-              new StartingFromSnapshotStage(cacheCapacity = 10000, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-      val probe = source.runWith(TestSink())
+      val probe = source().runWith(TestSink())
       probe.request(100)
 
       probe.expectNext(findEnvelope(pidA, 2, snapshotEnvelopes).get)
@@ -178,10 +181,11 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
       probe.expectComplete()
     }
 
-    "handle sequence gap" in {
-      val snapshotEnvelopes = Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidB, 2, "snap-b2"))
+    "handle sequence gap" in new Setup {
+      override lazy val snapshotEnvelopes =
+        Vector(createEnvelope(pidA, 2, "snap-a2"), createEnvelope(pidB, 2, "snap-b2"))
 
-      val eventEnvelopes = Vector(
+      override lazy val eventEnvelopes = Vector(
         createEnvelope(pidA, 1, "a1"),
         // a2 is missing
         createEnvelope(pidA, 3, "a3"),
@@ -196,21 +200,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
         createEnvelope(pidB, 2, "bt-b2", source = EnvelopeOrigin.SourceBacktracking),
         createEnvelope(pidB, 3, "bt-b3", source = EnvelopeOrigin.SourceBacktracking))
 
-      def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
-        Future.successful(
-          findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(createSerializedSnapshotRow))
-
-      def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-        findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
-          .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
-
-      val source =
-        Source(eventEnvelopes)
-          .via(
-            Flow.fromGraph(
-              new StartingFromSnapshotStage(cacheCapacity = 10000, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-      val probe = source.runWith(TestSink())
+      val probe = source().runWith(TestSink())
       probe.request(100)
 
       // a3 still emitted, since it's ahead of snapshot
@@ -230,26 +220,16 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
       probe.expectComplete()
     }
 
-    "fail if snapshots loading fail" in {
-      val snapshotEnvelopes = Vector(createEnvelope(pidA, 2, "snap-a2"))
+    "fail if snapshots loading fail" in new Setup {
+      override lazy val snapshotEnvelopes = Vector(createEnvelope(pidA, 2, "snap-a2"))
 
-      val eventEnvelopes =
+      override lazy val eventEnvelopes =
         Vector(createEnvelope(pidA, 1, "a1"), createEnvelope(pidA, 2, "a2"), createEnvelope(pidA, 3, "a3"))
 
-      def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
+      override def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
         Future.failed(new RuntimeException(s"Simulated exc when loading snapshot [$persistenceId]"))
 
-      def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-        findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
-          .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
-
-      val source =
-        Source(eventEnvelopes)
-          .via(
-            Flow.fromGraph(
-              new StartingFromSnapshotStage(cacheCapacity = 10000, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-      val probe = source.runWith(TestSink())
+      val probe = source().runWith(TestSink())
       probe.request(100)
 
       probe
@@ -259,13 +239,17 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
 
   }
 
-  "evict cache" in {
+  "evict cache" in new Setup {
     val pids = (1 to 10).map { n =>
       PersistenceId(entityType, s"pid-$n")
     }
-    val envelopes =
+
+    override lazy val snapshotEnvelopes =
+      pids.map(pid => createEnvelope(pid, 3, s"snap-3"))
+
+    override lazy val eventEnvelopes =
       for {
-        seqNr <- (1 to 5).toVector
+        seqNr <- (1 to 5)
         pid <- pids
       } yield {
         createEnvelope(pid, seqNr, s"evt-$seqNr")
@@ -273,34 +257,28 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
 
     val loadCounter = new AtomicInteger
 
-    def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] = {
+    override def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]] = {
       loadCounter.incrementAndGet()
-      Future.successful(
-        findEnvelope(PersistenceId.ofUniqueId(persistenceId), seqNr = 3, envelopes).map(createSerializedSnapshotRow))
+      super.sequenceNumberOfSnapshot(persistenceId)
     }
 
-    def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-      findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, envelopes)
-        .map(env => env.withEvent("snap-" + env.event))
-        .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
+    override def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] = {
+      loadCounter.incrementAndGet()
+      super.loadSnapshot(persistenceId)
+    }
 
-    val source =
-      Source(envelopes)
-        .via(
-          Flow.fromGraph(new StartingFromSnapshotStage(cacheCapacity = 3, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-    val probe = source.runWith(TestSink())
+    val probe = source(cacheCapacity = 3).runWith(TestSink())
     probe.request(100)
 
     pids.foreach { pid =>
-      probe.expectNext(findEnvelope(pid, 3, envelopes).map(env => env.withEvent("snap-" + env.event)).get)
+      probe.expectNext(findEnvelope(pid, 3, snapshotEnvelopes).get)
     }
 
     pids.foreach { pid =>
-      probe.expectNext(findEnvelope(pid, 4, envelopes).get)
+      probe.expectNext(findEnvelope(pid, 4, eventEnvelopes).get)
     }
     pids.foreach { pid =>
-      probe.expectNext(findEnvelope(pid, 5, envelopes).get)
+      probe.expectNext(findEnvelope(pid, 5, eventEnvelopes).get)
     }
 
     probe.expectComplete()
@@ -310,26 +288,12 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
     loadCounter.get() should be > (pids.size * 2)
   }
 
-  "emit many events" in {
-    val snapshotEnvelopes = Vector(createEnvelope(pidA, 33, "snap-33"))
+  "emit many events" in new Setup {
+    override lazy val snapshotEnvelopes = Vector(createEnvelope(pidA, 33, "snap-33"))
 
-    val eventEnvelopes = (1 to 100).map(seqNr => createEnvelope(pidA, seqNr, s"evt-$seqNr")).toVector
+    override lazy val eventEnvelopes = (1 to 100).map(seqNr => createEnvelope(pidA, seqNr, s"evt-$seqNr"))
 
-    def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] =
-      Future.successful(
-        findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(createSerializedSnapshotRow))
-
-    def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
-      findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
-        .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
-
-    val source =
-      Source(eventEnvelopes)
-        .via(
-          Flow.fromGraph(
-            new StartingFromSnapshotStage(cacheCapacity = 10000, loadSnapshot, createEnvelopeFromSnapshotRow)))
-
-    val probe = source.runWith(TestSink())
+    val probe = source().runWith(TestSink())
     probe.request(200)
     val received = probe.expectNextN(100 - 32)
     received.head shouldBe findEnvelope(pidA, snapshotEnvelopes).get

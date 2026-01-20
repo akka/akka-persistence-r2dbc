@@ -48,5 +48,6 @@ private[r2dbc] trait SnapshotDao {
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]]
   def store(serializedRow: SerializedSnapshotRow): Future[Unit]
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit]
+  def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]]
 
 }
