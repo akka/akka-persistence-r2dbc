@@ -81,6 +81,16 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
 
   }
 
+  override protected def selectSeqNrSql(slice: Int): String = {
+    sqlCache.get(slice, "selectSeqNrSql") {
+      sql"""
+        SELECT TOP(1) seq_nr
+        FROM ${snapshotTable(slice)}
+        WHERE persistence_id = @persistenceId
+        """
+    }
+  }
+
   override protected def upsertSql(slice: Int): String =
     sqlCache.get(slice, "upsertSql") {
       if (settings.querySettings.startFromSnapshotEnabled)
