@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.query
 
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 
 import scala.concurrent.Future
 
@@ -270,7 +271,10 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
         createEnvelope(pid, seqNr, s"evt-$seqNr")
       }
 
+    val loadCounter = new AtomicInteger
+
     def loadSnapshot(persistenceId: String): Future[Option[SerializedSnapshotRow]] = {
+      loadCounter.incrementAndGet()
       Future.successful(
         findEnvelope(PersistenceId.ofUniqueId(persistenceId), seqNr = 3, envelopes).map(createSerializedSnapshotRow))
     }
@@ -300,6 +304,10 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
     }
 
     probe.expectComplete()
+
+    // Normally, each pid snapshot is loaded twice, on firs occurrence, and when emitted.
+    // When evicted from the cache, it is loaded again
+    loadCounter.get() should be > (pids.size * 2)
   }
 
   "emit many events" in {
