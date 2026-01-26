@@ -92,7 +92,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
     def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]] =
       Future.successful(findEnvelope(PersistenceId.ofUniqueId(persistenceId), snapshotEnvelopes).map(_.sequenceNr))
 
-    def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow): EventEnvelope[Any] =
+    def createEnvelopeFromSnapshotRow(snap: SerializedSnapshotRow, offset: TimestampOffset): EventEnvelope[Any] =
       findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
         .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
 

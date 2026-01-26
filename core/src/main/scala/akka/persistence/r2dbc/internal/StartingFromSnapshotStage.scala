@@ -11,6 +11,7 @@ import scala.util.Success
 import scala.util.Try
 
 import akka.annotation.InternalApi
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.stream.Attributes
@@ -37,7 +38,7 @@ import akka.util.RecencyList
     cacheCapacity: Int,
     sequenceNumberOfSnapshot: String => Future[Option[Long]],
     loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
-    createEnvelope: SerializedSnapshotRow => EventEnvelope[Event])
+    createEnvelope: (SerializedSnapshotRow, TimestampOffset) => EventEnvelope[Event])
     extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
   import StartingFromSnapshotStage._
 
@@ -95,7 +96,7 @@ import akka.util.RecencyList
         case Success((env, Some(snap))) =>
           inProgress = false
           if (env.sequenceNr == snap.seqNr) {
-            push(out, createEnvelope(snap))
+            push(out, createEnvelope(snap, env.offset.asInstanceOf[TimestampOffset]))
             updateState(snap.persistenceId, snap.seqNr, emitted = true)
           } else if (env.sequenceNr > snap.seqNr) {
             // event is ahead of snapshot, emit event

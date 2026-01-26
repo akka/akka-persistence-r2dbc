@@ -373,10 +373,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
             sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
-            createEnvelope = snapshotRow => {
-              val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
-              createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
-            })))
+            createEnvelope =
+              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot))))
   }
 
   /**
@@ -425,10 +423,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
             sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
-            createEnvelope = snapshotRow => {
-              val offset = TimestampOffset(snapshotRow.dbTimestamp, Map(snapshotRow.persistenceId -> snapshotRow.seqNr))
-              createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot)
-            })))
+            createEnvelope =
+              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot))))
   }
 
   private def checkStartFromSnapshotEnabled(methodName: String): Unit =
