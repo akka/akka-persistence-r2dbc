@@ -94,19 +94,6 @@ Yugabyte:
 UPDATE snapshot s SET db_timestamp = e.db_timestamp, tags = e.tags FROM event_journal e WHERE s.persistence_id = e.persistence_id and s.seq_nr = e.seq_nr;
 ```
 
-A new index must be added to the `snapshot` table:
-
-Postgres:
-: ```sql
-CREATE INDEX IF NOT EXISTS snapshot_slice_idx ON snapshot(slice, entity_type, db_timestamp);
-```
-
-Yugabyte:
-: ```sql
-CREATE INDEX IF NOT EXISTS snapshot_slice_idx ON snapshot(slice ASC, entity_type ASC, db_timestamp ASC, persistence_id)
-  SPLIT AT VALUES ((127), (255), (383), (511), (639), (767), (895));
-```
-
 The feature must be enabled with configuration:
 
 ```hocon
@@ -117,5 +104,5 @@ These changes can be made in a rolling update process.
 
 1. While running the old version, alter tables to add the two columns.
 2. Enable configuration and roll out new version. Don't use `eventsBySlicesStartingFromSnapshots` yet.
-3. Populate the columns with the update statement. Create the index.
+3. Populate the columns with the update statement.
 4. Roll out another version where you can use `eventsBySlicesStartingFromSnapshots`.

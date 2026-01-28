@@ -109,13 +109,13 @@ event payload is always full loaded.
 ### eventsBySlicesStartingFromSnapshots
 
 Same as `eventsBySlices` but with the purpose to use snapshots as starting points and thereby reducing number of
-events that have to be loaded. This can be useful if the consumer start from zero without any previously processed
+events that have to be processed. This can be useful if the consumer start from zero without any previously processed
 offset or if it has been disconnected for a long while and its offset is far behind.
 
-First it loads all snapshots with timestamps greater than or equal to the offset timestamp. There is at most one
-snapshot per persistenceId. The snapshots are transformed to events with the given `transformSnapshot` function.
+The snapshot is transformed to an event with the given `transformSnapshot` function.
 
-After emitting the snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
+Snapshot events and ordinary events are interleaved, skipping events before known snapshots. After emitting the
+snapshot events the ordinary events with sequence numbers after the snapshots are emitted.
 
 To use `eventsBySlicesStartingFromSnapshots` or `currentEventsBySlicesStartingFromSnapshots` you must follow
 instructions in @ref:[migration guide](migration-guide.md#eventsBySlicesStartingFromSnapshots) and enable configuration:

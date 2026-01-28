@@ -42,9 +42,6 @@ CREATE TABLE IF NOT EXISTS snapshot(
   PRIMARY KEY(persistence_id)
 );
 
--- `snapshot_slice_idx` is only needed if the slice based queries are used together with snapshot as starting point
-CREATE INDEX IF NOT EXISTS snapshot_slice_idx ON snapshot(slice, entity_type, db_timestamp);
-
 CREATE TABLE IF NOT EXISTS durable_state (
   slice INT NOT NULL,
   entity_type VARCHAR(255) NOT NULL,
