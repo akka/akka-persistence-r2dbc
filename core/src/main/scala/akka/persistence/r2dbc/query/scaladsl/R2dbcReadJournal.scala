@@ -374,7 +374,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
             createEnvelope =
-              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot))))
+              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
+            heartbeatAfter = settings.querySettings.startFromSnapshotHeartbeatAfter,
+            createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp))))
   }
 
   /**
@@ -424,7 +426,9 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
             sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
             loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
             createEnvelope =
-              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot))))
+              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
+            heartbeatAfter = settings.querySettings.startFromSnapshotHeartbeatAfter,
+            createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp))))
   }
 
   private def checkStartFromSnapshotEnabled(methodName: String): Unit =

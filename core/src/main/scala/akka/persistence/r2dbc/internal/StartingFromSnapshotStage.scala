@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.internal
 
+import java.time.Instant
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
@@ -38,7 +40,9 @@ import akka.util.RecencyList
     cacheCapacity: Int,
     sequenceNumberOfSnapshot: String => Future[Option[Long]],
     loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
-    createEnvelope: (SerializedSnapshotRow, TimestampOffset) => EventEnvelope[Event])
+    createEnvelope: (SerializedSnapshotRow, TimestampOffset) => EventEnvelope[Event],
+    heartbeatAfter: Int,
+    createHeartbeat: Instant => EventEnvelope[Event])
     extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
   import StartingFromSnapshotStage._
 
@@ -55,6 +59,10 @@ import akka.util.RecencyList
       private var snapshotState = Map.empty[String, SnapshotState]
       private val recency = RecencyList.emptyWithNanoClock[String]
       private var inProgress = false
+
+      // for emitting heartbeat events
+      private var filterCount = 0L
+      private var latestTimestamp = Instant.EPOCH
 
       private def updateState(persistenceId: String, seqNr: Long, emitted: Boolean): Unit = {
         snapshotState = snapshotState.updated(persistenceId, SnapshotState(seqNr, emitted))
@@ -74,18 +82,20 @@ import akka.util.RecencyList
           } else if (env.sequenceNr > seqNr) {
             // event is ahead of snapshot, emit event
             updateState(env.persistenceId, seqNr, emitted = false)
-            push(out, env)
+            push(env)
+          } else if (filterCount >= heartbeatAfter) {
+            pushHeartbeat()
           } else {
             // snapshot will be emitted later, ignore event
             updateState(env.persistenceId, seqNr, emitted = false)
-            tryPullOrComplete()
+            ignore(env)
           }
 
         case Success((env, None)) =>
           inProgress = false
           // no snapshot, emit event
           updateState(env.persistenceId, 0L, emitted = true)
-          push(out, env)
+          push(env)
 
         case Failure(exc) =>
           inProgress = false
@@ -96,23 +106,25 @@ import akka.util.RecencyList
         case Success((env, Some(snap))) =>
           inProgress = false
           if (env.sequenceNr == snap.seqNr) {
-            push(out, createEnvelope(snap, env.offset.asInstanceOf[TimestampOffset]))
+            push(createEnvelope(snap, env.offset.asInstanceOf[TimestampOffset]))
             updateState(snap.persistenceId, snap.seqNr, emitted = true)
           } else if (env.sequenceNr > snap.seqNr) {
             // event is ahead of snapshot, emit event
             updateState(snap.persistenceId, snap.seqNr, emitted = false)
-            push(out, env)
+            push(env)
+          } else if (filterCount >= heartbeatAfter) {
+            pushHeartbeat()
           } else {
             // snapshot will be emitted later, ignore event
             updateState(snap.persistenceId, snap.seqNr, emitted = false)
-            tryPullOrComplete()
+            ignore(env)
           }
 
         case Success((env, None)) =>
           inProgress = false
           // no snapshot, emit event
           updateState(env.persistenceId, 0L, emitted = true)
-          push(out, env)
+          push(env)
 
         case Failure(exc) =>
           inProgress = false
@@ -129,13 +141,15 @@ import akka.util.RecencyList
               // event is after snapshot, emit event
               // we can't ignore it when snapshot is not emitted, because it might have been emitted in
               // previous incarnation, but then the stream was restarted
-              push(out, env)
+              push(env)
             } else if (!s.emitted && env.sequenceNr == s.seqNr) {
               // trigger emit of snapshot
               loadCorrespondingSnapshot(env)
+            } else if (filterCount >= heartbeatAfter) {
+              pushHeartbeat()
             } else {
               // event is before (or same as) snapshot, ignore
-              tryPullOrComplete()
+              ignore(env)
             }
 
           case None =>
@@ -153,6 +167,28 @@ import akka.util.RecencyList
           completeStage()
         else
           pull(in)
+      }
+
+      private def push(env: EventEnvelope[Event]): Unit = {
+        filterCount = 0L
+        push(out, env)
+      }
+
+      private def pushHeartbeat(): Unit = {
+        filterCount = 1L
+        push(out, createHeartbeat(latestTimestamp))
+      }
+
+      private def ignore(env: EventEnvelope[Event]): Unit = {
+        filterCount += 1
+        updateLatestTimestamp(env)
+        tryPullOrComplete()
+      }
+
+      private def updateLatestTimestamp(env: EventEnvelope[Event]): Unit = {
+        val timestamp = env.offset.asInstanceOf[TimestampOffset].timestamp
+        if (timestamp.isAfter(latestTimestamp))
+          latestTimestamp = timestamp
       }
 
       private def seqNrOfCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {

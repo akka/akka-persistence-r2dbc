@@ -96,7 +96,22 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
       findEnvelope(PersistenceId.ofUniqueId(snap.persistenceId), snap.seqNr, snapshotEnvelopes)
         .getOrElse(throw new IllegalArgumentException(s"Unknown envelope for [$snap]"))
 
-    def source(cacheCapacity: Int = 10000): Source[EventEnvelope[Any], NotUsed] =
+    def createHeartbeat(timestamp: Instant): EventEnvelope[Any] = {
+      new EventEnvelope(
+        TimestampOffset(timestamp, Map.empty),
+        "heartbeat-pid", // we don't care about slice mapping of heartbeats in this test
+        1L,
+        eventOption = None,
+        timestamp.toEpochMilli,
+        _eventMetadata = None,
+        entityType,
+        0,
+        filtered = true,
+        source = EnvelopeOrigin.SourceHeartbeat,
+        Set.empty)
+    }
+
+    def source(cacheCapacity: Int = 10000, heartbeatAfter: Int = 1000): Source[EventEnvelope[Any], NotUsed] =
       Source(eventEnvelopes)
         .via(
           Flow.fromGraph(
@@ -104,7 +119,9 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
               cacheCapacity,
               sequenceNumberOfSnapshot,
               loadSnapshot,
-              createEnvelopeFromSnapshotRow)))
+              createEnvelopeFromSnapshotRow,
+              heartbeatAfter,
+              createHeartbeat)))
   }
 
   "StartingFromSnapshotStage" must {
@@ -293,11 +310,43 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
 
     override lazy val eventEnvelopes = (1 to 100).map(seqNr => createEnvelope(pidA, seqNr, s"evt-$seqNr"))
 
-    val probe = source().runWith(TestSink())
+    val probe = source(heartbeatAfter = 32).runWith(TestSink())
     probe.request(200)
     val received = probe.expectNextN(100 - 32)
     received.head shouldBe findEnvelope(pidA, snapshotEnvelopes).get
+    received.find(EnvelopeOrigin.fromHeartbeat) shouldBe None // no heartbeat
     probe.expectComplete()
+  }
+
+  "emit heartbeat after many filtered events" in new Setup {
+    override lazy val snapshotEnvelopes = Vector(createEnvelope(pidA, 66, "snap-66"))
+
+    override lazy val eventEnvelopes = (1 to 100).map(seqNr => createEnvelope(pidA, seqNr, s"evt-$seqNr"))
+
+    val probe = source(heartbeatAfter = 20).runWith(TestSink())
+    probe.request(200)
+    val e1 = probe.expectNext()
+    EnvelopeOrigin.fromHeartbeat(e1) shouldBe true
+    e1.offset.asInstanceOf[TimestampOffset].timestamp shouldBe eventEnvelopes(19).offset
+      .asInstanceOf[TimestampOffset]
+      .timestamp
+    val e2 = probe.expectNext()
+    EnvelopeOrigin.fromHeartbeat(e2) shouldBe true
+    e2.offset.asInstanceOf[TimestampOffset].timestamp shouldBe eventEnvelopes(39).offset
+      .asInstanceOf[TimestampOffset]
+      .timestamp
+    val e3 = probe.expectNext()
+    EnvelopeOrigin.fromHeartbeat(e3) shouldBe true
+    e3.offset.asInstanceOf[TimestampOffset].timestamp shouldBe eventEnvelopes(59).offset
+      .asInstanceOf[TimestampOffset]
+      .timestamp
+    val e4 = probe.expectNext()
+    e4 shouldBe findEnvelope(pidA, snapshotEnvelopes).get
+
+    val more = probe.expectNextN(30)
+    more.find(EnvelopeOrigin.fromHeartbeat) shouldBe None
+
+    probe.cancel()
   }
 
 }
