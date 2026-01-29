@@ -310,7 +310,7 @@ class StartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWo
 
     override lazy val eventEnvelopes = (1 to 100).map(seqNr => createEnvelope(pidA, seqNr, s"evt-$seqNr"))
 
-    val probe = source(heartbeatAfter = 32).runWith(TestSink())
+    val probe = source(heartbeatAfter = 33).runWith(TestSink())
     probe.request(200)
     val received = probe.expectNextN(100 - 32)
     received.head shouldBe findEnvelope(pidA, snapshotEnvelopes).get

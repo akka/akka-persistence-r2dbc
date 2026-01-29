@@ -83,8 +83,6 @@ import akka.util.RecencyList
             // event is ahead of snapshot, emit event
             updateState(env.persistenceId, seqNr, emitted = false)
             push(env)
-          } else if (filterCount >= heartbeatAfter) {
-            pushHeartbeat()
           } else {
             // snapshot will be emitted later, ignore event
             updateState(env.persistenceId, seqNr, emitted = false)
@@ -112,8 +110,6 @@ import akka.util.RecencyList
             // event is ahead of snapshot, emit event
             updateState(snap.persistenceId, snap.seqNr, emitted = false)
             push(env)
-          } else if (filterCount >= heartbeatAfter) {
-            pushHeartbeat()
           } else {
             // snapshot will be emitted later, ignore event
             updateState(snap.persistenceId, snap.seqNr, emitted = false)
@@ -145,8 +141,6 @@ import akka.util.RecencyList
             } else if (!s.emitted && env.sequenceNr == s.seqNr) {
               // trigger emit of snapshot
               loadCorrespondingSnapshot(env)
-            } else if (filterCount >= heartbeatAfter) {
-              pushHeartbeat()
             } else {
               // event is before (or same as) snapshot, ignore
               ignore(env)
@@ -174,15 +168,14 @@ import akka.util.RecencyList
         push(out, env)
       }
 
-      private def pushHeartbeat(): Unit = {
-        filterCount = 1L
-        push(out, createHeartbeat(latestTimestamp))
-      }
-
       private def ignore(env: EventEnvelope[Event]): Unit = {
-        filterCount += 1
         updateLatestTimestamp(env)
-        tryPullOrComplete()
+        filterCount += 1
+        if (filterCount >= heartbeatAfter) {
+          push(createHeartbeat(latestTimestamp))
+        } else {
+          tryPullOrComplete()
+        }
       }
 
       private def updateLatestTimestamp(env: EventEnvelope[Event]): Unit = {
