@@ -21,6 +21,7 @@ import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
+import akka.persistence.r2dbc.internal.EnvelopeOrigin
 import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Sink
@@ -40,6 +41,7 @@ object EventsBySliceStartingFromSnapshotSpec {
     TestConfig.backtrackingDisabledConfig
       .withFallback(ConfigFactory.parseString(s"""
     akka.persistence.r2dbc.query.start-from-snapshot.enabled = true
+    akka.persistence.r2dbc.query.start-from-snapshot.heartbeat-after = 100
 
     # This test is not using backtracking, so increase behind-current-time to
     # reduce risk of missing events
@@ -213,6 +215,42 @@ class EventsBySliceStartingFromSnapshotSpec
         e3Envelope.event shouldBe "e-3"
         e3Envelope.tags shouldBe Set("tag-A")
 
+        assertFinished(result)
+      }
+
+      "emit heartbeat after many filtered events before snapshot" in new Setup {
+        // heartbeat-after is configured to 100
+        val snapshotAt = 220
+        for (i <- 1 to 230) {
+          if (i == snapshotAt) {
+            persister ! PersistWithAck(s"e-$i-snap", probe.ref)
+            snapshotAckProbe.expectMessage(snapshotAt.toLong)
+          } else
+            persister ! PersistWithAck(s"e-$i", probe.ref)
+          probe.expectMessage(Done)
+        }
+        val result: TestSubscriber.Probe[EventEnvelope[String]] =
+          doQuery(entityType, slice, slice, NoOffset)
+            .runWith(sinkProbe)
+            .request(300)
+
+        // events 1-219 are before the snapshot, 219 filtered events
+        // heartbeats emitted after 100 and 200 filtered events
+        val hb1 = result.expectNext()
+        EnvelopeOrigin.fromHeartbeat(hb1) shouldBe true
+        hb1.filtered shouldBe true
+        hb1.sequenceNr should be >= 1L
+
+        val hb2 = result.expectNext()
+        EnvelopeOrigin.fromHeartbeat(hb2) shouldBe true
+        hb2.filtered shouldBe true
+        hb2.persistenceId shouldBe hb1.persistenceId
+        hb2.sequenceNr should be > hb1.sequenceNr
+
+        result.expectNext().event shouldBe expectedSnapshotEvent(snapshotAt)
+        for (i <- (snapshotAt + 1) to 230) {
+          result.expectNext().event shouldBe s"e-$i"
+        }
         assertFinished(result)
       }
 

@@ -9,12 +9,15 @@ import java.time.Instant
 import java.time.{ Duration => JDuration }
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+
 import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.pubsub.Topic
@@ -127,6 +130,8 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   // key is tuple of entity type and slice
   private val heartbeatPersistenceIds = new ConcurrentHashMap[(String, Int), String]()
   private val heartbeatUuid = UUID.randomUUID().toString
+  // gaps are allowed for heartbeat sequence numbers, but increasing for each heartbeat pid (uuid makes it unique)
+  private val heartbeatSeqNr = new AtomicLong
   log.debug("Using heartbeat UUID [{}]", heartbeatUuid)
 
   // Optional caching of latestEventTimestamp results
@@ -206,7 +211,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
     new EventEnvelope(
       TimestampOffset(timestamp, Map.empty),
       heartbeatPersistenceId(entityType, slice),
-      1L,
+      heartbeatSeqNr.incrementAndGet(),
       eventOption = None,
       timestamp.toEpochMilli,
       _eventMetadata = None,
