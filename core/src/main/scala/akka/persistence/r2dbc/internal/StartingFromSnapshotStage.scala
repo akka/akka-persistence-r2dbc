@@ -6,98 +6,204 @@ package akka.persistence.r2dbc.internal
 
 import java.time.Instant
 
-import akka.NotUsed
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
+
 import akka.annotation.InternalApi
-import akka.persistence.query.TimestampOffset.toTimestampOffset
+import akka.persistence.query.TimestampOffset
 import akka.persistence.query.typed.EventEnvelope
+import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
 import akka.stream.Attributes
+import akka.stream.FlowShape
+import akka.stream.Inlet
 import akka.stream.Outlet
-import akka.stream.SourceShape
-import akka.stream.scaladsl.Keep
-import akka.stream.scaladsl.Source
 import akka.stream.stage.GraphStage
 import akka.stream.stage.GraphStageLogic
 import akka.stream.stage.InHandler
 import akka.stream.stage.OutHandler
+import akka.util.RecencyList
+
+/**
+ * INTERNAL API
+ */
+@InternalApi private[r2dbc] object StartingFromSnapshotStage {
+  private case class SnapshotState(seqNr: Long, emitted: Boolean)
+}
 
 /**
  * INTERNAL API
  */
 @InternalApi private[r2dbc] class StartingFromSnapshotStage[Event](
-    snapshotSource: Source[EventEnvelope[Event], NotUsed],
-    primarySource: Map[String, (Long, Instant)] => Source[EventEnvelope[Event], NotUsed])
-    extends GraphStage[SourceShape[EventEnvelope[Event]]] {
+    cacheCapacity: Int,
+    sequenceNumberOfSnapshot: String => Future[Option[Long]],
+    loadSnapshot: String => Future[Option[SnapshotDao.SerializedSnapshotRow]],
+    createEnvelope: (SerializedSnapshotRow, TimestampOffset) => EventEnvelope[Event],
+    heartbeatAfter: Int,
+    createHeartbeat: Instant => EventEnvelope[Event])
+    extends GraphStage[FlowShape[EventEnvelope[Event], EventEnvelope[Event]]] {
+  import StartingFromSnapshotStage._
 
+  val in: Inlet[EventEnvelope[Event]] = Inlet("in")
   val out: Outlet[EventEnvelope[Event]] = Outlet("out")
 
-  override val shape: SourceShape[EventEnvelope[Event]] = SourceShape(out)
+  override val shape: FlowShape[EventEnvelope[Event], EventEnvelope[Event]] =
+    FlowShape(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
-    new GraphStageLogic(shape) { self =>
-      setHandler(
-        out,
-        new OutHandler {
-          override def onPull(): Unit = {
-            val snapshotHandler = new SnapshotHandler
-            setHandler(out, snapshotHandler)
+    new GraphStageLogic(shape) with InHandler with OutHandler { self =>
+      private implicit def ec: ExecutionContext = materializer.executionContext
 
-            subFusingMaterializer.materialize(
-              snapshotSource.toMat(snapshotHandler.subSink.sink)(Keep.left),
-              inheritedAttributes)
+      private var snapshotState = Map.empty[String, SnapshotState]
+      private val recency = RecencyList.emptyWithNanoClock[String]
+      private var inProgress = false
+
+      // for emitting heartbeat events
+      private var filterCount = 0L
+      private var latestTimestamp = Instant.EPOCH
+
+      private def updateState(persistenceId: String, seqNr: Long, emitted: Boolean): Unit = {
+        snapshotState = snapshotState.updated(persistenceId, SnapshotState(seqNr, emitted))
+        recency.update(persistenceId)
+        if (recency.size > cacheCapacity)
+          recency.removeLeastRecent().foreach { pid =>
+            snapshotState -= pid
           }
-        })
+      }
 
-      class SnapshotHandler extends OutHandler with InHandler {
-        private var snapshotOffsets = Map.empty[String, (Long, Instant)]
+      private val seqNrOfSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[Long])]] {
+        case Success((env, Some(seqNr))) =>
+          inProgress = false
+          if (env.sequenceNr == seqNr) {
+            // snapshot should be emitted, load full snapshot
+            loadCorrespondingSnapshot(env)
+          } else if (env.sequenceNr > seqNr) {
+            // event is ahead of snapshot, emit event
+            updateState(env.persistenceId, seqNr, emitted = false)
+            push(env)
+          } else {
+            // snapshot will be emitted later, ignore event
+            updateState(env.persistenceId, seqNr, emitted = false)
+            ignore(env)
+          }
 
-        val subSink = new SubSinkInlet[EventEnvelope[Event]]("snapshots")
-        subSink.pull()
-        subSink.setHandler(this)
+        case Success((env, None)) =>
+          inProgress = false
+          // no snapshot, emit event
+          updateState(env.persistenceId, 0L, emitted = true)
+          push(env)
 
-        override def onPull(): Unit = {
-          subSink.pull()
-        }
+        case Failure(exc) =>
+          inProgress = false
+          failStage(exc)
+      }
 
-        override def onPush(): Unit = {
-          val env = subSink.grab()
-          snapshotOffsets =
-            snapshotOffsets.updated(env.persistenceId, env.sequenceNr -> toTimestampOffset(env.offset).timestamp)
-          push(out, env)
-        }
+      private val loadSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[SerializedSnapshotRow])]] {
+        case Success((env, Some(snap))) =>
+          inProgress = false
+          if (env.sequenceNr == snap.seqNr) {
+            push(createEnvelope(snap, env.offset.asInstanceOf[TimestampOffset]))
+            updateState(snap.persistenceId, snap.seqNr, emitted = true)
+          } else if (env.sequenceNr > snap.seqNr) {
+            // event is ahead of snapshot, emit event
+            updateState(snap.persistenceId, snap.seqNr, emitted = false)
+            push(env)
+          } else {
+            // snapshot will be emitted later, ignore event
+            updateState(snap.persistenceId, snap.seqNr, emitted = false)
+            ignore(env)
+          }
 
-        override def onUpstreamFinish(): Unit = {
-          val primaryHandler = new PrimaryHandler(isAvailable(out))
-          self.setHandler(out, primaryHandler)
+        case Success((env, None)) =>
+          inProgress = false
+          // no snapshot, emit event
+          updateState(env.persistenceId, 0L, emitted = true)
+          push(env)
 
-          subFusingMaterializer.materialize(
-            primarySource(snapshotOffsets).toMat(primaryHandler.subSink.sink)(Keep.left),
-            inheritedAttributes)
-        }
+        case Failure(exc) =>
+          inProgress = false
+          failStage(exc)
+      }
 
-        override def onDownstreamFinish(cause: Throwable): Unit = {
-          subSink.cancel(cause)
-          completeStage()
+      override def onPush(): Unit = {
+        val env = grab(in)
+        snapshotState.get(env.persistenceId) match {
+          case Some(s) =>
+            val eventIsAfterSnapshot = env.sequenceNr > s.seqNr
+
+            if (eventIsAfterSnapshot) {
+              // event is after snapshot, emit event
+              // we can't ignore it when snapshot is not emitted, because it might have been emitted in
+              // previous incarnation, but then the stream was restarted
+              push(env)
+            } else if (!s.emitted && env.sequenceNr == s.seqNr) {
+              // trigger emit of snapshot
+              loadCorrespondingSnapshot(env)
+            } else {
+              // event is before (or same as) snapshot, ignore
+              ignore(env)
+            }
+
+          case None =>
+            seqNrOfCorrespondingSnapshot(env)
         }
       }
 
-      class PrimaryHandler(pullImmediately: Boolean) extends OutHandler with InHandler {
-        val subSink = new SubSinkInlet[EventEnvelope[Event]]("snapshots")
-        if (pullImmediately) subSink.pull()
-        subSink.setHandler(this)
+      override def onUpstreamFinish(): Unit = {
+        if (!inProgress)
+          super.onUpstreamFinish()
+      }
 
-        override def onPull(): Unit = {
-          subSink.pull()
-        }
-
-        override def onPush(): Unit = {
-          push(out, subSink.grab())
-        }
-
-        override def onDownstreamFinish(cause: Throwable): Unit = {
-          subSink.cancel(cause)
+      private def tryPullOrComplete(): Unit = {
+        if (isClosed(in))
           completeStage()
+        else
+          pull(in)
+      }
+
+      private def push(env: EventEnvelope[Event]): Unit = {
+        filterCount = 0L
+        push(out, env)
+      }
+
+      private def ignore(env: EventEnvelope[Event]): Unit = {
+        updateLatestTimestamp(env)
+        filterCount += 1
+        if (filterCount >= heartbeatAfter) {
+          push(createHeartbeat(latestTimestamp))
+        } else {
+          tryPullOrComplete()
         }
       }
+
+      private def updateLatestTimestamp(env: EventEnvelope[Event]): Unit = {
+        val timestamp = env.offset.asInstanceOf[TimestampOffset].timestamp
+        if (timestamp.isAfter(latestTimestamp))
+          latestTimestamp = timestamp
+      }
+
+      private def seqNrOfCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
+        inProgress = true
+        sequenceNumberOfSnapshot(env.persistenceId)
+          .map(result => (env, result))(ExecutionContext.parasitic)
+          .onComplete(seqNrOfSnapshotCallback.invoke)
+      }
+
+      private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
+        inProgress = true
+        loadSnapshot(env.persistenceId)
+          .map(result => (env, result))(ExecutionContext.parasitic)
+          .onComplete(loadSnapshotCallback.invoke)
+      }
+
+      override def onPull(): Unit = {
+        tryPullOrComplete()
+      }
+
+      setHandler(in, this)
+      setHandler(out, this)
 
     }
 

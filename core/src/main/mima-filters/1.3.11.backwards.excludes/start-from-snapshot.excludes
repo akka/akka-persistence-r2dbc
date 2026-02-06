@@ -1,0 +1,2 @@
+# internals
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.postgres.YugabyteSnapshotDao")

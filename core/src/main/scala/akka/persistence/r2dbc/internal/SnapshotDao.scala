@@ -42,11 +42,12 @@ private[r2dbc] object SnapshotDao {
  * INTERNAL API
  */
 @InternalApi
-private[r2dbc] trait SnapshotDao extends BySliceQuery.Dao[SnapshotDao.SerializedSnapshotRow] {
+private[r2dbc] trait SnapshotDao {
   import SnapshotDao._
 
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]]
   def store(serializedRow: SerializedSnapshotRow): Future[Unit]
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit]
+  def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]]
 
 }
