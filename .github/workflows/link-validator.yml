@@ -55,6 +55,7 @@ jobs:
         run: sbt docs/makeSite
 
       - name: Run Link Validator
+        run: |
           VERSION=$(ls docs/target/site/libraries/akka-persistence-r2dbc)
           sed -e "s/snapshot/$VERSION/" scripts/link-validator.conf > /tmp/link-validator.conf
           cs launch net.runne::site-link-validator:0.2.5 -- /tmp/link-validator.conf
