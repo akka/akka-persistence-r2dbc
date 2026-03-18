@@ -348,23 +348,25 @@ class EventsBySliceSpec
         val timestamp1 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
         timestamp1 shouldBe expectedTimestamp1
 
-        // second query will return same result within TTL; note that the cache update is a side effect of
-        // the first query's future, so it may or may not have been applied yet - we avoid persisting new
-        // events between the two calls so the result is the same whether the cache was hit or not
-        val timestamp2 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
-        timestamp2 shouldBe timestamp1
-
-        // after clearing cache, will fetch the latest timestamp
         persister ! PersistWithAck("e2", probe.ref)
         probe.expectMessage(Done)
+
+        Thread.sleep(20) // give the side effect some time to complete
+        eventually {
+          // updating the cache is a side effect the timestamp1 future, so may not be immediately observable
+          val timestamp2 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+          timestamp2 shouldBe theSameInstanceAs(timestamp1)
+        }
+
+        // after clearing cache, will fetch the latest timestamp
         queryWithCache.clearLatestEventTimestampCache()
         val expectedTimestamp3 = queryWithCache.timestampOf(pid, 2L).futureValue
         val timestamp3 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
         timestamp3 shouldBe expectedTimestamp3
 
-        // make sure cached value has expired
         persister ! PersistWithAck("e3", probe.ref)
         probe.expectMessage(Done)
+        // make sure cached value has expired
         Thread.sleep(2000)
 
         // new result fetched from database after cache expiry
@@ -372,13 +374,15 @@ class EventsBySliceSpec
         val timestamp4 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
         timestamp4 shouldBe expectedTimestamp4
 
-        // next query will return same result within TTL; same reasoning as above - cache update is a side
-        // effect so we avoid persisting new events between the two calls
-        val timestamp5 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
-        timestamp5 shouldBe timestamp4
-
         persister ! PersistWithAck("e4", probe.ref)
         probe.expectMessage(Done)
+
+        // next query will return same result within TTL; same reasoning as above - cache update is a side effect
+        Thread.sleep(20) // give the side effect some time to complete
+        eventually {
+          val timestamp5 = queryWithCache.latestEventTimestamp(entityType, slice, slice).futureValue
+          timestamp5 shouldBe timestamp4
+        }
       }
 
       "support LoadEventQuery" in new Setup {
