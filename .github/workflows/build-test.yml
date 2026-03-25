@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -31,8 +31,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
@@ -45,13 +44,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -67,7 +64,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -80,8 +77,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -93,13 +89,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -120,7 +114,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -133,8 +127,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -146,13 +139,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -176,7 +167,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -189,8 +180,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -202,13 +192,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -230,7 +218,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -243,8 +231,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -256,13 +243,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -285,7 +270,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -298,8 +283,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -311,13 +295,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -333,7 +315,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -346,8 +328,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -358,13 +339,11 @@ jobs:
           git checkout scratch
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.11.0
 
@@ -384,7 +363,7 @@ jobs:
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: akka/github-actions-scripts
           path: scripts
@@ -397,8 +376,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        # v4.1.1
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -410,13 +388,11 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        # v6.4.5
-        uses: coursier/cache-action@1ff273bff02a8787bc9f1877d347948af647956d
+        uses: coursier/cache-action@v8.1.0
 
       - name: Set up JDK 25
         # https://github.com/coursier/setup-action/releases
-        # v1.3.5
-        uses: coursier/setup-action@7bde40eee928896f074dbb76d22dd772eed5c65f
+        uses: coursier/setup-action@v3.0.0
         with:
           jvm: temurin:1.25
 
