@@ -230,9 +230,14 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     }
 
   protected def persistenceIdsForEntityTypeSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
-    }
+    if (settings.querySettings.persistenceIdsEntityTypeIndexEnabled)
+      sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql-byEntityType") {
+        sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE entity_type = ? ORDER BY persistence_id LIMIT ?"
+      }
+    else
+      sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
+        sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
+      }
 
   protected def allPersistenceIdsAfterSql(minSlice: Int): String =
     sqlCache.get(minSlice, "allPersistenceIdsAfterSql") {
@@ -240,9 +245,14 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     }
 
   protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
-    }
+    if (settings.querySettings.persistenceIdsEntityTypeIndexEnabled)
+      sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql-byEntityType") {
+        sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE entity_type = ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+      }
+    else
+      sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
+        sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+      }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
@@ -603,8 +613,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       likeStmtPostfix: String,
       after: String,
       limit: Long): Statement = {
+    val firstParam =
+      if (settings.querySettings.persistenceIdsEntityTypeIndexEnabled) entityType
+      else entityType + likeStmtPostfix
     stmt
-      .bind(0, entityType + likeStmtPostfix)
+      .bind(0, firstParam)
       .bind(1, after)
       .bind(2, limit)
   }
@@ -614,8 +627,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       entityType: String,
       likeStmtPostfix: String,
       limit: Long): Statement = {
+    val firstParam =
+      if (settings.querySettings.persistenceIdsEntityTypeIndexEnabled) entityType
+      else entityType + likeStmtPostfix
     stmt
-      .bind(0, entityType + likeStmtPostfix)
+      .bind(0, firstParam)
       .bind(1, limit)
   }
 

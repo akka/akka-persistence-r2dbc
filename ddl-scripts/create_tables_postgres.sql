@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS event_journal(
 -- `event_journal_slice_idx` is only needed if the slice based queries are used
 CREATE INDEX IF NOT EXISTS event_journal_slice_idx ON event_journal(slice, entity_type, db_timestamp, seq_nr);
 
+-- `event_journal_entity_type` is only needed if `akka.persistence.r2dbc.query.persistence-ids.entity-type-index-enabled = on`
+-- CREATE INDEX IF NOT EXISTS event_journal_entity_type ON event_journal(entity_type, persistence_id);
+
 CREATE TABLE IF NOT EXISTS snapshot(
   slice INT NOT NULL,
   entity_type VARCHAR(255) NOT NULL,

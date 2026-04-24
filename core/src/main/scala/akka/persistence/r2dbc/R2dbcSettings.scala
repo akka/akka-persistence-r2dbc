@@ -504,6 +504,7 @@ final class QuerySettings(config: Config) {
   val backtrackingBehindCurrentTime: FiniteDuration = config.getDuration("backtracking.behind-current-time").toScala
   val bufferSize: Int = config.getInt("buffer-size")
   val persistenceIdsBufferSize: Int = config.getInt("persistence-ids.buffer-size")
+  val persistenceIdsEntityTypeIndexEnabled: Boolean = config.getBoolean("persistence-ids.entity-type-index-enabled")
   val deduplicateCapacity: Int = config.getInt("deduplicate-capacity")
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
   val startFromSnapshotCacheCapacity: Int = config.getInt("start-from-snapshot.cache-capacity")
