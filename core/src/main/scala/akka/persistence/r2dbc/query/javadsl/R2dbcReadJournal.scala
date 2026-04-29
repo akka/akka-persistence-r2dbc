@@ -233,6 +233,33 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     delegate.currentPersistenceIds(entityType, afterId.toScala, limit).asJava
 
   /**
+   * Get the current active persistence ids for entities of `entityType` — those with at least one event whose
+   * `db_timestamp` is greater than or equal to the timestamp carried by `offset`, and whose slice is in the `[minSlice,
+   * maxSlice]` range. The supported `offset` is [[akka.persistence.query.TimestampOffset]] and [[Offset.noOffset]]
+   * (which maps to `Instant.EPOCH`).
+   *
+   * @param entityType
+   *   The entity type name.
+   * @param minSlice
+   *   The minimum slice (inclusive).
+   * @param maxSlice
+   *   The maximum slice (inclusive). The slice range cannot span over more than one data partition.
+   * @param offset
+   *   Lower bound for `db_timestamp`. Use [[Offset.noOffset]] for no lower bound.
+   * @param limit
+   *   The maximum number of persistence ids to return.
+   * @return
+   *   A source emitting distinct persistence ids.
+   */
+  def currentPersistenceIdsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      limit: Int): Source[String, NotUsed] =
+    delegate.currentPersistenceIdsBySlices(entityType, minSlice, maxSlice, offset, limit).asJava
+
+  /**
    * Load the last event for the given `persistenceId` up to the given `toSeqNr`.
    *
    * @param persistenceId

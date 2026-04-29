@@ -239,6 +239,19 @@ import org.slf4j.Logger
         limit: Int,
         correlationId: Option[String]): Future[Seq[Bucket]]
 
+    /**
+     * Default throws [[UnsupportedOperationException]]. Override in journal daos that support distinct active
+     * persistence ids within a slice range from a given lower-bound `db_timestamp`.
+     */
+    def currentPersistenceIdsBySlices(
+        entityType: String,
+        minSlice: Int,
+        maxSlice: Int,
+        fromTimestamp: Instant,
+        limit: Int,
+        correlationId: Option[String]): Source[String, NotUsed] =
+      throw new UnsupportedOperationException(s"currentPersistenceIdsBySlices is not supported by ${getClass.getName}")
+
     protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
         toTimestamp: Instant): IndexedSeq[Bucket] = {
@@ -365,6 +378,20 @@ import org.slf4j.Logger
         }
       }
       .mapMaterializedValue(_ => NotUsed)
+  }
+
+  def currentPersistenceIdsBySlices(
+      logPrefix: String,
+      correlationId: Option[String],
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      offset: Offset,
+      limit: Int): Source[String, NotUsed] = {
+    val fromTimestamp = toTimestampOffset(offset).timestamp
+    if (log.isDebugEnabled())
+      log.debug("{} query, from time [{}] limit [{}].", logPrefix, fromTimestamp, limit)
+    dao.currentPersistenceIdsBySlices(entityType, minSlice, maxSlice, fromTimestamp, limit, correlationId)
   }
 
   def liveBySlices(

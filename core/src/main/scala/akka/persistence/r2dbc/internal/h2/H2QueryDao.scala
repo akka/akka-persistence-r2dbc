@@ -60,4 +60,26 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
       ORDER BY db_timestamp, seq_nr
       LIMIT ?"""
   }
+
+  override protected def currentPersistenceIdsBySlicesSql(minSlice: Int, maxSlice: Int): String =
+    sql"""
+      SELECT persistence_id
+      FROM (
+          SELECT
+              persistence_id,
+              db_timestamp,
+              ROW_NUMBER() OVER (
+                  PARTITION BY persistence_id
+                  ORDER BY db_timestamp DESC
+              ) AS rn
+          FROM ${journalTable(minSlice)}
+          WHERE entity_type = ?
+            AND ${sliceCondition(minSlice, maxSlice)}
+            AND db_timestamp >= ?
+            AND deleted = false
+      ) t
+      WHERE rn = 1
+      ORDER BY db_timestamp DESC
+      LIMIT ?
+      """
 }

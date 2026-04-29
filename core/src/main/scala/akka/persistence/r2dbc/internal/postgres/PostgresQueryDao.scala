@@ -244,6 +244,36 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
     }
 
+  /**
+   * the inner query has the ordering required by the distinct, the outer query applies desired order and a limit
+   */
+  protected def currentPersistenceIdsBySlicesSql(minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"currentPersistenceIdsBySlicesSql-$minSlice-$maxSlice") {
+      sql"""
+      SELECT persistence_id FROM (
+        SELECT DISTINCT ON (persistence_id) persistence_id, db_timestamp
+        FROM ${journalTable(minSlice)}
+        WHERE entity_type = ?
+        AND ${sliceCondition(minSlice, maxSlice)}
+        AND db_timestamp >= ?
+        AND deleted = $sqlFalse
+        ORDER BY persistence_id, db_timestamp DESC
+      )
+      ORDER BY db_timestamp DESC
+      LIMIT ?;
+      """
+    }
+
+  protected def bindCurrentPersistenceIdsBySlicesSql(
+      stmt: Statement,
+      entityType: String,
+      fromTimestamp: Instant,
+      limit: Int): Statement =
+    stmt
+      .bind(0, entityType)
+      .bindTimestamp(1, fromTimestamp)
+      .bind(2, limit)
+
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
     executor
@@ -692,6 +722,38 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       combined.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
 
     Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
+  }
+
+  override def currentPersistenceIdsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromTimestamp: Instant,
+      limit: Int,
+      correlationId: Option[String]): Source[String, NotUsed] = {
+    if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
+      throw new IllegalArgumentException(
+        s"Slice range [$minSlice-$maxSlice] spans over more than one " +
+        s"of the [${settings.numberOfDataPartitions}] data partitions.")
+
+    val executor = executorProvider.executorFor(minSlice)
+    val result = executor.select(s"select currentPersistenceIdsBySlices [$minSlice - $maxSlice]")(
+      connection => {
+        val stmt = connection.createStatement(currentPersistenceIdsBySlicesSql(minSlice, maxSlice))
+        bindCurrentPersistenceIdsBySlicesSql(stmt, entityType, fromTimestamp, limit)
+      },
+      row => row.get("persistence_id", classOf[String]))
+
+    if (log.isDebugEnabled)
+      result.foreach(rows =>
+        log.debug(
+          "Read [{}] persistence ids by slices [{} - {}]{}",
+          rows.size,
+          minSlice,
+          maxSlice,
+          CorrelationId.toLogText(correlationId)))
+
+    Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
 }
