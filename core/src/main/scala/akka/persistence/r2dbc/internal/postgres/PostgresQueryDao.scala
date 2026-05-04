@@ -247,15 +247,16 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   /**
    * the inner query has the ordering required by the distinct, the outer query applies desired order and a limit
    */
-  protected def currentPersistenceIdsBySlicesSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"currentPersistenceIdsBySlicesSql-$minSlice-$maxSlice") {
+  protected def persistenceIdsBySlicesSql(toDbTimestampParam: Boolean, minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"persistenceIdsBySlicesSql-$minSlice-$maxSlice-$toDbTimestampParam") {
+      val toDbTimestampCondition = if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
       sql"""
       SELECT persistence_id FROM (
         SELECT DISTINCT ON (persistence_id) persistence_id, db_timestamp
         FROM ${journalTable(minSlice)}
         WHERE entity_type = ?
         AND ${sliceCondition(minSlice, maxSlice)}
-        AND db_timestamp >= ?
+        AND db_timestamp >= ? $toDbTimestampCondition
         AND deleted = $sqlFalse
         ORDER BY persistence_id, db_timestamp DESC
       )
@@ -264,15 +265,23 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       """
     }
 
-  protected def bindCurrentPersistenceIdsBySlicesSql(
+  protected def bindPersistenceIdsBySlicesSql(
       stmt: Statement,
       entityType: String,
       fromTimestamp: Instant,
-      limit: Int): Statement =
+      toTimestamp: Option[Instant],
+      limit: Int): Statement = {
     stmt
       .bind(0, entityType)
       .bindTimestamp(1, fromTimestamp)
-      .bind(2, limit)
+    toTimestamp match {
+      case Some(until) =>
+        stmt.bindTimestamp(2, until)
+        stmt.bind(3, limit)
+      case None =>
+        stmt.bind(2, limit)
+    }
+  }
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
@@ -724,11 +733,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  override def currentPersistenceIdsBySlices(
+  override def persistenceIdsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      toTimestamp: Option[Instant],
       limit: Int,
       correlationId: Option[String]): Source[String, NotUsed] = {
     if (!settings.isSliceRangeWithinSameDataPartition(minSlice, maxSlice))
@@ -737,10 +747,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         s"of the [${settings.numberOfDataPartitions}] data partitions.")
 
     val executor = executorProvider.executorFor(minSlice)
-    val result = executor.select(s"select currentPersistenceIdsBySlices [$minSlice - $maxSlice]")(
+    val result = executor.select(s"select persistenceIdsBySlices [$minSlice - $maxSlice]")(
       connection => {
-        val stmt = connection.createStatement(currentPersistenceIdsBySlicesSql(minSlice, maxSlice))
-        bindCurrentPersistenceIdsBySlicesSql(stmt, entityType, fromTimestamp, limit)
+        val stmt =
+          connection.createStatement(persistenceIdsBySlicesSql(toTimestamp.isDefined, minSlice, maxSlice))
+        bindPersistenceIdsBySlicesSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
       },
       row => row.get("persistence_id", classOf[String]))
 

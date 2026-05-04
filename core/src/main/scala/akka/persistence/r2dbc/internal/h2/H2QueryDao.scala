@@ -61,7 +61,11 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
       LIMIT ?"""
   }
 
-  override protected def currentPersistenceIdsBySlicesSql(minSlice: Int, maxSlice: Int): String =
+  override protected def persistenceIdsBySlicesSql(
+      toDbTimestampParam: Boolean,
+      minSlice: Int,
+      maxSlice: Int): String = {
+    val toDbTimestampCondition = if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
     sql"""
       SELECT persistence_id
       FROM (
@@ -75,11 +79,12 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
           FROM ${journalTable(minSlice)}
           WHERE entity_type = ?
             AND ${sliceCondition(minSlice, maxSlice)}
-            AND db_timestamp >= ?
+            AND db_timestamp >= ? $toDbTimestampCondition
             AND deleted = false
       ) t
       WHERE rn = 1
       ORDER BY db_timestamp DESC
       LIMIT ?
       """
+  }
 }

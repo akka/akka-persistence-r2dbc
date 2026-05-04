@@ -985,10 +985,11 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   }
 
   /**
-   * Get the current active persistence ids for entities of `entityType` — those with at least one event whose
-   * `db_timestamp` is greater than or equal to the timestamp carried by `offset`, and whose slice is in the `[minSlice,
-   * maxSlice]` range. The supported `offset` is [[TimestampOffset]] and [[Offset.noOffset]] (which maps to
-   * `Instant.EPOCH`).
+   * Get the persistence ids active in a given time window for entities of `entityType` — those with at least one event
+   * whose latest `db_timestamp` falls within `[fromOffset, toOffset]`, and whose slice is in the `[minSlice, maxSlice]`
+   * range. The supported offset types are [[TimestampOffset]] and [[Offset.noOffset]]. For `fromOffset`,
+   * [[Offset.noOffset]] maps to `Instant.EPOCH` (no lower bound); for `toOffset`, [[Offset.noOffset]] means no upper
+   * bound.
    *
    * @param entityType
    *   The entity type name.
@@ -996,29 +997,33 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    *   The minimum slice (inclusive).
    * @param maxSlice
    *   The maximum slice (inclusive). The slice range cannot span over more than one data partition.
-   * @param offset
+   * @param fromOffset
    *   Lower bound for `db_timestamp`. Use [[Offset.noOffset]] for no lower bound.
+   * @param toOffset
+   *   Upper bound for `db_timestamp` (inclusive). Use [[Offset.noOffset]] for no upper bound.
    * @param limit
    *   The maximum number of persistence ids to return.
    * @return
    *   A source emitting distinct persistence ids.
    */
-  def currentPersistenceIdsBySlices(
+  def persistenceIdsBySlices(
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset,
+      fromOffset: Offset,
+      toOffset: Offset,
       limit: Int): Source[String, NotUsed] = {
     val correlationId = QueryCorrelationId.get()
     val correlationIdText = CorrelationId.toLogText(correlationId)
     bySlice(entityType, minSlice)
-      .currentPersistenceIdsBySlices(
-        s"[$entityType] currentPersistenceIdsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
+      .persistenceIdsBySlices(
+        s"[$entityType] persistenceIdsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
         correlationId,
         entityType,
         minSlice,
         maxSlice,
-        offset,
+        fromOffset,
+        toOffset,
         limit)
   }
 

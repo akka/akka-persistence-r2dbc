@@ -17,6 +17,7 @@ import scala.concurrent.duration.FiniteDuration
 
 import akka.NotUsed
 import akka.annotation.InternalApi
+import akka.persistence.query.NoOffset
 import akka.persistence.query.Offset
 import akka.persistence.query.TimestampOffset
 import akka.persistence.r2dbc.R2dbcSettings
@@ -241,16 +242,18 @@ import org.slf4j.Logger
 
     /**
      * Default throws [[UnsupportedOperationException]]. Override in journal daos that support distinct active
-     * persistence ids within a slice range from a given lower-bound `db_timestamp`.
+     * persistence ids within a slice range from a given lower-bound `db_timestamp` and optional upper-bound
+     * `db_timestamp`.
      */
-    def currentPersistenceIdsBySlices(
+    def persistenceIdsBySlices(
         entityType: String,
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
+        toTimestamp: Option[Instant],
         limit: Int,
         correlationId: Option[String]): Source[String, NotUsed] =
-      throw new UnsupportedOperationException(s"currentPersistenceIdsBySlices is not supported by ${getClass.getName}")
+      throw new UnsupportedOperationException(s"persistenceIdsBySlices is not supported by ${getClass.getName}")
 
     protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
@@ -380,18 +383,23 @@ import org.slf4j.Logger
       .mapMaterializedValue(_ => NotUsed)
   }
 
-  def currentPersistenceIdsBySlices(
+  def persistenceIdsBySlices(
       logPrefix: String,
       correlationId: Option[String],
       entityType: String,
       minSlice: Int,
       maxSlice: Int,
-      offset: Offset,
+      fromOffset: Offset,
+      toOffset: Offset,
       limit: Int): Source[String, NotUsed] = {
-    val fromTimestamp = toTimestampOffset(offset).timestamp
+    val fromTimestamp = toTimestampOffset(fromOffset).timestamp
+    val toTimestamp = toOffset match {
+      case NoOffset => None
+      case _        => Some(toTimestampOffset(toOffset).timestamp)
+    }
     if (log.isDebugEnabled())
-      log.debug("{} query, from time [{}] limit [{}].", logPrefix, fromTimestamp, limit)
-    dao.currentPersistenceIdsBySlices(entityType, minSlice, maxSlice, fromTimestamp, limit, correlationId)
+      log.debug("{} query, from time [{}] to time [{}] limit [{}].", logPrefix, fromTimestamp, toTimestamp, limit)
+    dao.persistenceIdsBySlices(entityType, minSlice, maxSlice, fromTimestamp, toTimestamp, limit, correlationId)
   }
 
   def liveBySlices(

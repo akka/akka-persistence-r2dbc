@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc.query
 
+import java.time.Instant
+
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.ActorSystem
@@ -18,7 +20,7 @@ import akka.persistence.r2dbc.query.scaladsl.R2dbcReadJournal
 import akka.stream.scaladsl.Sink
 import org.scalatest.wordspec.AnyWordSpecLike
 
-class CurrentPersistenceIdsBySlicesSpec
+class PersistenceIdsBySlicesSpec
     extends ScalaTestWithActorTestKit(TestConfig.config)
     with AnyWordSpecLike
     with TestDbLifecycle
@@ -30,7 +32,9 @@ class CurrentPersistenceIdsBySlicesSpec
   private val query =
     PersistenceQuery(testKit.system).readJournalFor[R2dbcReadJournal](R2dbcReadJournal.Identifier)
 
-  "currentPersistenceIdsBySlices" should {
+  private val dao = settings.connectionFactorySettings.dialect.createQueryDao(r2dbcExecutorProvider)
+
+  "persistenceIdsBySlices" should {
 
     "return all active persistence ids when no offset is given" in {
       pendingIfMoreThanOneDataPartition()
@@ -44,11 +48,12 @@ class CurrentPersistenceIdsBySlicesSpec
       }
 
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
@@ -75,11 +80,12 @@ class CurrentPersistenceIdsBySlicesSpec
 
       val cutoff = now.minusSeconds(600)
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = TimestampOffset(cutoff, Map.empty),
+          fromOffset = TimestampOffset(cutoff, Map.empty),
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
@@ -104,11 +110,12 @@ class CurrentPersistenceIdsBySlicesSpec
 
       val cutoff = now.minusSeconds(600)
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = TimestampOffset(cutoff, Map.empty),
+          fromOffset = TimestampOffset(cutoff, Map.empty),
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
@@ -127,11 +134,12 @@ class CurrentPersistenceIdsBySlicesSpec
       }
 
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 3)
         .runWith(Sink.seq)
         .futureValue
@@ -153,13 +161,13 @@ class CurrentPersistenceIdsBySlicesSpec
       highPids.zipWithIndex.foreach { case (pid, i) => writeEvent(midSlice + i, pid, 1L, now, "hi") }
 
       val lowResult = query
-        .currentPersistenceIdsBySlices(entityType, 0, midSlice - 1, NoOffset, 100)
+        .persistenceIdsBySlices(entityType, 0, midSlice - 1, NoOffset, NoOffset, 100)
         .runWith(Sink.seq)
         .futureValue
       lowResult.toSet shouldBe lowPids.toSet
 
       val highResult = query
-        .currentPersistenceIdsBySlices(entityType, midSlice, persistenceExt.numberOfSlices - 1, NoOffset, 100)
+        .persistenceIdsBySlices(entityType, midSlice, persistenceExt.numberOfSlices - 1, NoOffset, NoOffset, 100)
         .runWith(Sink.seq)
         .futureValue
       highResult.toSet shouldBe highPids.toSet
@@ -177,11 +185,12 @@ class CurrentPersistenceIdsBySlicesSpec
       pidsB.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, now, "b"))
 
       val resultA = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityTypeA,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
@@ -202,11 +211,12 @@ class CurrentPersistenceIdsBySlicesSpec
       }
 
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
@@ -226,11 +236,12 @@ class CurrentPersistenceIdsBySlicesSpec
       }
 
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 3)
         .runWith(Sink.seq)
         .futureValue
@@ -256,17 +267,81 @@ class CurrentPersistenceIdsBySlicesSpec
       writeEvent(sliceA, pidA, 2L, now.minusSeconds(10), "very recent")
 
       val result = query
-        .currentPersistenceIdsBySlices(
+        .persistenceIdsBySlices(
           entityType,
           minSlice = 0,
           maxSlice = persistenceExt.numberOfSlices - 1,
-          offset = NoOffset,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
           limit = 100)
         .runWith(Sink.seq)
         .futureValue
 
       result shouldBe Vector(pidA, pidB)
     }
-  }
 
+    "filter out persistence ids whose latest event is after toTimestamp" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = nextEntityType()
+      val now = InstantFactory.now()
+      val withinPids = (1 to 3).map(_ => nextPid(entityType)).toVector
+      val afterPids = (1 to 2).map(_ => nextPid(entityType)).toVector
+
+      val withinTime = now.minusSeconds(600)
+      val afterTime = now.minusSeconds(60)
+
+      withinPids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, withinTime, "within"))
+      afterPids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, afterTime, "after"))
+
+      val toTimestamp = now.minusSeconds(300)
+      val result = dao
+        .persistenceIdsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromTimestamp = Instant.EPOCH,
+          toTimestamp = Some(toTimestamp),
+          limit = 100,
+          correlationId = None)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result.toSet shouldBe withinPids.toSet
+    }
+
+    "combine fromTimestamp and toTimestamp as a window" in {
+      pendingIfMoreThanOneDataPartition()
+
+      val entityType = nextEntityType()
+      val now = InstantFactory.now()
+      val beforePids = (1 to 2).map(_ => nextPid(entityType)).toVector
+      val withinPids = (1 to 3).map(_ => nextPid(entityType)).toVector
+      val afterPids = (1 to 2).map(_ => nextPid(entityType)).toVector
+
+      val beforeTime = now.minusSeconds(3600)
+      val withinTime = now.minusSeconds(600)
+      val afterTime = now.minusSeconds(10)
+
+      beforePids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, beforeTime, "before"))
+      withinPids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, withinTime, "within"))
+      afterPids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, afterTime, "after"))
+
+      val fromTimestamp = now.minusSeconds(1800)
+      val toTimestamp = now.minusSeconds(120)
+      val result = dao
+        .persistenceIdsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromTimestamp = fromTimestamp,
+          toTimestamp = Some(toTimestamp),
+          limit = 100,
+          correlationId = None)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result.toSet shouldBe withinPids.toSet
+    }
+  }
 }
