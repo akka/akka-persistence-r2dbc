@@ -83,7 +83,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
             AND deleted = false
       ) t
       WHERE rn = 1
-      ORDER BY db_timestamp DESC
+      ORDER BY db_timestamp, persistence_id DESC
       LIMIT ?
       """
   }
