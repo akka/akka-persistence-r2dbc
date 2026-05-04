@@ -992,7 +992,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
    * bound.
    *
    * The returned persistence ids are distinct and ordered by the latest `db_timestamp` per persistence id, descending
-   * (most recently active first).
+   * (most recently active first), with `persistence_id` ascending as the tiebreaker when timestamps are equal.
    *
    * The `limit` caps how many ids are returned but is not intended for paging. Because the ordering key is the latest
    * `db_timestamp` of each persistence id and that timestamp changes whenever a new event is persisted. An id can move

@@ -260,7 +260,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         AND deleted = $sqlFalse
         ORDER BY persistence_id, db_timestamp DESC
       )
-      ORDER BY db_timestamp, persistence_id DESC
+      ORDER BY db_timestamp DESC, persistence_id ASC
       LIMIT ?;
       """
     }
