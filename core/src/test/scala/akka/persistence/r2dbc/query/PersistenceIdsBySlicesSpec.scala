@@ -34,11 +34,22 @@ class PersistenceIdsBySlicesSpec
 
   private val dao = settings.connectionFactorySettings.dialect.createQueryDao(r2dbcExecutorProvider)
 
+  private def canBeTestedWithDialect: Boolean =
+    settings.dialectName == "postgres" || settings.dialectName == "h2"
+
+  private def pendingIfCannotBeTestedWithDialect(): Unit = {
+    if (!canBeTestedWithDialect) {
+      info(s"Can't be tested with dialect [${settings.dialectName}]")
+      pending
+    }
+  }
+
   "persistenceIdsBySlices" should {
 
-    "return all active persistence ids when no offset is given" in {
-      pendingIfMoreThanOneDataPartition()
+    pendingIfMoreThanOneDataPartition()
+    pendingIfCannotBeTestedWithDialect()
 
+    "return all active persistence ids when no offset is given" in {
       val entityType = nextEntityType()
       val pids = (1 to 5).map(_ => nextPid(entityType)).toVector
       val now = InstantFactory.now()
@@ -62,7 +73,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "filter out persistence ids whose latest event is older than the offset timestamp" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val oldPids = (1 to 3).map(_ => nextPid(entityType)).toVector
@@ -94,7 +104,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "include a persistence id whose latest event is at or after the offset, even if it has older events" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val pidWithRecentEvent = nextPid(entityType)
@@ -124,7 +133,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "respect the limit" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val pids = (1 to 10).map(_ => nextPid(entityType)).toVector
@@ -149,7 +157,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "filter by slice range" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
@@ -174,7 +181,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "filter by entity type" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityTypeA = nextEntityType()
       val entityTypeB = nextEntityType()
@@ -199,7 +205,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "order results by most recently active persistence id first" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
@@ -225,7 +230,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "return the most recently active ids when limit is smaller than total, in recency order" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
@@ -251,7 +255,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "order by the latest event timestamp per persistence id" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
@@ -281,7 +284,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "filter out persistence ids whose latest event is after toTimestamp" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
@@ -311,7 +313,6 @@ class PersistenceIdsBySlicesSpec
     }
 
     "combine fromTimestamp and toTimestamp as a window" in {
-      pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
       val now = InstantFactory.now()
