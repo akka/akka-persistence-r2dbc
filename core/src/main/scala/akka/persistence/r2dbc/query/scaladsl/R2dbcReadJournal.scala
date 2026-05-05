@@ -984,6 +984,58 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
       _.map(deserializeBySliceRow))
   }
 
+  /**
+   * Get the persistence ids active in a given time window for entities of `entityType` — those with at least one event
+   * whose latest `db_timestamp` falls within `[fromOffset, toOffset]`, and whose slice is in the `[minSlice, maxSlice]`
+   * range. The supported offset types are [[TimestampOffset]] and [[Offset.noOffset]]. For `fromOffset`,
+   * [[Offset.noOffset]] maps to `Instant.EPOCH` (no lower bound); for `toOffset`, [[Offset.noOffset]] means no upper
+   * bound.
+   *
+   * The returned persistence ids are distinct and ordered by the latest `db_timestamp` per persistence id, descending
+   * (most recently active first), with `persistence_id` ascending as the tiebreaker when timestamps are equal.
+   *
+   * The `limit` caps how many ids are returned but is not intended for paging. Because the ordering key is the latest
+   * `db_timestamp` of each persistence id and that timestamp changes whenever a new event is persisted. An id can move
+   * between calls and the same id could appear on more than one page or be missed entirely.
+   *
+   * The slice range cannot span over more than one data partition.
+   *
+   * @param entityType
+   *   The entity type name.
+   * @param minSlice
+   *   The minimum slice (inclusive).
+   * @param maxSlice
+   *   The maximum slice (inclusive). The slice range cannot span over more than one data partition.
+   * @param fromOffset
+   *   Lower bound for `db_timestamp`. Use [[Offset.noOffset]] for no lower bound.
+   * @param toOffset
+   *   Upper bound for `db_timestamp` (inclusive). Use [[Offset.noOffset]] for no upper bound.
+   * @param limit
+   *   The maximum number of persistence ids to return. Not suitable for pagination — see above.
+   * @return
+   *   A source emitting distinct persistence ids, ordered by latest `db_timestamp` descending.
+   */
+  def persistenceIdsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromOffset: Offset,
+      toOffset: Offset,
+      limit: Int): Source[String, NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
+    bySlice(entityType, minSlice)
+      .persistenceIdsBySlices(
+        s"[$entityType] persistenceIdsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
+        correlationId,
+        entityType,
+        minSlice,
+        maxSlice,
+        fromOffset,
+        toOffset,
+        limit)
+  }
+
   override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =
