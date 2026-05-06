@@ -1,7 +1,7 @@
 version: '2.2'
 services:
   postgres-db:
-    image: postgres:latest
+    image: ${POSTGRES_IMAGE:-postgres:latest}
     container_name: postgres-db
     ports:
       - 5432:5432
