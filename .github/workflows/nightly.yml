@@ -24,7 +24,6 @@ jobs:
           - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
           - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
           # also test against a fixed older Postgres version
-          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test", postgresImage: "postgres:15"}
           - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test", postgresImage: "postgres:15"}
     steps:
       - name: Checkout Global Scripts
