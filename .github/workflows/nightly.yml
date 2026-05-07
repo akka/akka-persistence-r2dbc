@@ -18,11 +18,13 @@ jobs:
       matrix:
         include:
           # cover relevant combinations when combined with the matrix Yugabyte tests
-          # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test"}
-          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
-          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test"}
-          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test"}
-          - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test"}
+          # { scalaVersion: "2.13", jdkVersion: "1.11.0", jvmName: "temurin:1.11.0", extraOpts: '-J-XX:+UnlockExperimentalVMOptions -J-XX:+UseJVMCICompiler', testCmd: "test", postgresImage: "postgres:latest"}
+          - { scalaVersion: "2.13", jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
+          - { scalaVersion: "3.3",  jdkVersion: "1.17.0", jvmName: "temurin:1.17.0", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
+          - { scalaVersion: "2.13", jdkVersion: "1.21.0", jvmName: "temurin:1.21", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
+          - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test", postgresImage: "postgres:latest"}
+          # also test against a fixed older Postgres version
+          - { scalaVersion: "2.13", jdkVersion: "1.25.0", jvmName: "temurin:1.25", extraOpts: '', testCmd: "test", postgresImage: "postgres:15"}
     steps:
       - name: Checkout Global Scripts
         # This MUST be before the main checkout or else the dynver will not work
@@ -54,6 +56,8 @@ jobs:
           jvm: ${{ matrix.jvmName }}
 
       - name: Start DB
+        env:
+          POSTGRES_IMAGE: ${{ matrix.postgresImage }}
         run: |-
           docker compose -f docker/docker-compose-postgres.yml up --wait
           docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql

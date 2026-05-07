@@ -259,7 +259,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         AND db_timestamp >= ? $toDbTimestampCondition
         AND deleted = $sqlFalse
         ORDER BY persistence_id, db_timestamp DESC
-      )
+      ) AS subquery
       ORDER BY db_timestamp DESC, persistence_id ASC
       LIMIT ?;
       """
