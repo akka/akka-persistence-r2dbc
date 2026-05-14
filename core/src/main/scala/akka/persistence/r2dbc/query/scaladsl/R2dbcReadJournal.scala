@@ -1036,6 +1036,49 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         limit)
   }
 
+  /**
+   * As [[persistenceIdsBySlices]], but additionally returns the latest `db_timestamp` observed for each persistence id
+   * within the slice and time window. Ordering and limit semantics are identical to [[persistenceIdsBySlices]]:
+   * descending by latest `db_timestamp`, with `persistence_id` ascending as the tiebreaker. The `limit` caps the result
+   * and is not intended for paging — see [[persistenceIdsBySlices]] for the rationale.
+   *
+   * @param entityType
+   *   The entity type name.
+   * @param minSlice
+   *   The minimum slice (inclusive).
+   * @param maxSlice
+   *   The maximum slice (inclusive). The slice range cannot span over more than one data partition.
+   * @param fromOffset
+   *   Lower bound for `db_timestamp`. Use [[Offset.noOffset]] for no lower bound.
+   * @param toOffset
+   *   Upper bound for `db_timestamp` (inclusive). Use [[Offset.noOffset]] for no upper bound.
+   * @param limit
+   *   The maximum number of persistence ids to return. Not suitable for pagination — see [[persistenceIdsBySlices]].
+   * @return
+   *   A source emitting distinct persistence ids together with the latest `db_timestamp` observed within the window,
+   *   ordered by latest `db_timestamp` descending.
+   */
+  def persistenceIdsAndTimestampsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromOffset: Offset,
+      toOffset: Offset,
+      limit: Int): Source[(String, Instant), NotUsed] = {
+    val correlationId = QueryCorrelationId.get()
+    val correlationIdText = CorrelationId.toLogText(correlationId)
+    bySlice(entityType, minSlice)
+      .persistenceIdsAndTimestampsBySlices(
+        s"[$entityType] persistenceIdsAndTimestampsBySlices [$minSlice-$maxSlice]$correlationIdText: ",
+        correlationId,
+        entityType,
+        minSlice,
+        maxSlice,
+        fromOffset,
+        toOffset,
+        limit)
+  }
+
   override def currentPersistenceIds(): Source[String, NotUsed] = {
     import settings.querySettings.persistenceIdsBufferSize
     def updateState(state: PersistenceIdsQueryState, pid: String): PersistenceIdsQueryState =

@@ -255,6 +255,21 @@ import org.slf4j.Logger
         correlationId: Option[String]): Source[String, NotUsed] =
       throw new UnsupportedOperationException(s"persistenceIdsBySlices is not supported by ${getClass.getName}")
 
+    /**
+     * Default throws [[UnsupportedOperationException]]. Same as [[persistenceIdsBySlices]] but additionally returns the
+     * latest `db_timestamp` for each persistence id.
+     */
+    def persistenceIdsAndTimestampsBySlices(
+        entityType: String,
+        minSlice: Int,
+        maxSlice: Int,
+        fromTimestamp: Instant,
+        toTimestamp: Option[Instant],
+        limit: Int,
+        correlationId: Option[String]): Source[(String, Instant), NotUsed] =
+      throw new UnsupportedOperationException(
+        s"persistenceIdsAndTimestampsBySlices is not supported by ${getClass.getName}")
+
     protected def appendEmptyBucketIfLastIsMissing(
         buckets: IndexedSeq[Bucket],
         toTimestamp: Instant): IndexedSeq[Bucket] = {
@@ -400,6 +415,32 @@ import org.slf4j.Logger
     if (log.isDebugEnabled())
       log.debug("{} query, from time [{}] to time [{}] limit [{}].", logPrefix, fromTimestamp, toTimestamp, limit)
     dao.persistenceIdsBySlices(entityType, minSlice, maxSlice, fromTimestamp, toTimestamp, limit, correlationId)
+  }
+
+  def persistenceIdsAndTimestampsBySlices(
+      logPrefix: String,
+      correlationId: Option[String],
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromOffset: Offset,
+      toOffset: Offset,
+      limit: Int): Source[(String, Instant), NotUsed] = {
+    val fromTimestamp = toTimestampOffset(fromOffset).timestamp
+    val toTimestamp = toOffset match {
+      case NoOffset => None
+      case _        => Some(toTimestampOffset(toOffset).timestamp)
+    }
+    if (log.isDebugEnabled())
+      log.debug("{} query, from time [{}] to time [{}] limit [{}].", logPrefix, fromTimestamp, toTimestamp, limit)
+    dao.persistenceIdsAndTimestampsBySlices(
+      entityType,
+      minSlice,
+      maxSlice,
+      fromTimestamp,
+      toTimestamp,
+      limit,
+      correlationId)
   }
 
   def liveBySlices(

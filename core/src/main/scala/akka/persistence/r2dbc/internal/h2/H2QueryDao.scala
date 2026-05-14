@@ -63,11 +63,13 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
 
   override protected def persistenceIdsBySlicesSql(
       toDbTimestampParam: Boolean,
+      includeTimestamp: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
     val toDbTimestampCondition = if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
+    val outerColumns = if (includeTimestamp) "persistence_id, db_timestamp" else "persistence_id"
     sql"""
-      SELECT persistence_id
+      SELECT $outerColumns
       FROM (
           SELECT
               persistence_id,

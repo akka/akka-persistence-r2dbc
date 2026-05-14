@@ -264,6 +264,40 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     delegate.persistenceIdsBySlices(entityType, minSlice, maxSlice, fromOffset, toOffset, limit).asJava
 
   /**
+   * As [[persistenceIdsBySlices]], but additionally returns the latest `db_timestamp` observed for each persistence id
+   * within the slice and time window. Ordering and limit semantics are identical to [[persistenceIdsBySlices]]:
+   * descending by latest `db_timestamp`, with `persistence_id` ascending as the tiebreaker. The `limit` caps the result
+   * and is not intended for paging — see [[persistenceIdsBySlices]] for the rationale.
+   *
+   * @param entityType
+   *   The entity type name.
+   * @param minSlice
+   *   The minimum slice (inclusive).
+   * @param maxSlice
+   *   The maximum slice (inclusive). The slice range cannot span over more than one data partition.
+   * @param fromOffset
+   *   Lower bound for `db_timestamp`. Use [[Offset.noOffset]] for no lower bound.
+   * @param toOffset
+   *   Upper bound for `db_timestamp` (inclusive). Use [[Offset.noOffset]] for no upper bound.
+   * @param limit
+   *   The maximum number of persistence ids to return. Not suitable for pagination — see [[persistenceIdsBySlices]].
+   * @return
+   *   A source emitting distinct persistence ids paired with the latest `db_timestamp` observed within the window,
+   *   ordered by latest `db_timestamp` descending.
+   */
+  def persistenceIdsAndTimestampsBySlices(
+      entityType: String,
+      minSlice: Int,
+      maxSlice: Int,
+      fromOffset: Offset,
+      toOffset: Offset,
+      limit: Int): Source[Pair[String, Instant], NotUsed] =
+    delegate
+      .persistenceIdsAndTimestampsBySlices(entityType, minSlice, maxSlice, fromOffset, toOffset, limit)
+      .map { case (pid, timestamp) => Pair.create(pid, timestamp) }
+      .asJava
+
+  /**
    * Load the last event for the given `persistenceId` up to the given `toSeqNr`.
    *
    * @param persistenceId

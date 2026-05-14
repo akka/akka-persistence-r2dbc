@@ -345,4 +345,134 @@ class PersistenceIdsBySlicesSpec
       result.toSet shouldBe withinPids.toSet
     }
   }
+
+  "persistenceIdsAndTimestampsBySlices" should {
+
+    pendingIfMoreThanOneDataPartition()
+    pendingIfCannotBeTestedWithDialect()
+
+    "return each persistence id paired with the latest db_timestamp" in {
+      val entityType = nextEntityType()
+      val pid = nextPid(entityType)
+      val slice = persistenceExt.sliceForPersistenceId(pid)
+      val now = InstantFactory.now()
+      val oldTime = now.minusSeconds(3600)
+      val recentTime = now.minusSeconds(60)
+
+      writeEvent(slice, pid, 1L, oldTime, "old")
+      writeEvent(slice, pid, 2L, recentTime, "recent")
+
+      val result = query
+        .persistenceIdsAndTimestampsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
+          limit = 100)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result shouldBe Vector(pid -> recentTime)
+    }
+
+    "order results by latest db_timestamp descending, persistence_id ascending as tiebreaker" in {
+      val entityType = nextEntityType()
+      val now = InstantFactory.now()
+      val pids = (1 to 5).map(_ => nextPid(entityType)).toVector
+      // assign descending timestamps so the most recently active pid is pids(4)
+      val timestamps = pids.indices.map(i => now.minusSeconds((5 - i) * 60L))
+      pids.zip(timestamps).foreach { case (pid, ts) =>
+        writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, ts, "e")
+      }
+
+      val result = query
+        .persistenceIdsAndTimestampsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
+          limit = 100)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result shouldBe pids.zip(timestamps).reverse
+    }
+
+    "use persistence_id ascending as a tiebreaker on equal timestamps" in {
+      val entityType = nextEntityType()
+      val now = InstantFactory.now()
+      val pids = (1 to 4).map(_ => nextPid(entityType)).toVector
+      pids.foreach(pid => writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, now, "e"))
+
+      val result = query
+        .persistenceIdsAndTimestampsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
+          limit = 100)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result shouldBe pids.sorted.map(pid => pid -> now)
+    }
+
+    "return the latest timestamp within the window when an id has events both inside and outside" in {
+      val entityType = nextEntityType()
+      val pid = nextPid(entityType)
+      val slice = persistenceExt.sliceForPersistenceId(pid)
+      val now = InstantFactory.now()
+      val beforeTime = now.minusSeconds(3600)
+      val withinEarly = now.minusSeconds(800)
+      val withinLate = now.minusSeconds(400)
+      val afterTime = now.minusSeconds(10)
+
+      writeEvent(slice, pid, 1L, beforeTime, "before")
+      writeEvent(slice, pid, 2L, withinEarly, "within-early")
+      writeEvent(slice, pid, 3L, withinLate, "within-late")
+      writeEvent(slice, pid, 4L, afterTime, "after")
+
+      val fromTimestamp = now.minusSeconds(1000)
+      val toTimestamp = now.minusSeconds(120)
+      val result = query
+        .persistenceIdsAndTimestampsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromOffset = TimestampOffset(fromTimestamp, Map.empty),
+          toOffset = TimestampOffset(toTimestamp, Map.empty),
+          limit = 100)
+        .runWith(Sink.seq)
+        .futureValue
+
+      result shouldBe Vector(pid -> withinLate)
+    }
+
+    "respect the limit, truncating from the least-recent end" in {
+      val entityType = nextEntityType()
+      val now = InstantFactory.now()
+      val pids = (1 to 5).map(_ => nextPid(entityType)).toVector
+      val timestamps = pids.indices.map(i => now.minusSeconds((5 - i) * 60L))
+      pids.zip(timestamps).foreach { case (pid, ts) =>
+        writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, 1L, ts, "e")
+      }
+
+      val result = query
+        .persistenceIdsAndTimestampsBySlices(
+          entityType,
+          minSlice = 0,
+          maxSlice = persistenceExt.numberOfSlices - 1,
+          fromOffset = NoOffset,
+          toOffset = NoOffset,
+          limit = 3)
+        .runWith(Sink.seq)
+        .futureValue
+
+      // 3 most recently active, newest first
+      result shouldBe Vector(pids(4) -> timestamps(4), pids(3) -> timestamps(3), pids(2) -> timestamps(2))
+    }
+  }
 }
