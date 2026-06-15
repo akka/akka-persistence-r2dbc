@@ -109,7 +109,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   private def selectStateSql(slice: Int, entityType: String): String =
-    sqlCache.get(slice, s"selectStateSql-$entityType") {
+    sqlCache.get(slice, s"selectStateSql-${settings.durableStateTableCacheKey(entityType)}") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
       sql"""
       SELECT revision, state_ser_id, state_ser_manifest, state_payload, db_timestamp
@@ -117,7 +117,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
 
   protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"selectBucketsSql-$entityType-$minSlice-$maxSlice") {
+    sqlCache.get(minSlice, s"selectBucketsSql-${settings.durableStateTableCacheKey(entityType)}-$minSlice-$maxSlice") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
       sql"""
        SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
@@ -147,7 +147,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
 
     if (additionalBindings.isEmpty)
-      sqlCache.get(slice, s"insertStateSql-$entityType")(createSql)
+      sqlCache.get(slice, s"insertStateSql-${settings.durableStateTableCacheKey(entityType)}")(createSql)
     else
       createSql // no cache
   }
@@ -215,7 +215,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
     if (additionalBindings.isEmpty)
       // timestamp param doesn't have to be part of cache key because it's just different for different dialects
-      sqlCache.get(slice, s"updateStateSql-$entityType-$updateTags")(createSql)
+      sqlCache.get(slice, s"updateStateSql-${settings.durableStateTableCacheKey(entityType)}-$updateTags")(createSql)
     else
       createSql // no cache
   }
@@ -237,7 +237,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   }
 
   private def hardDeleteStateSql(entityType: String, slice: Int): String = {
-    sqlCache.get(slice, s"hardDeleteStateSql-$entityType") {
+    sqlCache.get(slice, s"hardDeleteStateSql-${settings.durableStateTableCacheKey(entityType)}") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
       sql"DELETE from $stateTable WHERE persistence_id = ?"
     }

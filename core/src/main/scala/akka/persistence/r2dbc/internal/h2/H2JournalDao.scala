@@ -5,12 +5,18 @@
 package akka.persistence.r2dbc.internal.h2
 
 import java.time.Instant
+
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
+
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
 import akka.annotation.InternalApi
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
@@ -19,6 +25,7 @@ import akka.persistence.r2dbc.internal.Sql
 import akka.persistence.r2dbc.internal.Sql.InterpolationWithAdapter
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao
+import akka.persistence.r2dbc.internal.postgres.PostgresJournalDao.EvaluatedAdditionalColumnBindings
 
 /**
  * INTERNAL API
@@ -36,12 +43,22 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
-  private def insertSql(slice: Int) =
-    sqlCache.get(slice, "insertSql") {
-      sql"INSERT INTO ${journalTable(slice)} " +
-      "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  private def insertSql(
+      entityType: String,
+      slice: Int,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    def createSql = {
+      val additionalCols = additionalInsertColumns(additionalBindings)
+      val additionalParams = additionalInsertParameters(additionalBindings)
+      sql"INSERT INTO ${journalTable(entityType, slice)} " +
+      s"(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload$additionalCols, db_timestamp) " +
+      s"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?$additionalParams, ?)"
     }
+    if (additionalBindings.isEmpty)
+      sqlCache.get(slice, s"insertSql-${settings.journalTableCacheKey(entityType)}")(createSql)
+    else
+      createSql
+  }
 
   /**
    * All events must be for the same persistenceId.
@@ -58,34 +75,47 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
 
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
+    val entityType = events.head.entityType
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
 
-    val totalEvents = events.size
-    val result =
-      if (totalEvents == 1) {
-        executor.updateOne(s"insert [$persistenceId]")(connection =>
-          bindInsertStatement(connection.createStatement(insertSql(slice)), events.head))
-      } else {
-        executor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
-          events.foldLeft(connection.createStatement(insertSql(slice))) { (stmt, write) =>
-            stmt.add()
-            bindInsertStatement(stmt, write)
-          })
-      }
+    evaluateBatchBindings(entityType, events) match {
+      case Failure(exc) => Future.failed(exc)
+      case Success((headBindings, perEventBindings)) =>
+        val totalEvents = events.size
+        val result =
+          if (totalEvents == 1) {
+            executor.updateOne(s"insert [$persistenceId]")(connection =>
+              bindInsertStatement(
+                connection.createStatement(insertSql(entityType, slice, headBindings)),
+                events.head,
+                headBindings))
+          } else {
+            executor.updateInBatch(s"batch insert [$persistenceId], [$totalEvents] events")(connection =>
+              events.iterator.zipWithIndex
+                .foldLeft(connection.createStatement(insertSql(entityType, slice, headBindings))) {
+                  case (stmt, (write, idx)) =>
+                    stmt.add()
+                    val bindings = if (perEventBindings.isEmpty) headBindings else perEventBindings(idx)
+                    bindInsertStatement(stmt, write, bindings)
+                })
+          }
 
-    if (log.isDebugEnabled())
-      result.foreach { _ =>
-        log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
-      }
-    result.map(_ => events.head.dbTimestamp)(ExecutionContext.parasitic)
+        if (log.isDebugEnabled())
+          result.foreach { _ =>
+            log.debug("Wrote [{}] events for persistenceId [{}]", 1, events.head.persistenceId)
+          }
+        result.map(_ => events.head.dbTimestamp)(ExecutionContext.parasitic)
+    }
   }
 
   override def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant] = {
     val persistenceId = event.persistenceId
+    val entityType = event.entityType
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
+    val bindings = additionalBindings(entityType, event)
 
-    val stmt = bindInsertStatement(connection.createStatement(insertSql(slice)), event)
+    val stmt = bindInsertStatement(connection.createStatement(insertSql(entityType, slice, bindings)), event, bindings)
     val result = R2dbcExecutor.updateOneInTx(stmt)
 
     if (log.isDebugEnabled())
@@ -95,37 +125,45 @@ private[r2dbc] class H2JournalDao(executorProvider: R2dbcExecutorProvider)
     result.map(_ => event.dbTimestamp)(ExecutionContext.parasitic)
   }
 
-  private def bindInsertStatement(stmt: Statement, write: SerializedJournalRow): Statement = {
+  private def bindInsertStatement(
+      stmt: Statement,
+      write: SerializedJournalRow,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): Statement = {
+    val idx = Iterator.range(0, Int.MaxValue)
     stmt
-      .bind(0, write.slice)
-      .bind(1, write.entityType)
-      .bind(2, write.persistenceId)
-      .bind(3, write.seqNr)
-      .bind(4, write.writerUuid)
-      .bind(5, "") // FIXME event adapter
-      .bind(6, write.serId)
-      .bind(7, write.serManifest)
-      .bindPayload(8, write.payload.get)
+      .bind(idx.next(), write.slice)
+      .bind(idx.next(), write.entityType)
+      .bind(idx.next(), write.persistenceId)
+      .bind(idx.next(), write.seqNr)
+      .bind(idx.next(), write.writerUuid)
+      .bind(idx.next(), "") // FIXME event adapter
+      .bind(idx.next(), write.serId)
+      .bind(idx.next(), write.serManifest)
+      .bindPayload(idx.next(), write.payload.get)
 
+    val tagsIdx = idx.next()
     if (write.tags.isEmpty)
-      stmt.bindNull(9, classOf[Array[String]])
+      stmt.bindNull(tagsIdx, classOf[Array[String]])
     else
-      stmt.bind(9, write.tags.toArray)
+      stmt.bind(tagsIdx, write.tags.toArray)
 
     // optional metadata
     write.metadata match {
       case Some(m) =>
         stmt
-          .bind(10, m.serId)
-          .bind(11, m.serManifest)
-          .bind(12, m.payload)
+          .bind(idx.next(), m.serId)
+          .bind(idx.next(), m.serManifest)
+          .bind(idx.next(), m.payload)
       case None =>
         stmt
-          .bindNull(10, classOf[Integer])
-          .bindNull(11, classOf[String])
-          .bindNull(12, classOf[Array[Byte]])
+          .bindNull(idx.next(), classOf[Integer])
+          .bindNull(idx.next(), classOf[String])
+          .bindNull(idx.next(), classOf[Array[Byte]])
     }
-    stmt.bind(13, write.dbTimestamp)
+
+    bindAdditionalColumns(stmt, additionalBindings, idx.next)
+
+    stmt.bind(idx.next(), write.dbTimestamp)
     stmt
   }
 

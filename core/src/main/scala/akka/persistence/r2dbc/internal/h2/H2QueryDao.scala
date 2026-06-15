@@ -24,6 +24,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
   override protected lazy val log: Logger = LoggerFactory.getLogger(classOf[H2QueryDao])
 
   override protected def eventsBySlicesRangeSql(
+      entityType: String,
       fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
@@ -52,7 +53,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
 
     sql"""
       $selectColumns
-      FROM ${journalTable(minSlice)}
+      FROM ${journalTable(entityType, minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
@@ -62,6 +63,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
   }
 
   override protected def persistenceIdsBySlicesSql(
+      entityType: String,
       toDbTimestampParam: Boolean,
       minSlice: Int,
       maxSlice: Int): String = {
@@ -76,7 +78,7 @@ private[r2dbc] class H2QueryDao(executorProvider: R2dbcExecutorProvider) extends
                   PARTITION BY persistence_id
                   ORDER BY db_timestamp DESC
               ) AS rn
-          FROM ${journalTable(minSlice)}
+          FROM ${journalTable(entityType, minSlice)}
           WHERE entity_type = ?
             AND ${sliceCondition(minSlice, maxSlice)}
             AND db_timestamp >= ? $toDbTimestampCondition

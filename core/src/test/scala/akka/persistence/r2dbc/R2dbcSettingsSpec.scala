@@ -36,6 +36,38 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       connectionFactorySettings.urlOption should not be defined
     }
 
+    "support custom journal table per entity type" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.schema=s1
+          akka.persistence.r2dbc.journal.custom-table {
+            "CustomEntity" = event_journal_custom
+          }
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+
+      settings.getJournalTable("CustomEntity") shouldBe "event_journal_custom"
+      settings.getJournalTable("OtherEntity") shouldBe "event_journal"
+      settings.getJournalTableWithSchema("CustomEntity", slice = 0) shouldBe "s1.event_journal_custom"
+      settings.getJournalTableWithSchema("OtherEntity", slice = 0) shouldBe "s1.event_journal"
+
+      // entity types without a custom table share the default table's cached SQL (empty cache-key token)
+      settings.journalTableCacheKey("CustomEntity") shouldBe "CustomEntity"
+      settings.journalTableCacheKey("OtherEntity") shouldBe ""
+
+      // both the default and the custom table are known (used for schema bootstrap and persistenceIds queries)
+      settings.allJournalTablesWithSchema.keySet shouldBe Set("s1.event_journal", "s1.event_journal_custom")
+    }
+
+    "default to no custom journal tables" in {
+      val settings = R2dbcSettings(ConfigFactory.load("application-postgres.conf").getConfig("akka.persistence.r2dbc"))
+      settings.getJournalTable("AnyEntity") shouldBe "event_journal"
+      settings.journalTableCacheKey("AnyEntity") shouldBe ""
+      settings.journalAdditionalColumnClasses shouldBe Map.empty
+      settings.allJournalTablesWithSchema.keySet shouldBe Set("event_journal")
+    }
+
     "support connection settings build from url" in {
       val config =
         ConfigFactory
