@@ -59,19 +59,19 @@ class JournalCustomTableSpec
 
   // The custom journal table must have the same layout as the default event_journal table, including the
   // `deleted BOOLEAN DEFAULT FALSE` column that the insert relies on (the insert does not list `deleted`).
+  // Create-as-select (like the durable state spec) doesn't copy column defaults, so restore the `deleted` default
+  // afterwards. Avoids `LIKE ... INCLUDING DEFAULTS`, which Yugabyte does not support.
   private def createCustomTableStatements(slice: Int): Seq[String] = settings.dialectName match {
-    case "postgres" | "yugabyte" =>
-      Seq(
-        s"CREATE TABLE IF NOT EXISTS ${customTable(slice)} (LIKE ${defaultTable(slice)} INCLUDING DEFAULTS INCLUDING CONSTRAINTS)")
-    case "h2" =>
-      Seq(
-        s"CREATE TABLE IF NOT EXISTS ${customTable(slice)} AS SELECT * FROM ${defaultTable(slice)} WHERE persistence_id = ''",
-        s"ALTER TABLE ${customTable(slice)} ALTER COLUMN deleted SET DEFAULT FALSE")
     case "sqlserver" =>
       Seq(
         s"IF object_id('${customTable(slice)}') is null SELECT * INTO ${customTable(slice)} FROM ${defaultTable(slice)} WHERE persistence_id = ''",
         s"IF NOT EXISTS (select 1 from sys.default_constraints where name = 'df_${EntityType}_deleted') " +
         s"ALTER TABLE ${customTable(slice)} ADD CONSTRAINT df_${EntityType}_deleted DEFAULT 0 FOR deleted")
+    case _ =>
+      // postgres, yugabyte and h2
+      Seq(
+        s"create table if not exists ${customTable(slice)} as select * from ${defaultTable(slice)} where persistence_id = ''",
+        s"alter table ${customTable(slice)} alter column deleted set default false")
   }
 
   override def beforeAll(): Unit = {
