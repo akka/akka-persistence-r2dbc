@@ -78,6 +78,9 @@ An `AdditionalColumn` that stores the `title` of an event:
 Scala
 :  @@snip [EventTitleColumn.scala](/docs/src/test/scala/docs/home/journal/EventTitleColumn.scala) { #additional-column }
 
+Java
+:  @@snip [EventTitleColumn.java](/docs/src/test/java/jdocs/home/journal/EventTitleColumn.java) { #additional-column }
+
 From the `bind` method you can return one of:
 
 * @scala[`AdditionalColumn.BindValue`]@java[`AdditionalColumn.bindValue`] — bind a value such as a `String` or `Long` to the database column
@@ -105,6 +108,9 @@ The events can be found by the additional column and deserialized like this:
 Scala
 :  @@snip [BlogPostQuery.scala](/docs/src/test/scala/docs/home/journal/BlogPostQuery.scala) { #query }
 
+Java
+:  @@snip [BlogPostQuery.java](/docs/src/test/java/jdocs/home/journal/BlogPostQuery.java) { #query }
+
 #### Additional column as PostgreSQL JSON
 
 With PostgreSQL the additional column type can be `JSONB` to take advantage of PostgreSQL support for
@@ -113,6 +119,9 @@ of the JSON in `io.r2dbc.postgresql.codec.Json` when binding the value:
 
 Scala
 :  @@snip [EventJsonColumn.scala](/docs/src/test/scala/docs/home/journal/EventJsonColumn.scala) { #additional-column-json }
+
+Java
+:  @@snip [EventJsonColumn.java](/docs/src/test/java/jdocs/home/journal/EventJsonColumn.java) { #additional-column-json }
 
 Add a JSONB column and a GIN index to the journal table, then query with the usual `column @> '{...}'::jsonb` or
 `column->>'field' = ?` operators.
