@@ -105,7 +105,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     def createSql = {
       val table = journalTable(entityType, slice)
-      val baseSql = insertEvenBaseSql(table, additionalBindings)
+      val baseSql = insertEventBaseSql(table, additionalBindings)
       if (settings.dbTimestampMonotonicIncreasing)
         sql"$baseSql ?) RETURNING db_timestamp"
       else
@@ -124,7 +124,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     def createSql = {
       val table = journalTable(entityType, slice)
-      val baseSql = insertEvenBaseSql(table, additionalBindings)
+      val baseSql = insertEventBaseSql(table, additionalBindings)
       if (settings.dbTimestampMonotonicIncreasing)
         sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
       else
@@ -137,7 +137,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       createSql
   }
 
-  private def insertEvenBaseSql(
+  private def insertEventBaseSql(
       table: String,
       additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     val additionalCols = additionalInsertColumns(additionalBindings)
@@ -262,8 +262,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       case Some(bytes) => serialization.deserialize(bytes, row.serId, row.serManifest).get
       case None =>
         throw new IllegalStateException(
-          s"Event payload for persistenceId [${row.persistenceId}] seqNr [${row.seqNr}] not available for journal " +
-          s"AdditionalColumn.")
+          s"Event payload for persistenceId [${row.persistenceId}] seqNr [${row.seqNr}] not available for additional column bindings")
     }
 
   protected def bindAdditionalColumns(
