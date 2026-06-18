@@ -33,8 +33,8 @@ object Dependencies {
     // FIXME: when bumping, check if the reactor-netty-core override below is still needed
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.1.RELEASE" // ApacheV2
 
-    // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.122
-    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.1.31"
+    // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
+    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.2.18"
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
