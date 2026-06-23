@@ -70,7 +70,7 @@ the Durable State updates. Note that updating the secondary index also has an im
 ### Additional columns
 
 In many cases you just want a secondary index on one or a few fields other than the entity id. For that purpose
-you can configure one or more @apidoc[AdditionalColumn] classes for an entity type. The `AdditionalColumn` will
+you can configure one or more @apidoc[akka.persistence.r2dbc.state.*.AdditionalColumn] classes for an entity type. The `AdditionalColumn` will
 extract the field from the Durable State value and define how to bind it to a database column.
 
 The configuration:

@@ -300,7 +300,10 @@ class MigrationTool(system: ActorSystem[_]) {
       manifest,
       "", // writerUuid is discarded, but that is ok
       tags = Set.empty, // tags are not migrated (not included in currentEventsByPersistenceId envelope)
-      metadata)
+      metadata,
+      // the event is already deserialized here, pass it (and its metadata) so journal additional columns are populated
+      eventValue = Some(event),
+      eventMetadata = env.eventMetadata)
   }
 
   /**

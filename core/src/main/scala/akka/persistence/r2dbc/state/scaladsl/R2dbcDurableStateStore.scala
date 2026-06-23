@@ -248,7 +248,10 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
         serializedEvent.serializerManifest,
         changeEventWriterUuid,
         if (tag.isEmpty) Set.empty else Set(tag),
-        metadata = None)
+        metadata = None,
+        // make the in-flight event available to journal AdditionalColumn bind() for change-event journaling
+        eventValue = Some(eventAnyRef),
+        eventMetadata = None)
     }
   }
 

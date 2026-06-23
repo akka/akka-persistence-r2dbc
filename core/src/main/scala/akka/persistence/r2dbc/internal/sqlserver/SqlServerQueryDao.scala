@@ -47,21 +47,21 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
 
   override protected def sqlDbTimestamp = "SYSUTCDATETIME()"
 
-  override protected def selectEventsSql(slice: Int): String =
-    sqlCache.get(slice, "selectEventsSql") {
+  override protected def selectEventsSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectEventsSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      from ${journalTable(slice)}
+      from ${journalTable(entityType, slice)}
       WHERE persistence_id = @persistenceId AND seq_nr >= @from AND seq_nr <= @to
       AND deleted = $sqlFalse
       ORDER BY seq_nr"""
     }
 
-  override protected def selectEventsIncludeDeletedSql(slice: Int): String =
-    sqlCache.get(slice, "selectEventsIncludeDeletedSql") {
+  override protected def selectEventsIncludeDeletedSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectEventsIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT TOP(@limit) slice, entity_type, persistence_id, seq_nr, db_timestamp, SYSUTCDATETIME() AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
-      from ${journalTable(slice)}
+      from ${journalTable(entityType, slice)}
       WHERE persistence_id = @persistenceId AND seq_nr >= @from AND seq_nr <= @to
       ORDER BY seq_nr"""
     }
@@ -84,12 +84,12 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@from", fromSequenceNr)
       .bind("@to", toSequenceNr)
 
-  override protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+  override protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-${settings.journalTableCacheKey(entityType)}-$minSlice-$maxSlice") {
       sql"""
         SELECT TOP(@limit) bucket, count(*) as count from
          (select DATEDIFF(s,'1970-01-01 00:00:00', db_timestamp)/10 as bucket
-          FROM ${journalTable(minSlice)}
+          FROM ${journalTable(entityType, minSlice)}
           WHERE entity_type = @entityType
           AND ${sliceCondition(minSlice, maxSlice)}
           AND db_timestamp >= @fromTimestamp AND db_timestamp <= @toTimestamp
@@ -112,6 +112,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
   }
 
   override protected def eventsBySlicesRangeSql(
+      entityType: String,
       fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
@@ -140,7 +141,7 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
 
     sql"""
         $selectColumns
-        FROM ${journalTable(minSlice)}
+        FROM ${journalTable(entityType, minSlice)}
         WHERE entity_type = @entityType
         AND ${sliceCondition(minSlice, maxSlice)}
         AND db_timestamp >= @from $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
@@ -163,31 +164,31 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
     stmt
   }
 
-  override protected def selectLastEventSql(slice: Int): String =
-    sqlCache.get(slice, "selectLastEventSql") {
+  override protected def selectLastEventSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectLastEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT TOP(1) entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr <= ? AND deleted = $sqlFalse
       ORDER BY seq_nr DESC
       """
     }
 
-  override protected def selectLastEventIncludeDeletedSql(slice: Int): String =
-    sqlCache.get(slice, "selectLastEventIncludeDeletedSql") {
+  override protected def selectLastEventIncludeDeletedSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectLastEventIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT TOP(1) entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr <= ?
       ORDER BY seq_nr DESC
       """
     }
 
-  override protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
+  override protected def persistenceIdsForEntityTypeAfterSql(entityType: String, minSlice: Int): String =
+    sqlCache.get(minSlice, s"persistenceIdsForEntityTypeAfterSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from ${journalTable(entityType, minSlice)} WHERE persistence_id LIKE @persistenceIdLike AND persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
     }
 
@@ -203,11 +204,11 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@persistenceId", afterPersistenceId)
   }
 
-  override protected def persistenceIdsForEntityTypeSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
+  override protected def persistenceIdsForEntityTypeSql(entityType: String, minSlice: Int): String =
+    sqlCache.get(minSlice, s"persistenceIdsForEntityTypeSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE @persistenceIdLike
+          SELECT DISTINCT(persistence_id) from ${journalTable(entityType, minSlice)} WHERE persistence_id LIKE @persistenceIdLike
          ) as sub ORDER BY persistence_id"""
     }
 
@@ -229,18 +230,14 @@ private[r2dbc] class SqlServerQueryDao(executorProvider: R2dbcExecutorProvider)
       .bind("@limit", limit)
       .bind("@persistenceId", afterPersistenceId)
   }
-  override protected def allPersistenceIdsAfterSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "allPersistenceIdsAfterSql") {
-      sql"""
+  override protected def allPersistenceIdsAfterSql(table: String): String =
+    sql"""
          SELECT TOP(@limit) persistence_id FROM (
-          SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > @persistenceId
+          SELECT DISTINCT(persistence_id) from $table WHERE persistence_id > @persistenceId
          ) as sub  ORDER BY persistence_id"""
-    }
 
-  override protected def allPersistenceIdsSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "allPersistenceIdsSql") {
-      sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)}) as sub  ORDER BY persistence_id"
-    }
+  override protected def allPersistenceIdsSql(table: String): String =
+    sql"SELECT TOP(@limit) persistence_id FROM (SELECT DISTINCT(persistence_id) from $table) as sub  ORDER BY persistence_id"
 
   override def currentDbTimestamp(slice: Int): Future[Instant] = Future.successful(InstantFactory.now())
 

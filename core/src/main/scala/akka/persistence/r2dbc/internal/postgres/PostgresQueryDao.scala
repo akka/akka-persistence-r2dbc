@@ -60,7 +60,8 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected val persistenceExt: Persistence = Persistence(system)
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
-  protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
+  protected def journalTable(entityType: String, slice: Int): String =
+    settings.getJournalTableWithSchema(entityType, slice)
 
   protected def sqlFalse: String = "false"
   protected def sqlDbTimestamp = "CURRENT_TIMESTAMP"
@@ -68,6 +69,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     "SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
   protected def eventsBySlicesRangeSql(
+      entityType: String,
       fromSeqNrParam: Boolean,
       toDbTimestampParam: Boolean,
       behindCurrentTime: FiniteDuration,
@@ -106,7 +108,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
 
     sql"""
       $selectColumns
-      FROM ${journalTable(minSlice)}
+      FROM ${journalTable(entityType, minSlice)}
       WHERE entity_type = ?
       AND $sliceFilter
       AND db_timestamp >= ? $fromSeqNrParamCondition $toDbTimestampParamCondition $behindCurrentTimeIntervalCondition
@@ -118,11 +120,11 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def sliceCondition(minSlice: Int, maxSlice: Int): String =
     s"slice in (${(minSlice to maxSlice).mkString(",")})"
 
-  protected def selectBucketsSql(minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"selectBucketsSql-$minSlice-$maxSlice") {
+  protected def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String =
+    sqlCache.get(minSlice, s"selectBucketsSql-${settings.journalTableCacheKey(entityType)}-$minSlice-$maxSlice") {
       sql"""
       SELECT floor(extract(EPOCH from db_timestamp) / 10)::BIGINT AS bucket, count(*) AS count
-      FROM ${journalTable(minSlice)}
+      FROM ${journalTable(entityType, minSlice)}
       WHERE entity_type = ?
       AND ${sliceCondition(minSlice, maxSlice)}
       AND db_timestamp >= ? AND db_timestamp <= ?
@@ -131,21 +133,21 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       """
     }
 
-  protected def selectTimestampOfEventSql(slice: Int): String =
-    sqlCache.get(slice, "selectTimestampOfEventSql") {
+  protected def selectTimestampOfEventSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectTimestampOfEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT db_timestamp FROM ${journalTable(slice)}
+      SELECT db_timestamp FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
     }
 
-  protected def selectLatestEventTimestampSql(slice: Int): String =
-    sqlCache.get(slice, "selectLatestEventTimestampSql") {
+  protected def selectLatestEventTimestampSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectLatestEventTimestampSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT MAX(per_slice.latest_timestamp) AS latest_timestamp
       FROM (
         SELECT
           (SELECT MAX(db_timestamp)
-           FROM ${journalTable(slice)}
+           FROM ${journalTable(entityType, slice)}
            WHERE entity_type = ?
            AND slice = slice_range.slice
            AND deleted = $sqlFalse) AS latest_timestamp
@@ -155,59 +157,59 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       """
     }
 
-  protected def selectOneEventSql(slice: Int): String =
-    sqlCache.get(slice, "selectOneEventSql") {
+  protected def selectOneEventSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectOneEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
     }
 
-  protected def selectOneEventWithoutPayloadSql(slice: Int): String =
-    sqlCache.get(slice, "selectOneEventWithoutPayloadSql") {
+  protected def selectOneEventWithoutPayloadSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectOneEventWithoutPayloadSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
     }
 
-  protected def selectLastEventSql(slice: Int): String =
-    sqlCache.get(slice, "selectLastEventSql") {
+  protected def selectLastEventSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectLastEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr <= ? AND deleted = $sqlFalse
       ORDER BY seq_nr DESC
       LIMIT 1"""
     }
 
-  protected def selectLastEventIncludeDeletedSql(slice: Int): String =
-    sqlCache.get(slice, "selectLastEventIncludeDeletedSql") {
+  protected def selectLastEventIncludeDeletedSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectLastEventIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
-      FROM ${journalTable(slice)}
+      FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr <= ?
       ORDER BY seq_nr DESC
       LIMIT 1
       """
     }
 
-  protected def selectEventsSql(slice: Int): String =
-    sqlCache.get(slice, "selectEventsSql") {
+  protected def selectEventsSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectEventsSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
-      from ${journalTable(slice)}
+      from ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       AND deleted = false
       ORDER BY seq_nr
       LIMIT ?"""
     }
 
-  protected def selectEventsIncludeDeletedSql(slice: Int): String =
-    sqlCache.get(slice, "selectEventsIncludeDeletedSql") {
+  protected def selectEventsIncludeDeletedSql(entityType: String, slice: Int): String =
+    sqlCache.get(slice, s"selectEventsIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
-      from ${journalTable(slice)}
+      from ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       ORDER BY seq_nr
       LIMIT ?"""
@@ -224,36 +226,39 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     .bind(2, toSequenceNr)
     .bind(3, settings.querySettings.bufferSize)
 
-  protected def allPersistenceIdsSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "allPersistenceIdsSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} ORDER BY persistence_id LIMIT ?"
+  protected def allPersistenceIdsSql(table: String): String =
+    // not worth caching, only run on configured custom tables
+    sql"SELECT DISTINCT(persistence_id) from $table ORDER BY persistence_id LIMIT ?"
+
+  protected def persistenceIdsForEntityTypeSql(entityType: String, minSlice: Int): String =
+    sqlCache.get(minSlice, s"persistenceIdsForEntityTypeSql-${settings.journalTableCacheKey(entityType)}") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(entityType, minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
     }
 
-  protected def persistenceIdsForEntityTypeSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? ORDER BY persistence_id LIMIT ?"
-    }
+  protected def allPersistenceIdsAfterSql(table: String): String =
+    sql"SELECT DISTINCT(persistence_id) from $table WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
 
-  protected def allPersistenceIdsAfterSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "allPersistenceIdsAfterSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
-    }
-
-  protected def persistenceIdsForEntityTypeAfterSql(minSlice: Int): String =
-    sqlCache.get(minSlice, "persistenceIdsForEntityTypeAfterSql") {
-      sql"SELECT DISTINCT(persistence_id) from ${journalTable(minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
+  protected def persistenceIdsForEntityTypeAfterSql(entityType: String, minSlice: Int): String =
+    sqlCache.get(minSlice, s"persistenceIdsForEntityTypeAfterSql-${settings.journalTableCacheKey(entityType)}") {
+      sql"SELECT DISTINCT(persistence_id) from ${journalTable(entityType, minSlice)} WHERE persistence_id LIKE ? AND persistence_id > ? ORDER BY persistence_id LIMIT ?"
     }
 
   /**
    * the inner query has the ordering required by the distinct, the outer query applies desired order and a limit
    */
-  protected def persistenceIdsBySlicesSql(toDbTimestampParam: Boolean, minSlice: Int, maxSlice: Int): String =
-    sqlCache.get(minSlice, s"persistenceIdsBySlicesSql-$minSlice-$maxSlice-$toDbTimestampParam") {
+  protected def persistenceIdsBySlicesSql(
+      entityType: String,
+      toDbTimestampParam: Boolean,
+      minSlice: Int,
+      maxSlice: Int): String =
+    sqlCache.get(
+      minSlice,
+      s"persistenceIdsBySlicesSql-${settings.journalTableCacheKey(entityType)}-$minSlice-$maxSlice-$toDbTimestampParam") {
       val toDbTimestampCondition = if (toDbTimestampParam) "AND db_timestamp <= ?" else ""
       sql"""
       SELECT persistence_id FROM (
         SELECT DISTINCT ON (persistence_id) persistence_id, db_timestamp
-        FROM ${journalTable(minSlice)}
+        FROM ${journalTable(entityType, minSlice)}
         WHERE entity_type = ?
         AND ${sliceCondition(minSlice, maxSlice)}
         AND db_timestamp >= ? $toDbTimestampCondition
@@ -342,6 +347,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         val stmt = connection
           .createStatement(
             eventsBySlicesRangeSql(
+              entityType,
               fromSeqNrParam = fromSeqNr.isDefined,
               toDbTimestampParam = toTimestamp.isDefined,
               behindCurrentTime,
@@ -428,7 +434,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
 
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
-        val stmt = connection.createStatement(selectBucketsSql(minSlice, maxSlice))
+        val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
         bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
       },
       row => {
@@ -461,12 +467,13 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       persistenceId: String,
       seqNr: Long,
       correlationId: Option[String]): Future[Option[Instant]] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor.selectOne("select timestampOfEvent")(
       connection =>
         connection
-          .createStatement(selectTimestampOfEventSql(slice))
+          .createStatement(selectTimestampOfEventSql(entityType, slice))
           .bind(0, persistenceId)
           .bind(1, seqNr),
       row => row.getTimestamp("db_timestamp"))
@@ -482,7 +489,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       .selectOne(s"select latest event timestamp for entity type [$entityType] slice range [$minSlice - $maxSlice]")(
         connection =>
           connection
-            .createStatement(selectLatestEventTimestampSql(minSlice))
+            .createStatement(selectLatestEventTimestampSql(entityType, minSlice))
             .bind(0, entityType)
             .bind(1, minSlice)
             .bind(2, maxSlice),
@@ -507,11 +514,14 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       seqNr: Long,
       includePayload: Boolean,
       correlationId: Option[String]): Future[Option[SerializedJournalRow]] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor.selectOne("select one event")(
       connection => {
-        val selectSql = if (includePayload) selectOneEventSql(slice) else selectOneEventWithoutPayloadSql(slice)
+        val selectSql =
+          if (includePayload) selectOneEventSql(entityType, slice)
+          else selectOneEventWithoutPayloadSql(entityType, slice)
         connection
           .createStatement(selectSql)
           .bind(0, persistenceId)
@@ -543,9 +553,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       toSeqNr: Long,
       includeDeleted: Boolean,
       correlationId: Option[String]): Future[Option[SerializedJournalRow]] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
-    val selectSql = if (includeDeleted) selectLastEventIncludeDeletedSql(slice) else selectLastEventSql(slice)
+    val selectSql =
+      if (includeDeleted) selectLastEventIncludeDeletedSql(entityType, slice)
+      else selectLastEventSql(entityType, slice)
     executor.selectOne("select last event")(
       connection => {
         connection
@@ -581,11 +594,14 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       toSequenceNr: Long,
       includeDeleted: Boolean,
       correlationId: Option[String]): Source[SerializedJournalRow, NotUsed] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val result = executor.select(s"select eventsByPersistenceId [$persistenceId]")(
       connection => {
-        val selectSql = if (includeDeleted) selectEventsIncludeDeletedSql(slice) else selectEventsSql(slice)
+        val selectSql =
+          if (includeDeleted) selectEventsIncludeDeletedSql(entityType, slice)
+          else selectEventsSql(entityType, slice)
         val stmt = connection.createStatement(selectSql)
         bindSelectEventsSql(stmt, persistenceId, fromSequenceNr, toSequenceNr, settings.querySettings.bufferSize)
       },
@@ -669,11 +685,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           connection =>
             afterId match {
               case Some(after) =>
-                val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(sliceRange.min))
+                val stmt =
+                  connection.createStatement(persistenceIdsForEntityTypeAfterSql(entityType, sliceRange.min))
                 bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
 
               case None =>
-                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(sliceRange.min))
+                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(entityType, sliceRange.min))
                 bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
 
             },
@@ -701,31 +718,33 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
 
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
-    val results: immutable.IndexedSeq[Future[immutable.IndexedSeq[String]]] =
-      // query each data partition
-      settings.dataPartitionSliceRanges.map { sliceRange =>
-        val executor = executorProvider.executorFor(sliceRange.min)
+    // Iterate over the default journal table and any configured per-entity-type custom journal tables.
+    // allJournalTablesWithSchema maps each distinct table to a representative slice (used to pick the executor).
+    val tablesAndSlices: Iterable[(String, Int)] = settings.allJournalTablesWithSchema
+    val results: Iterable[Future[immutable.IndexedSeq[String]]] =
+      tablesAndSlices.map { case (table, slice) =>
+        val executor = executorProvider.executorFor(slice)
         executor.select(s"select persistenceIds")(
           connection =>
             afterId match {
               case Some(after) =>
-                val stmt = connection.createStatement(allPersistenceIdsAfterSql(sliceRange.min))
+                val stmt = connection.createStatement(allPersistenceIdsAfterSql(table))
                 bindAllPersistenceIdsAfterSql(stmt, after, actualLimit)
 
               case None =>
                 connection
-                  .createStatement(allPersistenceIdsSql(sliceRange.min))
+                  .createStatement(allPersistenceIdsSql(table))
                   .bind(0, actualLimit)
             },
           row => row.get("persistence_id", classOf[String]))
       }
 
     // Theoretically it could blow up with too many rows (> Int.MaxValue) when fetching from more than
-    // one data partition, but we have other places with a hard limit of a total number of persistenceIds less
-    // than Int.MaxValue.
+    // one data partition / custom table, but we have other places with a hard limit of a total number of
+    // persistenceIds less than Int.MaxValue.
     val combined: Future[immutable.IndexedSeq[String]] =
-      if (results.size == 1) results.head // no data partitions
-      else Future.sequence(results).map(_.flatten.sorted.take(actualLimit))
+      if (results.size == 1) results.head // no data partitions and no custom tables
+      else Future.sequence(results.toVector).map(_.flatten.sorted.take(actualLimit))
 
     if (log.isDebugEnabled)
       combined.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
@@ -750,7 +769,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     val result = executor.select(s"select persistenceIdsBySlices [$minSlice - $maxSlice]")(
       connection => {
         val stmt =
-          connection.createStatement(persistenceIdsBySlicesSql(toTimestamp.isDefined, minSlice, maxSlice))
+          connection.createStatement(persistenceIdsBySlicesSql(entityType, toTimestamp.isDefined, minSlice, maxSlice))
         bindPersistenceIdsBySlicesSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
       },
       row => row.get("persistence_id", classOf[String]))

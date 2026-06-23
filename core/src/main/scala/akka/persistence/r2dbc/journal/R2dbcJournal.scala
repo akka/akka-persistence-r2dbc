@@ -165,7 +165,10 @@ private[r2dbc] final class R2dbcJournal(config: Config, cfgPath: String) extends
             serializedEvent.serializerManifest,
             pr.writerUuid,
             tags,
-            metadata)
+            metadata,
+            // carry the already-deserialized values for AdditionalColumn.bind() to avoid double work
+            eventValue = Some(event),
+            eventMetadata = pr.metadata)
         }
       }
 

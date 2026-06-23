@@ -62,7 +62,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
     }
 
     if (additionalBindings.isEmpty)
-      sqlCache.get(slice, s"insertStateSql-$entityType")(createSql)
+      sqlCache.get(slice, s"insertStateSql-${settings.durableStateTableCacheKey(entityType)}")(createSql)
     else
       createSql // no cache
   }
@@ -79,7 +79,7 @@ private[r2dbc] class SqlServerDurableStateDao(executorProvider: R2dbcExecutorPro
     super.updateStateSql(slice, entityType, updateTags, additionalBindings, currentTimestamp = "?")
 
   override def selectBucketsSql(entityType: String, minSlice: Int, maxSlice: Int): String = {
-    sqlCache.get(minSlice, s"selectBucketsSql-$entityType-$minSlice-$maxSlice") {
+    sqlCache.get(minSlice, s"selectBucketsSql-${settings.durableStateTableCacheKey(entityType)}-$minSlice-$maxSlice") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
 
       val subQuery =

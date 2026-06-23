@@ -43,6 +43,18 @@ object R2dbcSettings {
 
     val journalTable: String = config.getString("journal.table")
 
+    val journalTableByEntityType: Map[String, String] =
+      configToMap(config.getConfig("journal.custom-table"))
+
+    val journalAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = {
+      import scala.jdk.CollectionConverters._
+      val cfg = config.getConfig("journal.additional-columns")
+      cfg.root.unwrapped.asScala.toMap.map {
+        case (k, v: java.util.List[_]) => k -> v.iterator.asScala.map(_.toString).toVector
+        case (k, v)                    => k -> Vector(v.toString)
+      }
+    }
+
     def useJsonPayload(prefix: String) = config.getString(s"$prefix.payload-column-type").toUpperCase match {
       case "BYTEA"          => false
       case "JSONB" | "JSON" => true
@@ -183,7 +195,9 @@ object R2dbcSettings {
       durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses,
       useAppTimestamp,
-      numberOfDataPartitions)
+      numberOfDataPartitions,
+      journalTableByEntityType,
+      journalAdditionalColumnClasses)
 
     // let the dialect trump settings that does not make sense for it
     settingsFromConfig.connectionFactorySettings.dialect.adaptSettings(settingsFromConfig)
@@ -246,7 +260,9 @@ final class R2dbcSettings private (
     _durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]],
     _durableStateChangeHandlerClasses: Map[String, String],
     _useAppTimestamp: Boolean,
-    val numberOfDataPartitions: Int) {
+    val numberOfDataPartitions: Int,
+    _journalTableByEntityType: Map[String, String],
+    _journalAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]]) {
   import R2dbcSettings.NumberOfSlices
 
   val numberOfDatabases: Int = _connectionFactorySettings.size
@@ -318,10 +334,24 @@ final class R2dbcSettings private (
   }
 
   /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] val journalTableByEntityTypeWithSchema: Map[String, String] =
+    _journalTableByEntityType.map { case (entityType, table) =>
+      entityType -> (schema.map(_ + ".").getOrElse("") + table)
+    }
+
+  /**
    * INTERNAL API: All journal tables and their the lower slice
    */
-  @InternalApi private[akka] lazy val allJournalTablesWithSchema: Map[String, Int] =
-    resolveAllTableNames(journalTableWithSchema(_))
+  @InternalApi private[akka] lazy val allJournalTablesWithSchema: Map[String, Int] = {
+    val defaultTables = resolveAllTableNames(journalTableWithSchema(_))
+    val entityTypes = _journalTableByEntityType.keys
+    entityTypes.foldLeft(defaultTables) { case (acc, entityType) =>
+      val entityTypeTables = resolveAllTableNames(slice => getJournalTableWithSchema(entityType, slice))
+      acc ++ entityTypeTables
+    }
+  }
 
   /**
    * INTERNAL API: All snapshot tables and their the lower slice
@@ -370,6 +400,28 @@ final class R2dbcSettings private (
    */
   def dialectName: String = connectionFactorySettings.dialect.name
 
+  def getJournalTable(entityType: String): String =
+    _journalTableByEntityType.getOrElse(entityType, journalTable)
+
+  /**
+   * The journal table and schema name for the `entityType` with data partition suffix for the given slice. When
+   * number-of-partitions is 1 the table name is without suffix. Falls back to the default journal table when no
+   * `custom-table` is configured for the entity type.
+   */
+  def getJournalTableWithSchema(entityType: String, slice: Int): String =
+    journalTableByEntityTypeWithSchema.get(entityType) match {
+      case None        => journalTableWithSchema(slice)
+      case Some(table) => resolveTableName(table, slice)
+    }
+
+  /**
+   * INTERNAL API: Token to use for the `entityType` in a SQL cache key. Entity types without a configured journal
+   * `custom-table` all use the default journal table and can therefore share the same cached SQL, so they map to the
+   * same empty token. Only entity types with a custom journal table get a distinct cache key.
+   */
+  @InternalApi private[akka] def journalTableCacheKey(entityType: String): String =
+    if (journalTableByEntityTypeWithSchema.contains(entityType)) entityType else ""
+
   def getDurableStateTable(entityType: String): String =
     _durableStateTableByEntityType.getOrElse(entityType, durableStateTable)
 
@@ -389,6 +441,14 @@ final class R2dbcSettings private (
       case None        => durableStateTableWithSchema(slice)
       case Some(table) => resolveTableName(table, slice)
     }
+
+  /**
+   * INTERNAL API: Token to use for the `entityType` in a SQL cache key. Entity types without a configured durable state
+   * `custom-table` all use the default durable state table and can therefore share the same cached SQL, so they map to
+   * the same empty token. Only entity types with a custom table get a distinct cache key.
+   */
+  @InternalApi private[akka] def durableStateTableCacheKey(entityType: String): String =
+    if (durableStateTableByEntityTypeWithSchema.contains(entityType)) entityType else ""
 
   /**
    * INTERNAL API
@@ -414,6 +474,12 @@ final class R2dbcSettings private (
    */
   @InternalApi private[akka] def durableStateAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
     _durableStateAdditionalColumnClasses
+
+  /**
+   * INTERNAL API
+   */
+  @InternalApi private[akka] def journalAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] =
+    _journalAdditionalColumnClasses
 
   /**
    * INTERNAL API
@@ -466,7 +532,10 @@ final class R2dbcSettings private (
         _durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses: Map[String, String] = _durableStateChangeHandlerClasses,
       useAppTimestamp: Boolean = _useAppTimestamp,
-      numberOfDataPartitions: Int = numberOfDataPartitions): R2dbcSettings =
+      numberOfDataPartitions: Int = numberOfDataPartitions,
+      journalTableByEntityType: Map[String, String] = _journalTableByEntityType,
+      journalAdditionalColumnClasses: Map[String, immutable.IndexedSeq[String]] = _journalAdditionalColumnClasses)
+      : R2dbcSettings =
     new R2dbcSettings(
       schema,
       journalTable,
@@ -484,7 +553,9 @@ final class R2dbcSettings private (
       durableStateAdditionalColumnClasses,
       durableStateChangeHandlerClasses,
       useAppTimestamp,
-      numberOfDataPartitions)
+      numberOfDataPartitions,
+      journalTableByEntityType,
+      journalAdditionalColumnClasses)
 
   override def toString =
     s"R2dbcSettings(dialectName=$dialectName, schema=$schema, journalTable=$journalTable, snapshotsTable=$snapshotsTable, durableStateTable=$durableStateTable, logDbCallsExceeding=$logDbCallsExceeding, dbTimestampMonotonicIncreasing=$dbTimestampMonotonicIncreasing, useAppTimestamp=$useAppTimestamp, numberOfDataPartitions=$numberOfDataPartitions)"

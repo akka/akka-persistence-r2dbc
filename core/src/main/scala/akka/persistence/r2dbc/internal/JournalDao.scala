@@ -32,7 +32,16 @@ private[r2dbc] object JournalDao {
       serManifest: String,
       writerUuid: String,
       tags: Set[String],
-      metadata: Option[SerializedEventMetadata])
+      metadata: Option[SerializedEventMetadata],
+      /**
+       * never persisted; populated by the write actor when the event has been deserialized so the journal
+       * `AdditionalColumn.bind` can read the event value without re-deserialization.
+       */
+      eventValue: Option[Any] = None,
+      /**
+       * never persisted; populated by the write actor with the already-deserialized event metadata.
+       */
+      eventMetadata: Option[Any] = None)
       extends BySliceQuery.SerializedRow {
     override def source: String =
       if (payload.isDefined) EnvelopeOrigin.SourceQuery else EnvelopeOrigin.SourceBacktracking

@@ -4,10 +4,15 @@
 
 package akka.persistence.r2dbc.internal.postgres
 
+import java.lang
 import java.time.Instant
 
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.Row
@@ -18,7 +23,9 @@ import org.slf4j.LoggerFactory
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
+import akka.persistence.SerializedEvent
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.JournalAdditionalColumnFactory
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.R2dbcExecutor
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
@@ -29,7 +36,9 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichStatement
 import akka.persistence.r2dbc.internal.codec.TagsCodec.TagsCodecRichStatement
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichStatement
+import akka.persistence.r2dbc.journal.scaladsl.AdditionalColumn
 import akka.persistence.typed.PersistenceId
+import akka.serialization.SerializationExtension
 
 /**
  * INTERNAL API
@@ -37,6 +46,10 @@ import akka.persistence.typed.PersistenceId
 @InternalApi
 private[r2dbc] object PostgresJournalDao {
   private val log: Logger = LoggerFactory.getLogger(classOf[PostgresJournalDao])
+
+  private[r2dbc] final case class EvaluatedAdditionalColumnBindings(
+      additionalColumn: AdditionalColumn[_, _],
+      binding: AdditionalColumn.Binding[_])
 
   def readMetadata(row: Row): Option[SerializedEventMetadata] = {
     row.get("meta_payload", classOf[Array[Byte]]) match {
@@ -65,38 +78,104 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
   import settings.codecSettings.JournalImplicits._
 
   import JournalDao.SerializedJournalRow
+  import PostgresJournalDao.EvaluatedAdditionalColumnBindings
   protected def log: Logger = PostgresJournalDao.log
 
   protected val persistenceExt: Persistence = Persistence(system)
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
-  protected def journalTable(slice: Int): String = settings.journalTableWithSchema(slice)
+  private lazy val additionalColumns: Map[String, immutable.IndexedSeq[AdditionalColumn[Any, Any]]] = {
+    settings.journalAdditionalColumnClasses.map { case (entityType, columnClasses) =>
+      val instances = columnClasses.map(fqcn => JournalAdditionalColumnFactory.create(system, fqcn))
+      entityType -> instances
+    }
+  }
 
-  protected def insertEventWithParameterTimestampSql(slice: Int): String =
-    sqlCache.get(slice, "insertEventWithParameterTimestampSql") {
-      val table = journalTable(slice)
-      val baseSql = insertEvenBaseSql(table)
+  // only used (lazily) when journal additional-columns are configured and the event value isn't supplied
+  // already-deserialized by the caller, e.g. for already-serialized (replicated) events or during migration
+  private lazy val serialization = SerializationExtension(system)
+
+  protected def journalTable(entityType: String, slice: Int): String =
+    settings.getJournalTableWithSchema(entityType, slice)
+
+  protected def insertEventWithParameterTimestampSql(
+      entityType: String,
+      slice: Int,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    def createSql = {
+      val table = journalTable(entityType, slice)
+      val baseSql = insertEventBaseSql(table, additionalBindings)
       if (settings.dbTimestampMonotonicIncreasing)
         sql"$baseSql ?) RETURNING db_timestamp"
       else
         sql"$baseSql GREATEST(?, ${timestampSubSelect(table)})) RETURNING db_timestamp"
     }
+    if (additionalBindings.isEmpty)
+      sqlCache.get(slice, s"insertEventWithParameterTimestampSql-${settings.journalTableCacheKey(entityType)}")(
+        createSql)
+    else
+      createSql
+  }
 
-  private def insertEventWithTransactionTimestampSql(slice: Int) =
-    sqlCache.get(slice, "insertEventWithTransactionTimestampSql") {
-      val table = journalTable(slice)
-      val baseSql = insertEvenBaseSql(table)
+  private def insertEventWithTransactionTimestampSql(
+      entityType: String,
+      slice: Int,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    def createSql = {
+      val table = journalTable(entityType, slice)
+      val baseSql = insertEventBaseSql(table, additionalBindings)
       if (settings.dbTimestampMonotonicIncreasing)
         sql"$baseSql CURRENT_TIMESTAMP) RETURNING db_timestamp"
       else
         sql"$baseSql GREATEST(CURRENT_TIMESTAMP, ${timestampSubSelect(table)})) RETURNING db_timestamp"
     }
+    if (additionalBindings.isEmpty)
+      sqlCache.get(slice, s"insertEventWithTransactionTimestampSql-${settings.journalTableCacheKey(entityType)}")(
+        createSql)
+    else
+      createSql
+  }
 
-  private def insertEvenBaseSql(table: String) = {
+  private def insertEventBaseSql(
+      table: String,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    val additionalCols = additionalInsertColumns(additionalBindings)
+    val additionalParams = additionalInsertParameters(additionalBindings)
     s"INSERT INTO $table " +
-    "(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload, db_timestamp) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+    s"(slice, entity_type, persistence_id, seq_nr, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, tags, meta_ser_id, meta_ser_manifest, meta_payload$additionalCols, db_timestamp) " +
+    s"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?$additionalParams, "
+  }
+
+  protected def additionalInsertColumns(
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    if (additionalBindings.isEmpty) ""
+    else {
+      val strB = new lang.StringBuilder()
+      additionalBindings.foreach {
+        case EvaluatedAdditionalColumnBindings(c, _: AdditionalColumn.BindValue[_]) =>
+          strB.append(", ").append(c.columnName)
+        case EvaluatedAdditionalColumnBindings(c, AdditionalColumn.BindNull) =>
+          strB.append(", ").append(c.columnName)
+        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
+      }
+      strB.toString
+    }
+  }
+
+  protected def additionalInsertParameters(
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
+    if (additionalBindings.isEmpty) ""
+    else {
+      val strB = new lang.StringBuilder()
+      additionalBindings.foreach {
+        case EvaluatedAdditionalColumnBindings(_, _: AdditionalColumn.BindValue[_]) |
+            EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindNull) =>
+          strB.append(", ?")
+        case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
+      }
+      strB.toString
+    }
   }
 
   // The subselect of the db_timestamp of previous seqNr for same pid is to ensure that db_timestamp is
@@ -106,49 +185,147 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
     s"(SELECT db_timestamp + '1 microsecond'::interval FROM $table " +
     "WHERE persistence_id = ? AND seq_nr = ?)"
 
-  private def selectHighestSequenceNrSql(slice: Int) =
-    sqlCache.get(slice, "selectHighestSequenceNrSql") {
+  private def selectHighestSequenceNrSql(entityType: String, slice: Int) =
+    sqlCache.get(slice, s"selectHighestSequenceNrSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT MAX(seq_nr) from ${journalTable(slice)}
+      SELECT MAX(seq_nr) from ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ?"""
     }
 
-  private def selectLowestSequenceNrSql(slice: Int) =
-    sqlCache.get(slice, "selectLowestSequenceNrSql") {
+  private def selectLowestSequenceNrSql(entityType: String, slice: Int) =
+    sqlCache.get(slice, s"selectLowestSequenceNrSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT MIN(seq_nr) from ${journalTable(slice)}
+      SELECT MIN(seq_nr) from ${journalTable(entityType, slice)}
       WHERE persistence_id = ?"""
     }
 
-  private def deleteEventsSql(slice: Int) =
-    sqlCache.get(slice, "deleteEventsSql") {
+  private def deleteEventsSql(entityType: String, slice: Int) =
+    sqlCache.get(slice, s"deleteEventsSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      DELETE FROM ${journalTable(slice)}
+      DELETE FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?"""
     }
 
-  protected def insertDeleteMarkerSql(slice: Int, timestamp: String = "CURRENT_TIMESTAMP"): String = {
+  protected def insertDeleteMarkerSql(
+      entityType: String,
+      slice: Int,
+      timestamp: String = "CURRENT_TIMESTAMP"): String = {
     // timestamp param doesn't have to be part of cache key because it's just different for different dialects
-    sqlCache.get(slice, "insertDeleteMarkerSql") {
+    sqlCache.get(slice, s"insertDeleteMarkerSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      INSERT INTO ${journalTable(slice)}
+      INSERT INTO ${journalTable(entityType, slice)}
       (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
       VALUES (?, ?, ?, ?, $timestamp, ?, ?, ?, ?, ?, ?)"""
     }
   }
 
-  private def deleteEventsByPersistenceIdBeforeTimestampSql(slice: Int) =
-    sqlCache.get(slice, "deleteEventsByPersistenceIdBeforeTimestampSql") {
+  private def deleteEventsByPersistenceIdBeforeTimestampSql(entityType: String, slice: Int) =
+    sqlCache.get(slice, s"deleteEventsByPersistenceIdBeforeTimestampSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      DELETE FROM ${journalTable(slice)}
+      DELETE FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND db_timestamp < ?"""
     }
 
-  private def deleteEventsBySliceBeforeTimestampSql(slice: Int) =
-    sqlCache.get(slice, "deleteEventsBySliceBeforeTimestampSql") {
+  private def deleteEventsBySliceBeforeTimestampSql(entityType: String, slice: Int) =
+    sqlCache.get(slice, s"deleteEventsBySliceBeforeTimestampSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      DELETE FROM ${journalTable(slice)}
+      DELETE FROM ${journalTable(entityType, slice)}
       WHERE slice = ? AND entity_type = ? AND db_timestamp < ?"""
+    }
+
+  protected def additionalBindings(
+      entityType: String,
+      row: SerializedJournalRow): immutable.IndexedSeq[EvaluatedAdditionalColumnBindings] =
+    additionalColumns.get(entityType) match {
+      case None          => Vector.empty[EvaluatedAdditionalColumnBindings]
+      case Some(columns) =>
+        // The normal write path supplies the already-deserialized event in `eventValue`. When it isn't available
+        // (already-serialized/replicated events that arrive as a `SerializedEvent`, or the migration tool) deserialize
+        // from the stored payload so `bind` always sees the real event rather than a `SerializedEvent` wrapper.
+        val value = row.eventValue match {
+          case Some(_: SerializedEvent) | None => deserializeEvent(row)
+          case Some(v)                         => v
+        }
+        val insert = AdditionalColumn.Insert(
+          row.persistenceId,
+          entityType,
+          row.slice,
+          row.seqNr,
+          value,
+          row.eventMetadata,
+          row.tags)
+        columns.map(c => EvaluatedAdditionalColumnBindings(c, c.bind(insert)))
+    }
+
+  private def deserializeEvent(row: SerializedJournalRow): Any =
+    row.payload match {
+      case Some(bytes) => serialization.deserialize(bytes, row.serId, row.serManifest).get
+      case None =>
+        throw new IllegalStateException(
+          s"Event payload for persistenceId [${row.persistenceId}] seqNr [${row.seqNr}] not available for additional column bindings")
+    }
+
+  protected def bindAdditionalColumns(
+      stmt: Statement,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
+      nextIndex: () => Int): Statement = {
+    additionalBindings.foreach {
+      case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.BindValue(v)) =>
+        stmt.bind(nextIndex(), v)
+      case EvaluatedAdditionalColumnBindings(col, AdditionalColumn.BindNull) =>
+        stmt.bindNull(nextIndex(), col.fieldClass)
+      case EvaluatedAdditionalColumnBindings(_, AdditionalColumn.Skip) =>
+    }
+    stmt
+  }
+
+  /** A binding shape that can be reused across all rows in a batch — only the actual `BindValue` payloads differ. */
+  protected def sameBindingShape(
+      a: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
+      b: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): Boolean = {
+    if (a.size != b.size) false
+    else {
+      var i = 0
+      var ok = true
+      while (ok && i < a.size) {
+        val sameShape = (a(i).binding, b(i).binding) match {
+          case (_: AdditionalColumn.BindValue[_], _: AdditionalColumn.BindValue[_]) => true
+          case (AdditionalColumn.BindNull, AdditionalColumn.BindNull)               => true
+          case (AdditionalColumn.Skip, AdditionalColumn.Skip)                       => true
+          case _                                                                    => false
+        }
+        ok = sameShape && (a(i).additionalColumn eq b(i).additionalColumn)
+        i += 1
+      }
+      ok
+    }
+  }
+
+  /**
+   * Evaluate the additional-column bindings for all events of an `AtomicWrite`. The head row's bindings define the
+   * INSERT shape; every other row must produce the same shape (same Skip/BindNull/BindValue decisions) because the
+   * batch reuses a single prepared statement. Returns a `Try` so a non-deterministic `bind` (or a failed on-demand
+   * deserialization) becomes a normal write failure rather than a synchronous throw out of the write path.
+   */
+  protected def evaluateBatchBindings(entityType: String, events: Seq[SerializedJournalRow]): Try[(
+      immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
+      Seq[immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]])] =
+    Try {
+      val headBindings = additionalBindings(entityType, events.head)
+      val perEventBindings: Seq[immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]] =
+        if (headBindings.isEmpty) Vector.empty
+        else {
+          val all = events.iterator.map(ev => additionalBindings(entityType, ev)).toVector
+          all.tail.foreach { b =>
+            if (!sameBindingShape(headBindings, b))
+              throw new IllegalArgumentException(
+                s"AdditionalColumn bindings for entityType [$entityType] must produce the same shape " +
+                s"(same Skip/BindNull/BindValue decisions) across all events in an AtomicWrite. " +
+                s"persistenceId [${events.head.persistenceId}].")
+          }
+          all
+        }
+      (headBindings, perEventBindings)
     }
 
   /**
@@ -166,6 +343,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
 
     // it's always the same persistenceId for all events
     val persistenceId = events.head.persistenceId
+    val entityType = events.head.entityType
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val previousSeqNr = events.head.seqNr - 1
@@ -173,50 +351,65 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
     val useTimestampFromDb = events.head.dbTimestamp == Instant.EPOCH
 
-    val insertSql =
-      if (useTimestampFromDb) insertEventWithTransactionTimestampSql(slice)
-      else insertEventWithParameterTimestampSql(slice)
+    evaluateBatchBindings(entityType, events) match {
+      case Failure(exc) => Future.failed(exc)
+      case Success((headBindings, perEventBindings)) =>
+        val insertSql =
+          if (useTimestampFromDb) insertEventWithTransactionTimestampSql(entityType, slice, headBindings)
+          else insertEventWithParameterTimestampSql(entityType, slice, headBindings)
 
-    val totalEvents = events.size
-    if (totalEvents == 1) {
-      val result = executor.updateOneReturning(s"insert [$persistenceId]")(
-        connection =>
-          bindInsertStatement(connection.createStatement(insertSql), events.head, useTimestampFromDb, previousSeqNr),
-        row => row.getTimestamp("db_timestamp"))
-      if (log.isDebugEnabled())
-        result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", 1, persistenceId)
+        val totalEvents = events.size
+        if (totalEvents == 1) {
+          val result = executor.updateOneReturning(s"insert [$persistenceId]")(
+            connection =>
+              bindInsertStatement(
+                connection.createStatement(insertSql),
+                events.head,
+                useTimestampFromDb,
+                previousSeqNr,
+                headBindings),
+            row => row.getTimestamp("db_timestamp"))
+          if (log.isDebugEnabled())
+            result.foreach { _ =>
+              log.debug("Wrote [{}] events for persistenceId [{}]", 1, persistenceId)
+            }
+          result
+        } else {
+          val result = executor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
+            connection =>
+              events.iterator.zipWithIndex
+                .foldLeft(connection.createStatement(insertSql)) { case (stmt, (write, idx)) =>
+                  stmt.add()
+                  val bindings = if (perEventBindings.isEmpty) headBindings else perEventBindings(idx)
+                  bindInsertStatement(stmt, write, useTimestampFromDb, previousSeqNr, bindings)
+                },
+            row => row.getTimestamp("db_timestamp"))
+          if (log.isDebugEnabled())
+            result.foreach { _ =>
+              log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
+            }
+          result.map(_.head)(ExecutionContext.parasitic)
         }
-      result
-    } else {
-      val result = executor.updateInBatchReturning(s"batch insert [$persistenceId], [$totalEvents] events")(
-        connection =>
-          events.foldLeft(connection.createStatement(insertSql)) { (stmt, write) =>
-            stmt.add()
-            bindInsertStatement(stmt, write, useTimestampFromDb, previousSeqNr)
-          },
-        row => row.getTimestamp("db_timestamp"))
-      if (log.isDebugEnabled())
-        result.foreach { _ =>
-          log.debug("Wrote [{}] events for persistenceId [{}]", totalEvents, persistenceId)
-        }
-      result.map(_.head)(ExecutionContext.parasitic)
     }
   }
 
   override def writeEventInTx(event: SerializedJournalRow, connection: Connection): Future[Instant] = {
     val persistenceId = event.persistenceId
+    val entityType = event.entityType
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val previousSeqNr = event.seqNr - 1
 
     // The MigrationTool defines the dbTimestamp to preserve the original event timestamp
     val useTimestampFromDb = event.dbTimestamp == Instant.EPOCH
 
-    val insertSql =
-      if (useTimestampFromDb) insertEventWithTransactionTimestampSql(slice)
-      else insertEventWithParameterTimestampSql(slice)
+    val bindings = additionalBindings(entityType, event)
 
-    val stmt = bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr)
+    val insertSql =
+      if (useTimestampFromDb) insertEventWithTransactionTimestampSql(entityType, slice, bindings)
+      else insertEventWithParameterTimestampSql(entityType, slice, bindings)
+
+    val stmt =
+      bindInsertStatement(connection.createStatement(insertSql), event, useTimestampFromDb, previousSeqNr, bindings)
     val result = R2dbcExecutor.updateOneReturningInTx(stmt, row => row.getTimestamp("db_timestamp"))
     if (log.isDebugEnabled())
       result.foreach { _ =>
@@ -225,68 +418,74 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
     result
   }
 
-  private def bindInsertStatement(
+  protected def bindInsertStatement(
       stmt: Statement,
       write: SerializedJournalRow,
       useTimestampFromDb: Boolean,
-      previousSeqNr: Long): Statement = {
+      previousSeqNr: Long,
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): Statement = {
+    val idx = Iterator.range(0, Int.MaxValue)
     stmt
-      .bind(0, write.slice)
-      .bind(1, write.entityType)
-      .bind(2, write.persistenceId)
-      .bind(3, write.seqNr)
-      .bind(4, write.writerUuid)
-      .bind(5, "") // FIXME event adapter
-      .bind(6, write.serId)
-      .bind(7, write.serManifest)
-      .bindPayload(8, write.payload.get)
+      .bind(idx.next(), write.slice)
+      .bind(idx.next(), write.entityType)
+      .bind(idx.next(), write.persistenceId)
+      .bind(idx.next(), write.seqNr)
+      .bind(idx.next(), write.writerUuid)
+      .bind(idx.next(), "") // FIXME event adapter
+      .bind(idx.next(), write.serId)
+      .bind(idx.next(), write.serManifest)
+      .bindPayload(idx.next(), write.payload.get)
 
+    val tagsIdx = idx.next()
     if (write.tags.isEmpty)
-      stmt.bindTagsNull(9)
+      stmt.bindTagsNull(tagsIdx)
     else
-      stmt.bindTags(9, write.tags)
+      stmt.bindTags(tagsIdx, write.tags)
 
     // optional metadata
     write.metadata match {
       case Some(m) =>
         stmt
-          .bind(10, m.serId)
-          .bind(11, m.serManifest)
-          .bind(12, m.payload)
+          .bind(idx.next(), m.serId)
+          .bind(idx.next(), m.serManifest)
+          .bind(idx.next(), m.payload)
       case None =>
         stmt
-          .bindNull(10, classOf[Integer])
-          .bindNull(11, classOf[String])
-          .bindNull(12, classOf[Array[Byte]])
+          .bindNull(idx.next(), classOf[Integer])
+          .bindNull(idx.next(), classOf[String])
+          .bindNull(idx.next(), classOf[Array[Byte]])
     }
+
+    bindAdditionalColumns(stmt, additionalBindings, idx.next)
 
     if (useTimestampFromDb) {
       if (!settings.dbTimestampMonotonicIncreasing)
         stmt
-          .bind(13, write.persistenceId)
-          .bind(14, previousSeqNr)
+          .bind(idx.next(), write.persistenceId)
+          .bind(idx.next(), previousSeqNr)
     } else {
       if (settings.dbTimestampMonotonicIncreasing)
         stmt
-          .bindTimestamp(13, write.dbTimestamp)
+          .bindTimestamp(idx.next(), write.dbTimestamp)
       else
         stmt
-          .bindTimestamp(13, write.dbTimestamp)
-          .bind(14, write.persistenceId)
-          .bind(15, previousSeqNr)
+          .bindTimestamp(idx.next(), write.dbTimestamp)
+          .bind(idx.next(), write.persistenceId)
+          .bind(idx.next(), previousSeqNr)
     }
 
     stmt
   }
 
   override def readHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val result = executor
       .select(s"select highest seqNr [$persistenceId]")(
         connection =>
           connection
-            .createStatement(selectHighestSequenceNrSql(slice))
+            .createStatement(selectHighestSequenceNrSql(entityType, slice))
             .bind(0, persistenceId)
             .bind(1, fromSequenceNr),
         row => {
@@ -302,13 +501,14 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
   }
 
   override def readLowestSequenceNr(persistenceId: String): Future[Long] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     val result = executor
       .select(s"select lowest seqNr [$persistenceId]")(
         connection =>
           connection
-            .createStatement(selectLowestSequenceNrSql(slice))
+            .createStatement(selectLowestSequenceNrSql(entityType, slice))
             .bind(0, persistenceId),
         row => {
           val seqNr = row.get(0, classOf[java.lang.Long])
@@ -338,13 +538,13 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
   }
   protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
   override def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
       val idx = Iterator.range(0, Int.MaxValue)
-      val entityType = PersistenceId.extractEntityType(persistenceId)
-      val stmt = connection.createStatement(insertDeleteMarkerSql(slice))
+      val stmt = connection.createStatement(insertDeleteMarkerSql(entityType, slice))
       stmt
         .bind(idx.next(), slice)
         .bind(idx.next(), entityType)
@@ -365,14 +565,22 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
          executor
            .update(s"delete [$persistenceId] and insert marker") { connection =>
              Vector(
-               connection.createStatement(deleteEventsSql(slice)).bind(0, persistenceId).bind(1, from).bind(2, to),
+               connection
+                 .createStatement(deleteEventsSql(entityType, slice))
+                 .bind(0, persistenceId)
+                 .bind(1, from)
+                 .bind(2, to),
                insertDeleteMarkerStmt(to, connection))
            }
            .map(_.head)
        } else {
          executor
            .updateOne(s"delete [$persistenceId]") { connection =>
-             connection.createStatement(deleteEventsSql(slice)).bind(0, persistenceId).bind(1, from).bind(2, to)
+             connection
+               .createStatement(deleteEventsSql(entityType, slice))
+               .bind(0, persistenceId)
+               .bind(1, from)
+               .bind(2, to)
            }
        }).map(deletedRows =>
         if (log.isDebugEnabled) {
@@ -404,12 +612,13 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
   }
 
   override def deleteEventsBefore(persistenceId: String, timestamp: Instant): Future[Unit] = {
+    val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor
       .updateOne(s"delete [$persistenceId]") { connection =>
         connection
-          .createStatement(deleteEventsByPersistenceIdBeforeTimestampSql(slice))
+          .createStatement(deleteEventsByPersistenceIdBeforeTimestampSql(entityType, slice))
           .bind(0, persistenceId)
           .bindTimestamp(1, timestamp)
       }
@@ -423,7 +632,7 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
     executor
       .updateOne(s"delete [$entityType]") { connection =>
         connection
-          .createStatement(deleteEventsBySliceBeforeTimestampSql(slice))
+          .createStatement(deleteEventsBySliceBeforeTimestampSql(entityType, slice))
           .bind(0, slice)
           .bind(1, entityType)
           .bindTimestamp(2, timestamp)
