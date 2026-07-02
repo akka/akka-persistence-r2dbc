@@ -102,6 +102,7 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Dependencies.core,
     AutomaticModuleName.settings("akka.persistence.r2dbc"))
   .enablePlugins(AutomateHeaderPlugin)
+  .enablePlugins(ArtifactBomPlugin)
   .disablePlugins(CiReleasePlugin)
 
 lazy val migration = (project in file("migration"))
@@ -122,6 +123,7 @@ lazy val migration = (project in file("migration"))
     })
   .dependsOn(core)
   .enablePlugins(AutomateHeaderPlugin)
+  .enablePlugins(ArtifactBomPlugin)
   .disablePlugins(MimaPlugin, CiReleasePlugin)
 
 lazy val migrationTests = (project in file("migration-tests"))
