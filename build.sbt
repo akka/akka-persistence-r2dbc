@@ -118,17 +118,21 @@ lazy val core = (project in file("core"))
 
       // match on the organization, other organizations publish artifacts named netty-* as well
       // netty-tcnative-* has its own version scheme.
-      val lagging = update.value.allModuleReports.filterNot(_.evicted).map(_.module).filter { module =>
-        module.organization == "io.netty" &&
+      val lagging = update.value.allModuleReports
+        .filterNot(_.evicted)
+        .map(_.module)
+        .filter { module =>
+          module.organization == "io.netty" &&
           !module.name.startsWith("netty-tcnative") &&
           module.revision != NettyVersion
-      }.sortWith((m1, m2) => m1.name < m2.name)
+        }
+        .sortWith((m1, m2) => m1.name < m2.name)
 
       if (lagging.nonEmpty)
         throw new MessageOnlyException(
           s"Found netty modules not matching NettyVersion [$NettyVersion]: " +
-            s"${lagging.map(m => s"${m.name}:${m.revision}").mkString(", ")}. " +
-            "Add the module to Dependencies.NettyModules so that it is overridden.")
+          s"${lagging.map(m => s"${m.name}:${m.revision}").mkString(", ")}. " +
+          "Add the module to Dependencies.NettyModules so that it is overridden.")
 
       cp
     })
