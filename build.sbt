@@ -2,6 +2,8 @@ import com.typesafe.tools.mima.plugin.MimaKeys.mimaPreviousArtifacts
 import com.typesafe.tools.mima.plugin.MimaKeys.mimaReportSignatureProblems
 import sbt.Keys.parallelExecution
 import com.geirsson.CiReleasePlugin
+import Dependencies.Compile.NettyVersion
+import Dependencies.Compile.NettyModules
 
 GlobalScope / parallelExecution := false
 Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
@@ -101,10 +103,39 @@ lazy val core = (project in file("core"))
   .settings(
     name := "akka-persistence-r2dbc",
     libraryDependencies ++= Dependencies.core,
+    // explicitly overriding Netty dependencies for downstream use
+    libraryDependencies ++= NettyModules.map("io.netty" % _ % NettyVersion),
+    dependencyOverrides ++= NettyModules.map("io.netty" % _ % NettyVersion),
     AutomaticModuleName.settings("akka.persistence.r2dbc"))
   .enablePlugins(AutomateHeaderPlugin)
   .enablePlugins(ArtifactBomPlugin)
   .disablePlugins(CiReleasePlugin)
+  .settings(
+    // Validate that all netty modules resolve to NettyVersion. Modules that are only requested
+    // transitively silently lag behind unless they are listed in Dependencies.NettyModules.
+    Compile / managedClasspath := {
+      val cp = (Compile / managedClasspath).value
+
+      // match on the organization, other organizations publish artifacts named netty-* as well
+      // netty-tcnative-* has its own version scheme.
+      val lagging = update.value.allModuleReports
+        .filterNot(_.evicted)
+        .map(_.module)
+        .filter { module =>
+          module.organization == "io.netty" &&
+          !module.name.startsWith("netty-tcnative") &&
+          module.revision != NettyVersion
+        }
+        .sortWith((m1, m2) => m1.name < m2.name)
+
+      if (lagging.nonEmpty)
+        throw new MessageOnlyException(
+          s"Found netty modules not matching NettyVersion [$NettyVersion]: " +
+          s"${lagging.map(m => s"${m.name}:${m.revision}").mkString(", ")}. " +
+          "Add the module to Dependencies.NettyModules so that it is overridden.")
+
+      cp
+    })
 
 lazy val migration = (project in file("migration"))
   .settings(common)
