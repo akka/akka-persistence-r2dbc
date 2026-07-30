@@ -31,10 +31,36 @@ object Dependencies {
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.2.RELEASE" // ApacheV2
 
     // FIXME: when bumping, check if the reactor-netty-core override below is still needed
-    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.1.RELEASE" // ApacheV2
+    val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.2.RELEASE" // ApacheV2
 
     // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
+    // https://github.com/reactor/reactor-netty/releases#release-v1.2.18
+    // Won't release more in the 1.2.18 line. https://projectreactor.io/support
     val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.2.18"
+
+    // As Reactor Netty 1.2 won't be updated further, we explicitly update Netty 4.1.x
+    // Netty requires all its modules to be on the same version. The modules below are only requested
+    // transitively by reactor-netty, which lags behind netty releases), so each one has to be
+    // overridden explicitly, or it stays behind on an unpatched version.
+    // Note: netty-tcnative-* is versioned separately and is deliberately not listed here.
+    val NettyVersion = "4.1.136.Final"
+    val NettyModules = Seq(
+      "netty-buffer",
+      "netty-codec",
+      "netty-codec-dns",
+      "netty-codec-http",
+      "netty-codec-socks",
+      "netty-common",
+      "netty-handler",
+      "netty-handler-proxy",
+      "netty-resolver",
+      "netty-resolver-dns",
+      "netty-resolver-dns-classes-macos",
+      "netty-resolver-dns-native-macos",
+      "netty-transport",
+      "netty-transport-classes-epoll",
+      "netty-transport-native-epoll",
+      "netty-transport-native-unix-common")
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
