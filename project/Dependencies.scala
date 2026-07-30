@@ -5,13 +5,13 @@
 import sbt._
 
 object Dependencies {
-  val Scala213 = "2.13.17"
-  val Scala3 = "3.3.7"
+  val Scala213 = "2.13.18"
+  val Scala3 = "3.3.8"
   val Scala2Versions = Seq(Scala213)
   val ScalaVersions = Dependencies.Scala2Versions :+ Dependencies.Scala3
   val AkkaVersion = System.getProperty("override.akka.version", "2.10.13")
   val AkkaVersionInDocs = VersionNumber(AkkaVersion).numbers match { case Seq(major, minor, _*) => s"$major.$minor" }
-  val AkkaPersistenceJdbcVersion = "5.5.2" // only in migration tool tests
+  val AkkaPersistenceJdbcVersion = "5.5.5" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.4.240"
   val R2dbcH2Version = "1.1.0.RELEASE"
@@ -52,10 +52,10 @@ object Dependencies {
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
 
     // Note: out of sync with r2dc-postgresql which depends on 42.7.2
-    val postgresql = "org.postgresql" % "postgresql" % "42.7.8" % Test // BSD-2-Clause
+    val postgresql = "org.postgresql" % "postgresql" % "42.7.13" % Test // BSD-2-Clause
 
-    val logback = "ch.qos.logback" % "logback-classic" % "1.5.18" % Test // EPL 1.0 / LGPL 2.1
-    val scalaTest = "org.scalatest" %% "scalatest" % "3.2.12" % Test // ApacheV2
+    val logback = "ch.qos.logback" % "logback-classic" % "1.5.38" % Test // EPL 1.0 / LGPL 2.1
+    val scalaTest = "org.scalatest" %% "scalatest" % "3.2.20" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test // "BSD 2-Clause"
   }
