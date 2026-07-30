@@ -33,6 +33,10 @@ object Dependencies {
     // FIXME: when bumping, check if the reactor-netty-core override below is still needed
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.2.RELEASE" // ApacheV2
 
+    // Override for the transitive dependency from r2dbc-postgresql
+    // https://github.com/ongres/scram/releases
+    val scramClient = "com.ongres.scram" % "scram-client" % "3.4"
+
     // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
     // https://github.com/reactor/reactor-netty/releases#release-v1.2.18
     // Won't release more in the 1.2.18 line. https://projectreactor.io/support
@@ -94,6 +98,7 @@ object Dependencies {
     r2dbcSpi,
     r2dbcPool,
     r2dbcPostgres,
+    scramClient,
     reactorNettyCore,
     h2,
     r2dbcH2,
