@@ -18,7 +18,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
@@ -31,7 +31,7 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        uses: coursier/cache-action@v8.1.0
+        uses: coursier/cache-action@v8.1.1
 
       - name: Set up JDK 11
         # https://github.com/coursier/setup-action/releases
@@ -77,7 +77,7 @@ jobs:
 
       - name: Email on failure
         if: ${{ failure() }}
-        uses: dawidd6/action-send-mail@v12
+        uses: dawidd6/action-send-mail@v18
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -86,7 +86,7 @@ jobs:
           password: ${{secrets.MAIL_PASSWORD}}
           subject: "Failed: ${{ github.workflow }} / ${{ github.job }}"
           to: ${{secrets.MAIL_SEND_TO}}
-          from: Akka CI
+          from: "Akka CI <no-reply@akka.io>"
           body: |
             Job ${{ github.job }} in workflow ${{ github.workflow }} of ${{github.repository}} failed!
             https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
