@@ -19,7 +19,7 @@ jobs:
 
       - name: Checkout
         # https://github.com/actions/checkout/releases
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # See https://github.com/actions/checkout/issues/299#issuecomment-677674415
           ref: ${{ github.event.pull_request.head.sha }}
@@ -30,7 +30,7 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/coursier/cache-action/releases
-        uses: coursier/cache-action@v8.1.0
+        uses: coursier/cache-action@v8.1.1
 
       - name: Set up JDK 25
         # https://github.com/coursier/setup-action/releases
