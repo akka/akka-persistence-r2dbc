@@ -41,8 +41,8 @@ import akka.annotation.InternalApi
 
     private val zone = ZoneId.of("UTC")
 
-    private def toInstant(timestamp: LocalDateTime): Instant =
-      Option(timestamp).map(_.atZone(zone).toInstant).getOrElse(Instant.EPOCH)
+    private def toInstant(timestamp: LocalDateTime) =
+      timestamp.atZone(zone).toInstant
 
     override def decode(row: Row, name: String): Instant = toInstant(row.get(name, classOf[LocalDateTime]))
 
