@@ -16,7 +16,7 @@ nativeImageVersion := "21.0.2"
 nativeImageOptions := Seq(
   "--no-fallback",
   "--verbose",
-  "--initialize-at-build-time=ch.qos.logback",
+  "--initialize-at-build-time=ch.qos.logback,org.slf4j",
   "-Dakka.native-image.debug=true")
 
 libraryDependencies ++= Seq(
