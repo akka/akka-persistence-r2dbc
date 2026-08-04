@@ -1,9 +1,12 @@
 name: Native Image Tests
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      # the bom lists all dependencies with their resolved versions, so it only
+      # changes when a dependency (or its transitive versions) actually changed
+      - "artifact-bom/**"
 
 permissions:
   contents: read
