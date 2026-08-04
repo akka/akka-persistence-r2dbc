@@ -17,7 +17,7 @@ Key links:
 ### Cutting the release
 
 - [ ] Check that open PRs and issues assigned to the milestone are reasonable
-- [ ] If PRs were merged after EU midnight, trigger the [native-image tests](https://github.com/akka/akka-persistence-r2dbc/actions/workflows/native-image-tests.yml) and see that they are green.
+- [ ] Trigger the [native-image tests](https://github.com/akka/akka-persistence-r2dbc/actions/workflows/native-image-tests.yml) and see that they are green. This will run for a long while.
 - [ ] Update the Change date and version in the LICENSE file.
 - [ ] Create a new milestone for the [next version](https://github.com/akka/akka-persistence-r2dbc/milestones)
 - [ ] Close the [$VERSION$ milestone](https://github.com/akka/akka-persistence-r2dbc/milestones?direction=asc&sort=due_date)
@@ -44,18 +44,6 @@ Key links:
          git add api/akka-persistence-r2dbc/current api/akka-persistence-r2dbc/$VERSION$
          git commit -m "Akka Persistence R2DBC $VERSION$"
          ```
-
-### Announcements
-
-For important patch releases, and only if critical issues have been fixed:
-
-- [ ] Send a release notification to [Lightbend discuss](https://discuss.akka.io)
-- [ ] Tweet using the [@akkateam](https://twitter.com/akkateam/) account (or ask someone to) about the new release
-- [ ] Announce internally (with links to Tweet, discuss)
-
-For minor or major releases:
-
-- [ ] Include noteworthy features and improvements in Akka umbrella release announcement at akka.io. Coordinate with PM and marketing.
 
 ### Afterwards
 
