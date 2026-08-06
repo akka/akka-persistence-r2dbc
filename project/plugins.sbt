@@ -1,6 +1,6 @@
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.10.0") // for maintenance of copyright file header
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.2")
-addSbtPlugin("com.github.sbt" % "sbt-java-formatter" % "0.10.0")
+addSbtPlugin("com.github.sbt" % "sbt-java-formatter" % "0.12.0")
 
 // for dependency analysis
 addDependencyTreePlugin
