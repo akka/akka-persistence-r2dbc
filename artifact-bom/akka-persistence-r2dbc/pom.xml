@@ -154,7 +154,7 @@
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.16.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
@@ -372,7 +372,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.16.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
