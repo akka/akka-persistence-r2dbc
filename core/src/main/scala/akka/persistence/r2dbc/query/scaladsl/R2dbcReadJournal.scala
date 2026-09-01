@@ -55,6 +55,7 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
+import akka.persistence.r2dbc.internal.BatchingStartingFromSnapshotStage
 import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
@@ -372,16 +373,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
           offset)
 
     eventSource
-      .via(
-        Flow.fromGraph(
-          new StartingFromSnapshotStage[Event](
-            cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
-            sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
-            loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
-            createEnvelope =
-              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
-            heartbeatAfter = settings.querySettings.startFromSnapshotHeartbeatAfter,
-            createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp))))
+      .via(startingFromSnapshotFlow(entityType, minSlice, transformSnapshot))
   }
 
   /**
@@ -424,16 +416,41 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
         dbSource
 
     eventSource
-      .via(
-        Flow.fromGraph(
-          new StartingFromSnapshotStage[Event](
-            cacheCapacity = settings.querySettings.startFromSnapshotCacheCapacity,
-            sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
-            loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
-            createEnvelope =
-              (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
-            heartbeatAfter = settings.querySettings.startFromSnapshotHeartbeatAfter,
-            createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp))))
+      .via(startingFromSnapshotFlow(entityType, minSlice, transformSnapshot))
+  }
+
+  /**
+   * SKETCH / DRAFT: picks between the original `StartingFromSnapshotStage` and the experimental
+   * `BatchingStartingFromSnapshotStage` (`start-from-snapshot.batching.enabled`), which batches cache-miss lookups
+   * instead of doing one blocking, unpipelined round-trip per event. See BatchingStartingFromSnapshotStage's doc
+   * comment for details and known gaps.
+   */
+  private def startingFromSnapshotFlow[Snapshot, Event](
+      entityType: String,
+      minSlice: Int,
+      transformSnapshot: Snapshot => Event): Flow[EventEnvelope[Event], EventEnvelope[Event], NotUsed] = {
+    val querySettings = settings.querySettings
+    if (querySettings.startFromSnapshotBatchingEnabled)
+      Flow.fromGraph(
+        new BatchingStartingFromSnapshotStage[Event](
+          cacheCapacity = querySettings.startFromSnapshotCacheCapacity,
+          lookupBatchSize = querySettings.startFromSnapshotLookupBatchSize,
+          maxBufferedEnvelopes = querySettings.startFromSnapshotMaxBufferedEnvelopes,
+          batchLinger = querySettings.startFromSnapshotBatchLinger,
+          sequenceNumbersOfSnapshots = persistenceIds => snapshotDao.sequenceNumbersOfSnapshots(persistenceIds),
+          loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
+          createEnvelope = (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
+          heartbeatAfter = querySettings.startFromSnapshotHeartbeatAfter,
+          createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp)))
+    else
+      Flow.fromGraph(
+        new StartingFromSnapshotStage[Event](
+          cacheCapacity = querySettings.startFromSnapshotCacheCapacity,
+          sequenceNumberOfSnapshot = persistenceId => snapshotDao.sequenceNumberOfSnapshot(persistenceId),
+          loadSnapshot = persistenceId => snapshotDao.load(persistenceId, SnapshotSelectionCriteria.Latest),
+          createEnvelope = (snapshotRow, offset) => createEnvelopeFromSnapshot(snapshotRow, offset, transformSnapshot),
+          heartbeatAfter = querySettings.startFromSnapshotHeartbeatAfter,
+          createHeartbeat = timestamp => createEventEnvelopeHeartbeat(entityType, minSlice, timestamp)))
   }
 
   private def checkStartFromSnapshotEnabled(methodName: String): Unit =

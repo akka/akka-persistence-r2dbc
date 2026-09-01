@@ -147,6 +147,16 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     }
   }
 
+  // SKETCH / PROTOTYPE, see BatchingStartingFromSnapshotStage.
+  protected def selectSeqNrsSql(slice: Int): String = {
+    sqlCache.get(slice, "selectSeqNrsSql") {
+      sql"""
+        SELECT persistence_id, seq_nr
+        FROM ${snapshotTable(slice)}
+        WHERE persistence_id = ANY(?)"""
+    }
+  }
+
   private def deleteSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {
     // not caching, too many combinations
 
@@ -257,6 +267,37 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         _.createStatement(selectSeqNrSql(slice))
           .bind(0, persistenceId),
         _.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]))
+  }
+
+  // SKETCH / PROTOTYPE, see BatchingStartingFromSnapshotStage.
+  // Groups the requested ids by which (data-partition) executor and table they belong to, and issues one
+  // `= ANY(?)` query per group instead of one query per id. With the default single data-partition setup this is
+  // a single round-trip for the whole batch.
+  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
+      ec: ExecutionContext): Future[Map[String, Long]] = {
+    if (persistenceIds.isEmpty) {
+      Future.successful(Map.empty)
+    } else {
+      val bySliceGroup =
+        persistenceIds.groupBy(pid => persistenceExt.sliceForPersistenceId(pid))
+      val byExecutorAndTable =
+        bySliceGroup.groupBy { case (slice, _) => (executorProvider.executorFor(slice), snapshotTable(slice)) }
+
+      Future
+        .traverse(byExecutorAndTable.toVector) { case ((executor, table), sliceGroups) =>
+          val ids = sliceGroups.values.flatten.toArray
+          val representativeSlice = sliceGroups.keys.head
+          executor
+            .select(s"sequenceNumbersOfSnapshots [${ids.length} ids] [$table]")(
+              _.createStatement(selectSeqNrsSql(representativeSlice))
+                .bind(0, ids),
+              row =>
+                row.get("persistence_id", classOf[String]) -> row
+                  .get[java.lang.Long]("seq_nr", classOf[java.lang.Long])
+                  .longValue)
+        }
+        .map(_.flatten.toMap)
+    }
   }
 
   protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {

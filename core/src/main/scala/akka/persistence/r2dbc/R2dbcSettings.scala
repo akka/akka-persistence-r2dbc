@@ -579,6 +579,13 @@ final class QuerySettings(config: Config) {
   val startFromSnapshotEnabled: Boolean = config.getBoolean("start-from-snapshot.enabled")
   val startFromSnapshotCacheCapacity: Int = config.getInt("start-from-snapshot.cache-capacity")
   val startFromSnapshotHeartbeatAfter: Int = config.getInt("start-from-snapshot.heartbeat-after")
+  // EXPERIMENTAL, sketch/draft, see BatchingStartingFromSnapshotStage
+  val startFromSnapshotBatchingEnabled: Boolean = config.getBoolean("start-from-snapshot.batching.enabled")
+  val startFromSnapshotLookupBatchSize: Int = config.getInt("start-from-snapshot.batching.lookup-batch-size")
+  val startFromSnapshotMaxBufferedEnvelopes: Int =
+    config.getInt("start-from-snapshot.batching.max-buffered-envelopes")
+  val startFromSnapshotBatchLinger: FiniteDuration =
+    config.getDuration("start-from-snapshot.batching.batch-linger").toScala
   val cacheLatestEventTimestamp: Option[FiniteDuration] = config.optDuration("cache-latest-event-timestamp")
   val estimateTimeRange: Boolean = config.getBoolean("estimate-time-range")
 }
