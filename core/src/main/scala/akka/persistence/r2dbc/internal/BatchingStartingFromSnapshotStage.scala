@@ -36,15 +36,24 @@ import akka.util.RecencyList
  * current lookup's callback has completed. Total pipeline throughput then becomes bound by round-trip latency instead
  * of DB or write capacity.
  *
- * This stage keeps the same LRU cache, but on a cache miss it does not immediately block:
- *   - the event is buffered (in original order) and the persistence id is added to a pending-lookup set
- *   - upstream keeps being pulled (bounded by `maxBufferedEnvelopes`) to keep accumulating misses
- *   - once `lookupBatchSize` distinct new ids have accumulated, `maxBufferedEnvelopes` is reached, a linger timer
- *     expires, or upstream finishes, a *single* batched lookup (`SnapshotDao.sequenceNumbersOfSnapshots`) resolves the
- *     whole pending set in one round-trip (or, worst case with the trait's default fallback, one round-trip per id but
- *     *concurrently* rather than serialized)
- *   - buffered envelopes are then drained, in order, through the same per-envelope decision logic as the original stage
- *     (push / ignore / load the matching snapshot)
+ * This stage keeps the same LRU cache, but resolves a batch of cache misses with a single round-trip instead of one
+ * round-trip per miss. All envelopes — cache hits included — pass through a single ordered `pendingQueue` and are only
+ * ever decided (push / ignore / load snapshot) strictly from its head, one at a time:
+ *   - every envelope is enqueued in arrival order, and if its persistence id isn't cached its id is added to a
+ *     pending-lookup set
+ *   - upstream keeps being pulled (bounded by `maxBufferedEnvelopes`) to keep the queue filling
+ *   - once `lookupBatchSize` distinct new ids have accumulated (anywhere in the queue, not just at the head),
+ *     `maxBufferedEnvelopes` is reached, a linger timer expires, or upstream finishes, a *single* batched lookup
+ *     (`SnapshotDao.sequenceNumbersOfSnapshots`) resolves the whole pending set in one round-trip
+ *   - the queue is then advanced from the head for as long as each head's persistence id is resolved; advancing stops
+ *     the moment the head's id isn't resolved yet (nothing later in the queue can be emitted before it without
+ *     reordering) or a snapshot payload load is in flight for the current head
+ *
+ * An earlier version of this stage had a fast path that decided cache-hit envelopes immediately, bypassing the queue.
+ * That reordered the stream whenever a cache hit arrived while an async snapshot-payload load for an *earlier* envelope
+ * was still in flight (caught by EventsBySliceStartingFromSnapshotSpec against real Postgres with batching enabled —
+ * the first delivered envelope was a later plain event instead of the pending snapshot). Every envelope, hit or miss,
+ * must now pass through the same head-of-queue gate.
  *
  * Loading the actual snapshot payload for entities whose boundary event is reached is left serialized as before — that
  * only happens once per entity (not once per cache eviction) so it isn't the dominant cost, but it is a natural next
@@ -93,9 +102,10 @@ import akka.util.RecencyList
       private var snapshotState = Map.empty[String, SnapshotState]
       private val recency = RecencyList.emptyWithNanoClock[String]
 
-      // envelopes whose persistence id isn't resolved yet, in arrival order
-      private val lookupBuffer = mutable.Queue.empty[EventEnvelope[Event]]
-      // ids not yet part of an in-flight batch, accumulating towards the next one
+      // ALL not-yet-decided envelopes, in arrival order. Only ever advanced from the head, so that a cache
+      // hit can never jump ahead of an earlier envelope that is still waiting on a lookup or a snapshot load.
+      private val pendingQueue = mutable.Queue.empty[EventEnvelope[Event]]
+      // ids seen in pendingQueue that aren't cached yet and aren't part of an in-flight batch
       private val pendingLookupIds = mutable.LinkedHashSet.empty[String]
       private var batchInFlight = false
 
@@ -133,8 +143,8 @@ import akka.util.RecencyList
           emit(createHeartbeat(latestTimestamp))
       }
 
-      // same per-envelope decision as StartingFromSnapshotStage.onPush's cached branch,
-      // used both for cache hits and for buffered envelopes once their id has been resolved
+      // decision for one envelope whose persistence id is already resolved; only ever called for the
+      // current head of pendingQueue (already dequeued by the caller)
       private def handleResolved(env: EventEnvelope[Event], s: SnapshotState): Unit = {
         val eventIsAfterSnapshot = env.sequenceNr > s.seqNr
         if (eventIsAfterSnapshot) {
@@ -159,13 +169,17 @@ import akka.util.RecencyList
             updateState(snap.persistenceId, snap.seqNr, emitted = false)
             ignoreOne(env)
           }
-          drainLookupBuffer()
+          advance()
+          pullIfRoom()
+          completeIfDone()
 
         case Success((env, None)) =>
           awaitingSnapshotLoad = false
           updateState(env.persistenceId, 0L, emitted = true)
           emit(env)
-          drainLookupBuffer()
+          advance()
+          pullIfRoom()
+          completeIfDone()
 
         case Failure(exc) =>
           failStage(exc)
@@ -187,7 +201,7 @@ import akka.util.RecencyList
               case None        => updateState(pid, 0L, emitted = true) // no snapshot for this id
             }
           }
-          drainLookupBuffer()
+          advance()
           maybeTriggerBatch()
           pullIfRoom()
           completeIfDone()
@@ -210,44 +224,48 @@ import akka.util.RecencyList
 
       private def maybeTriggerBatch(): Unit = {
         if (!batchInFlight && pendingLookupIds.nonEmpty) {
-          if (pendingLookupIds.size >= lookupBatchSize || lookupBuffer.size >= maxBufferedEnvelopes)
+          if (pendingLookupIds.size >= lookupBatchSize || pendingQueue.size >= maxBufferedEnvelopes)
             triggerBatch()
           else if (!isTimerActive(BatchLingerTimerKey))
             scheduleOnce(BatchLingerTimerKey, batchLinger)
         }
       }
 
-      // drains envelopes that are ready to be resolved, in order; stops at the first envelope whose id
-      // isn't resolved yet (belongs to the next generation) or while a snapshot load is in flight
-      private def drainLookupBuffer(): Unit = {
-        while (lookupBuffer.nonEmpty && !awaitingSnapshotLoad && snapshotState.contains(
-            lookupBuffer.head.persistenceId)) {
-          val env = lookupBuffer.dequeue()
-          handleResolved(env, snapshotState(env.persistenceId))
+      // advances strictly from the head: an envelope can only be decided once every envelope ahead of it
+      // has already been decided, so a resolved (cache hit) id can never jump ahead of an earlier envelope
+      // that is still waiting on a lookup or a snapshot load
+      private def advance(): Unit = {
+        var continue = true
+        while (continue && pendingQueue.nonEmpty && !awaitingSnapshotLoad) {
+          snapshotState.get(pendingQueue.head.persistenceId) match {
+            case Some(s) =>
+              val env = pendingQueue.dequeue()
+              handleResolved(env, s) // may set awaitingSnapshotLoad = true, loop condition then stops us
+            case None =>
+              // head not resolved yet - nothing after it can be emitted without reordering
+              continue = false
+          }
         }
       }
 
       private def pullIfRoom(): Unit =
-        if (!upstreamFinished && !hasBeenPulled(in) && (lookupBuffer.size + readyQueue.size) < maxBufferedEnvelopes)
+        if (!upstreamFinished && !hasBeenPulled(in) && (pendingQueue.size + readyQueue.size) < maxBufferedEnvelopes)
           pull(in)
 
       private def completeIfDone(): Unit =
-        if (upstreamFinished && lookupBuffer.isEmpty && pendingLookupIds.isEmpty && !batchInFlight &&
+        if (upstreamFinished && pendingQueue.isEmpty && pendingLookupIds.isEmpty && !batchInFlight &&
           !awaitingSnapshotLoad && readyQueue.isEmpty)
           completeStage()
 
       override def onPush(): Unit = {
         val env = grab(in)
-        snapshotState.get(env.persistenceId) match {
-          case Some(s) =>
-            handleResolved(env, s)
-            pullIfRoom()
-          case None =>
-            lookupBuffer.enqueue(env)
-            pendingLookupIds += env.persistenceId
-            maybeTriggerBatch()
-            pullIfRoom()
+        pendingQueue.enqueue(env)
+        if (!snapshotState.contains(env.persistenceId)) {
+          pendingLookupIds += env.persistenceId
+          maybeTriggerBatch()
         }
+        advance()
+        pullIfRoom()
       }
 
       override def onPull(): Unit = {

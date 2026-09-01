@@ -47,6 +47,7 @@ import akka.persistence.query.typed.scaladsl.LatestEventTimestampQuery
 import akka.persistence.query.typed.scaladsl.LoadEventQuery
 import akka.persistence.query.{ EventEnvelope => ClassicEventEnvelope }
 import akka.persistence.r2dbc.R2dbcSettings
+import akka.persistence.r2dbc.internal.BatchingStartingFromSnapshotStage
 import akka.persistence.r2dbc.internal.BySliceQuery
 import akka.persistence.r2dbc.internal.ContinuousQuery
 import akka.persistence.r2dbc.internal.CorrelationId
@@ -55,7 +56,6 @@ import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.PubSub
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
 import akka.persistence.r2dbc.internal.SnapshotDao.SerializedSnapshotRow
-import akka.persistence.r2dbc.internal.BatchingStartingFromSnapshotStage
 import akka.persistence.r2dbc.internal.StartingFromSnapshotStage
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
