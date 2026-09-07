@@ -32,11 +32,12 @@ import akka.stream.scaladsl.Source
 import akka.stream.testkit.scaladsl.TestSink
 
 /**
- * Unit-level tests for the two correctness issues found (and fixed) in review: a resolved cache entry getting evicted
- * while still referenced by a queued envelope (deadlocks the stage), and a cache-hit envelope being decided while an
- * earlier envelope's snapshot payload load is still in flight (reorders the stream). Both are exercised here with fully
- * controlled, hand-completed `Promise`s so the exact interleaving that triggers them is deterministic, rather than
- * relying on timing against a real database.
+ * Unit-level tests for `BatchingStartingFromSnapshotStage`'s ordering, cache-eviction, and buffering invariants: a
+ * resolved cache entry evicted while still referenced by a queued envelope, a cache-hit envelope decided while an
+ * earlier envelope's snapshot payload load is still in flight, a cache entry evicted while its own payload load is in
+ * flight, and the buffered-envelope count under a pattern of distinct, never-repeating persistence ids. These use fully
+ * controlled, hand-completed `Promise`s so the exact interleaving that exercises each case is deterministic, rather
+ * than relying on timing against a real database.
  */
 class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with LogCapturing {
   private val entityType = "TestEntity"
@@ -160,7 +161,7 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
 
       val e0 = createEnvelope(pidA, 1, "a1") // resolves and is dequeued before the eviction pressure below
       val e1 = createEnvelope(pidB, 1, "b1") // sits ahead of e2 in the queue, unresolved, blocking advance()
-      val e2 = createEnvelope(pidA, 2, "a2") // depends on pidA's cache entry surviving until it's dequeued
+      val e2 = createEnvelope(pidA, 2, "a2") // depends on pidA's cache entry surviving until it is dequeued
 
       val probe = Source(Vector(e0, e1, e2))
         .via(
@@ -243,13 +244,9 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
     }
 
     "not let an id's cache entry be evicted while its snapshot payload load is in flight" in {
-      // cacheCapacity = 1 so resolving pidB creates eviction pressure that would (bug) hit pidA's entry while
-      // pidA's own snapshot payload load is in flight and unprotected by pinning - the load only pins ids
-      // referenced by envelopes still sitting in the queue, but the envelope that triggered the load has
-      // already been dequeued by the time the load starts. Uses Source.queue instead of a plain Vector source:
-      // the stage pulls eagerly, so a plain source would let later envelopes race ahead and re-pin pidA before
-      // the test gets a chance to evict it - offering elements one at a time under explicit test control avoids
-      // that.
+      // cacheCapacity = 1 so resolving pidB creates eviction pressure on pidA's entry while pidA's own load is
+      // in flight. Uses Source.queue, not a plain source: the stage pulls eagerly, so a plain source would let
+      // later envelopes race ahead and re-pin pidA before the test gets a chance to evict it.
       val snapAEnvelope = createEnvelope(pidA, 5, "snap-a5")
 
       val batchCalls = new LinkedBlockingQueue[(Set[String], Promise[Map[String, Long]])]()
@@ -304,19 +301,15 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
       val (bIds, bPromise) = poll(batchCalls)
       bIds shouldBe Set(pidB.id)
       bPromise.success(Map.empty)
-      // eB can't be decided yet - awaitingSnapshotLoad still blocks advance() until pidA's load completes below.
-      // `success()` doesn't block until the stage has actually processed it (that happens asynchronously on the
-      // stream's own dispatcher), so without waiting here, offer(e2) below could race ahead of the eviction
-      // check this is meant to trigger. expectNoMessage doubles as that synchronization point.
+      // eB cannot be decided yet - awaitingSnapshotLoad blocks it. success() does not block until the stage has
+      // processed it, so this wait is needed or offer(e2) below could race ahead of the eviction it should see.
       probe.expectNoMessage(100.millis)
 
       // only now, after pidA may have been evicted, does a redelivery for it arrive
       offer(e2)
 
-      // without the pinning-during-load fix, pidA was evicted above and this re-triggers a redundant lookup
-      // for it while the original load is still in flight; capture it now but resolve it only after the
-      // original load below, so it's the *last* writer to pidA's cache entry - the interleaving that actually
-      // corrupts the `emitted` flag (if the load's update wins here, the outcome would be correct by luck)
+      // captured now, but resolved only after the load below, so it is the last writer to pidA's entry - the
+      // interleaving that actually corrupts `emitted` (if the load wins instead, the outcome is correct by luck)
       val redundantBatch = batchCalls.poll(300, java.util.concurrent.TimeUnit.MILLISECONDS)
 
       // complete the original load - decides e1 (and unblocks eB and e2, queued behind it)
@@ -330,7 +323,7 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
         val (ids, p) = redundantBatch
         ids shouldBe Set(pidA.id)
         p.success(Map(pidA.id -> 5L)) // same seqNr as before - simulates the DB state being unchanged
-        // again, success() doesn't block until the stage has processed it - synchronize before offer(e3) below
+        // again, success() does not block until the stage has processed it - synchronize before offer(e3) below
         probe.expectNoMessage(100.millis)
       }
 
@@ -370,10 +363,9 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
 
       probe.request(10000)
 
-      // bufferSize = 1 with OverflowStrategy.backpressure means offer() only completes once the stage has
-      // actually pulled room for it, so this directly measures how many envelopes the stage was willing to
-      // buffer before it stopped pulling. The +1 is the queue's own single-element buffer, filled once and
-      // never drained by the stage - not slack in the stage's own bound.
+      // bufferSize 1 with backpressure means offer() only completes once the stage has pulled room for it, so
+      // this measures how many envelopes the stage buffers before it stops. The +1 below is the queue's own
+      // single-element buffer, not slack in the stage's bound.
       var offered = 0
       var blocked = false
       while (!blocked && offered < maxBuffered * 3) {

@@ -29,41 +29,20 @@ import akka.util.RecencyList
 
 /**
  * Alternative to `StartingFromSnapshotStage` for workloads where a projection partition handles many more distinct
- * persistence ids than `cache-capacity`. In that situation the original stage's cache-miss rate approaches 1, and it
- * degrades into one fully serialized, blocking DB round-trip per event, because it does not pull the next upstream
- * element until the current lookup's callback has completed. Total pipeline throughput then becomes bound by round-trip
- * latency instead of DB or write capacity.
+ * persistence ids than `cache-capacity`. There, the original stage's cache-miss rate approaches 1, and it becomes fully
+ * serialized and round-trip-latency bound: it never pulls the next event until the current lookup completes.
  *
- * This stage keeps the same LRU cache, but resolves a batch of cache misses with a single round-trip instead of one
- * round-trip per miss. All envelopes — cache hits included — pass through a single ordered `pendingQueue` and are only
- * ever decided (push / ignore / load snapshot) strictly from its head, one at a time:
- *   - every envelope is enqueued in arrival order, and if its persistence id isn't cached its id is added to a
- *     pending-lookup set
- *   - upstream keeps being pulled (bounded by `maxBufferedEnvelopes`) to keep the queue filling
- *   - once `lookupBatchSize` distinct new ids have accumulated (anywhere in the queue, not just at the head),
- *     `maxBufferedEnvelopes` is reached, a linger timer expires, or upstream finishes, a *single* batched lookup
- *     (`SnapshotDao.sequenceNumbersOfSnapshots`) resolves the whole pending set in one round-trip
- *   - the queue is then advanced from the head for as long as each head's persistence id is resolved; advancing stops
- *     the moment the head's id isn't resolved yet (nothing later in the queue can be emitted before it without
- *     reordering) or a snapshot payload load is in flight for the current head
+ * This stage resolves cache misses in batches (`SnapshotDao.sequenceNumbersOfSnapshots`) instead of one round-trip per
+ * event, and keeps pulling upstream while a batch is in flight. All envelopes pass through a single ordered queue and
+ * are only ever decided from its head, so a cache hit can never be emitted ahead of an earlier, still unresolved
+ * envelope.
  *
- * Every envelope, hit or miss, must pass through the same head-of-queue gate: deciding a cache-hit envelope out of
- * order, ahead of an earlier envelope still waiting on a lookup or a snapshot load, would reorder the stream.
+ * A persistence id's cache entry is pinned against LRU eviction for as long as an envelope that depends on it, has not
+ * yet been decided, including while its snapshot payload is being loaded. See `loadCorrespondingSnapshot` for why the
+ * payload-load case needs the same protection.
  *
- * A persistence id that is resolved in the cache but still referenced by an envelope sitting in `pendingQueue` (stuck
- * behind an earlier, not-yet-resolved head) is pinned and exempt from LRU eviction until it is dequeued. Without this,
- * the entry could be evicted between being resolved and being dequeued, leaving that envelope permanently unresolved
- * and stalling the stage. The same applies while a snapshot payload load is in flight: the envelope that triggered it
- * has already been dequeued (and unpinned) by the time the load starts, but its persistence id must still not be
- * evicted for the load's duration - a batch lookup for a different id can run concurrently with the load (nothing gates
- * `triggerBatch` on `awaitingSnapshotLoad`), and if that eviction happened, a redelivery of the same id would see a
- * cache miss and start a redundant lookup racing the load, non-deterministically clobbering the `emitted` flag the load
- * is about to set and opening the door to a duplicate snapshot-envelope emission on a later redelivery.
- * `loadCorrespondingSnapshot` pins the id explicitly for exactly this reason.
- *
- * Loading the actual snapshot payload for entities whose boundary event is reached is left serialized as before — that
- * only happens once per entity (not once per cache eviction) so it isn't the dominant cost, but it is a natural next
- * step to pipeline the same way if it turns out to matter.
+ * Loading the snapshot payload itself stays serialized. That happens once per entity, not once per cache eviction, so
+ * it is not the dominant cost.
  */
 @InternalApi private[r2dbc] object BatchingStartingFromSnapshotStage {
   private case class SnapshotState(seqNr: Long, emitted: Boolean)
@@ -106,11 +85,11 @@ import akka.util.RecencyList
       // hit can never jump ahead of an earlier envelope that is still waiting on a lookup or a snapshot load.
       private val pendingQueue = mutable.Queue.empty[EventEnvelope[Event]]
       // reference count, per persistence id, of envelopes currently in pendingQueue; used to pin cache entries
-      // that a not-yet-dequeued envelope depends on so eviction can't invalidate a resolution before it's consumed
+      // that a not-yet-dequeued envelope depends on so eviction cannot invalidate a resolution before it is consumed
       private val pinCount = mutable.Map.empty[String, Int]
-      // ids seen in pendingQueue that aren't cached yet and aren't already covered by an in-flight batch
+      // ids seen in pendingQueue that are not cached yet and are not already covered by an in-flight batch
       private val pendingLookupIds = mutable.LinkedHashSet.empty[String]
-      // ids covered by the batch currently in flight, so a re-arriving envelope for the same id doesn't trigger
+      // ids covered by the batch currently in flight, so a re-arriving envelope for the same id does not trigger
       // a redundant duplicate lookup
       private val idsInFlight = mutable.Set.empty[String]
       private var batchInFlight = false
@@ -148,9 +127,7 @@ import akka.util.RecencyList
               snapshotState -= pid
               continueEviction = recency.size > cacheCapacity
             case None =>
-              // every cached entry is pinned (referenced by an envelope still sitting in pendingQueue behind a
-              // not-yet-resolved head) - can't evict without risking losing a resolution before it's consumed.
-              // Temporarily over cacheCapacity; bounded by maxBufferedEnvelopes.
+              // every cached entry is pinned; stay temporarily over cacheCapacity rather than evict one in use
               continueEviction = false
           }
         }
@@ -217,10 +194,8 @@ import akka.util.RecencyList
 
       private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
         awaitingSnapshotLoad = true
-        // pin explicitly: this envelope was already dequeued (and unpinned) by advance() before this is called,
-        // but the cache entry it depends on must not be evicted while the load - a second async operation not
-        // otherwise tracked by the queue - is in flight, or a concurrent batch resolving a different id could
-        // evict it and a redelivery for this id would then race a redundant lookup against this load
+        // re-pin: advance() already unpinned this id when it dequeued the envelope, but a concurrent batch for
+        // another id could otherwise evict it mid-load and race a redundant lookup against this load
         pin(env.persistenceId)
         loadSnapshot(env.persistenceId)
           .map(result => (env, result))(ExecutionContext.parasitic)
@@ -268,9 +243,7 @@ import akka.util.RecencyList
         }
       }
 
-      // advances strictly from the head: an envelope can only be decided once every envelope ahead of it
-      // has already been decided, so a resolved (cache hit) id can never jump ahead of an earlier envelope
-      // that is still waiting on a lookup or a snapshot load
+      // enforces the head-of-queue ordering invariant described in the class doc
       private def advance(): Unit = {
         var continue = true
         while (continue && pendingQueue.nonEmpty && !awaitingSnapshotLoad) {

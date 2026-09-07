@@ -28,7 +28,7 @@ private[r2dbc] final class H2SnapshotDao(executorProvider: R2dbcExecutorProvider
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
-  // The `= ANY(?)` batched query in PostgresSnapshotDao isn't verified to work against H2's r2dbc driver, so opt
+  // The `= ANY(?)` batched query in PostgresSnapshotDao is not verified to work against H2's r2dbc driver, so opt
   // back into the safe per-id fallback rather than inheriting the Postgres override.
   override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
       ec: ExecutionContext): Future[Map[String, Long]] =

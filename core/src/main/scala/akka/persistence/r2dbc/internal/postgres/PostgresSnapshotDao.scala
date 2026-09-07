@@ -268,9 +268,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         _.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]))
   }
 
-  // Groups the requested ids by data-partition (by table name, see comment below) and issues one `= ANY(?)`
-  // query per group instead of one query per id. With the default single data-partition setup this is a single
-  // round-trip for the whole batch.
+  // One `= ANY(?)` query per data-partition instead of one query per id.
   override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
       ec: ExecutionContext): Future[Map[String, Long]] = {
     if (persistenceIds.isEmpty) {
@@ -278,13 +276,8 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     } else {
       val bySliceGroup =
         persistenceIds.groupBy(pid => persistenceExt.sliceForPersistenceId(pid))
-      // Group by table name, not by `executorFor(slice)`: that method caches one R2dbcExecutor instance per
-      // individual slice (IntMap keyed by slice, see R2dbcExecutorProvider.executorFor), not per data-partition,
-      // so two different but same-partition slices never return the same object reference - grouping by that
-      // would fragment the batch back down to near one group per distinct slice. Table name is a pure function
-      // of `dataPartition(slice)`, the actual partition boundary, so it's a stable and correct grouping key
-      // (same table name implies same partition implies same connection). With the default single-partition
-      // setup this always yields exactly one group, i.e. one round-trip for the whole batch.
+      // group by table name, not by `executorFor(slice)`: that caches one executor per slice, not per
+      // partition, so it would fragment the batch. Table name is a pure function of the partition.
       val byTable = bySliceGroup.groupBy { case (slice, _) => snapshotTable(slice) }
 
       Future

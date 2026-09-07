@@ -422,7 +422,7 @@ final class R2dbcReadJournal(system: ExtendedActorSystem, config: Config, cfgPat
   /**
    * Picks between the original `StartingFromSnapshotStage` and `BatchingStartingFromSnapshotStage`
    * (`start-from-snapshot.batching.enabled`), which batches cache-miss lookups instead of doing one blocking,
-   * unpipelined round-trip per event. See BatchingStartingFromSnapshotStage's doc comment for details and known gaps.
+   * unpipelined round-trip per event. See BatchingStartingFromSnapshotStage's doc comment for details.
    */
   private def startingFromSnapshotFlow[Snapshot, Event](
       entityType: String,

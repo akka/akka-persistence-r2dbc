@@ -43,7 +43,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
 
   private val sqlCache = Sql.Cache(settings.numberOfDataPartitions > 1)
 
-  // `= ANY(?)` (inherited from PostgresSnapshotDao) isn't valid T-SQL and SQL Server has no array bind parameter
+  // `= ANY(?)` (inherited from PostgresSnapshotDao) is not valid T-SQL and SQL Server has no array bind parameter
   // type, so opt back into the safe per-id fallback rather than inheriting the Postgres override.
   override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
       ec: ExecutionContext): Future[Map[String, Long]] =
