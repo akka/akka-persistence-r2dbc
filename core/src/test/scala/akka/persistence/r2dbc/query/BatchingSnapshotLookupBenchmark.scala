@@ -67,8 +67,8 @@ object BatchingSnapshotLookupBenchmark extends TestData {
   def main(args: Array[String]): Unit = {
     val numberOfPersistenceIds = args.headOption.map(_.toInt).getOrElse(8000)
 
-    val baselineSystem =
-      ActorSystem[Nothing](Behaviors.empty, "BatchingSnapshotLookupBenchmark-baseline", baselineConfig)
+    val baselineSystem: ActorSystem[Nothing] =
+      ActorSystem[Nothing](Behaviors.empty[Nothing], "BatchingSnapshotLookupBenchmark-baseline", baselineConfig)
     implicit val ec: ExecutionContext = baselineSystem.executionContext
 
     val settings = R2dbcSettings(baselineConfig.getConfig("akka.persistence.r2dbc"))
@@ -127,7 +127,9 @@ object BatchingSnapshotLookupBenchmark extends TestData {
         "",
         "bench-writer",
         Set.empty,
-        None)
+        None,
+        eventValue = None,
+        eventMetadata = None)
       for {
         _ <- snapshotDao.store(snapshotRow)
         _ <- journalDao.writeEvents(Seq(eventRow))
@@ -165,8 +167,8 @@ object BatchingSnapshotLookupBenchmark extends TestData {
 
     val baselineElapsed = runQuery(baselineSystem, "batching disabled (baseline)")
 
-    val batchedSystem =
-      ActorSystem[Nothing](Behaviors.empty, "BatchingSnapshotLookupBenchmark-batched", batchedConfig)
+    val batchedSystem: ActorSystem[Nothing] =
+      ActorSystem[Nothing](Behaviors.empty[Nothing], "BatchingSnapshotLookupBenchmark-batched", batchedConfig)
     val batchedElapsed =
       try runQuery(batchedSystem, "batching enabled")
       finally {
