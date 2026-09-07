@@ -64,10 +64,6 @@ import akka.util.RecencyList
  * Loading the actual snapshot payload for entities whose boundary event is reached is left serialized as before — that
  * only happens once per entity (not once per cache eviction) so it isn't the dominant cost, but it is a natural next
  * step to pipeline the same way if it turns out to matter.
- *
- * Known gaps:
- *   - memory bound of the envelope buffer under pathological miss patterns not validated
- *   - snapshot-load step not pipelined (see above)
  */
 @InternalApi private[r2dbc] object BatchingStartingFromSnapshotStage {
   private case class SnapshotState(seqNr: Long, emitted: Boolean)

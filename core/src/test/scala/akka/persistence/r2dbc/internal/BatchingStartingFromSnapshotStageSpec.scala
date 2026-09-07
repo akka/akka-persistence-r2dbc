@@ -342,5 +342,62 @@ class BatchingStartingFromSnapshotStageSpec extends ScalaTestWithActorTestKit wi
 
       probe.cancel()
     }
+
+    "bound the number of buffered envelopes to maxBufferedEnvelopes even when every persistence id is distinct and nothing ever resolves" in {
+      // adversarial case for the envelope buffer: every envelope is for a different, never-repeating persistence
+      // id, and no lookup is ever completed, so nothing is ever decided and nothing ever drains - the buffer can
+      // only stop growing because upstream demand stops, not because anything gets consumed
+      val maxBuffered = 200
+      val lookupBatchSize = 50
+
+      val requestedIds = new LinkedBlockingQueue[Set[String]]()
+      def sequenceNumbersOfSnapshots(ids: Set[String]): Future[Map[String, Long]] = {
+        requestedIds.put(ids)
+        Promise[Map[String, Long]]().future // never completes
+      }
+
+      val (queue, probe) = Source
+        .queue[EventEnvelope[Any]](1, OverflowStrategy.backpressure)
+        .via(stage(
+          cacheCapacity = 10,
+          lookupBatchSize = lookupBatchSize,
+          sequenceNumbersOfSnapshots,
+          neverLoadsSnapshot,
+          (_, _) => throw new IllegalStateException("no snapshot expected"),
+          maxBufferedEnvelopes = maxBuffered))
+        .toMat(TestSink())(Keep.both)
+        .run()
+
+      probe.request(10000)
+
+      // bufferSize = 1 with OverflowStrategy.backpressure means offer() only completes once the stage has
+      // actually pulled room for it, so this directly measures how many envelopes the stage was willing to
+      // buffer before it stopped pulling. The +1 is the queue's own single-element buffer, filled once and
+      // never drained by the stage - not slack in the stage's own bound.
+      var offered = 0
+      var blocked = false
+      while (!blocked && offered < maxBuffered * 3) {
+        val env = createEnvelope(PersistenceId(entityType, s"distinct-$offered"), 1, "e")
+        try {
+          Await.result(queue.offer(env), 300.millis)
+          offered += 1
+        } catch {
+          case _: java.util.concurrent.TimeoutException => blocked = true
+        }
+      }
+
+      blocked shouldBe true
+      offered shouldBe maxBuffered + 1
+
+      var totalRequestedIds = Set.empty[String]
+      var batch = requestedIds.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+      while (batch != null) {
+        totalRequestedIds ++= batch
+        batch = requestedIds.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+      }
+      totalRequestedIds.size should be <= maxBuffered
+
+      probe.cancel()
+    }
   }
 }
