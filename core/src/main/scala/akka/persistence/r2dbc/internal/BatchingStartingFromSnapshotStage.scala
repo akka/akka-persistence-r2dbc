@@ -53,14 +53,19 @@ import akka.util.RecencyList
  * A persistence id that is resolved in the cache but still referenced by an envelope sitting in `pendingQueue` (stuck
  * behind an earlier, not-yet-resolved head) is pinned and exempt from LRU eviction until it is dequeued. Without this,
  * the entry could be evicted between being resolved and being dequeued, leaving that envelope permanently unresolved
- * and stalling the stage.
+ * and stalling the stage. The same applies while a snapshot payload load is in flight: the envelope that triggered it
+ * has already been dequeued (and unpinned) by the time the load starts, but its persistence id must still not be
+ * evicted for the load's duration - a batch lookup for a different id can run concurrently with the load (nothing gates
+ * `triggerBatch` on `awaitingSnapshotLoad`), and if that eviction happened, a redelivery of the same id would see a
+ * cache miss and start a redundant lookup racing the load, non-deterministically clobbering the `emitted` flag the load
+ * is about to set and opening the door to a duplicate snapshot-envelope emission on a later redelivery.
+ * `loadCorrespondingSnapshot` pins the id explicitly for exactly this reason.
  *
  * Loading the actual snapshot payload for entities whose boundary event is reached is left serialized as before — that
  * only happens once per entity (not once per cache eviction) so it isn't the dominant cost, but it is a natural next
  * step to pipeline the same way if it turns out to matter.
  *
  * Known gaps:
- *   - no automated tests yet (should reuse/extend StartingFromSnapshotStageSpec)
  *   - memory bound of the envelope buffer under pathological miss patterns not validated
  *   - snapshot-load step not pipelined (see above)
  */
@@ -186,6 +191,7 @@ import akka.util.RecencyList
       private val loadSnapshotCallback = getAsyncCallback[Try[(EventEnvelope[Event], Option[SerializedSnapshotRow])]] {
         case Success((env, Some(snap))) =>
           awaitingSnapshotLoad = false
+          unpin(env.persistenceId)
           if (env.sequenceNr == snap.seqNr) {
             updateState(snap.persistenceId, snap.seqNr, emitted = true)
             emit(createEnvelope(snap, env.offset.asInstanceOf[TimestampOffset]))
@@ -202,6 +208,7 @@ import akka.util.RecencyList
 
         case Success((env, None)) =>
           awaitingSnapshotLoad = false
+          unpin(env.persistenceId)
           updateState(env.persistenceId, 0L, emitted = true)
           emit(env)
           advance()
@@ -214,6 +221,11 @@ import akka.util.RecencyList
 
       private def loadCorrespondingSnapshot(env: EventEnvelope[Event]): Unit = {
         awaitingSnapshotLoad = true
+        // pin explicitly: this envelope was already dequeued (and unpinned) by advance() before this is called,
+        // but the cache entry it depends on must not be evicted while the load - a second async operation not
+        // otherwise tracked by the queue - is in flight, or a concurrent batch resolving a different id could
+        // evict it and a redelivery for this id would then race a redundant lookup against this load
+        pin(env.persistenceId)
         loadSnapshot(env.persistenceId)
           .map(result => (env, result))(ExecutionContext.parasitic)
           .onComplete(loadSnapshotCallback.invoke)
