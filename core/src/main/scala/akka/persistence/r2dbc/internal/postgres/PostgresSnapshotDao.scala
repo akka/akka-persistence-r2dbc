@@ -147,7 +147,6 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     }
   }
 
-  // SKETCH / PROTOTYPE, see BatchingStartingFromSnapshotStage.
   protected def selectSeqNrsSql(slice: Int): String = {
     sqlCache.get(slice, "selectSeqNrsSql") {
       sql"""
@@ -269,7 +268,6 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
         _.get[java.lang.Long]("seq_nr", classOf[java.lang.Long]))
   }
 
-  // SKETCH / PROTOTYPE, see BatchingStartingFromSnapshotStage.
   // Groups the requested ids by data-partition (by table name, see comment below) and issues one `= ANY(?)`
   // query per group instead of one query per id. With the default single data-partition setup this is a single
   // round-trip for the whole batch.

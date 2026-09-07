@@ -52,17 +52,24 @@ private[r2dbc] trait SnapshotDao {
   def sequenceNumberOfSnapshot(persistenceId: String): Future[Option[Long]]
 
   /**
-   * SKETCH / PROTOTYPE, see BatchingStartingFromSnapshotStage.
-   *
    * Batched variant of `sequenceNumberOfSnapshot`, used by the start-from-snapshot filtering stage to resolve many
-   * persistence ids with a single round-trip instead of one round-trip per persistence id. Default implementation falls
-   * back to concurrent single-id lookups so existing dialects (H2, SQL Server) keep working without changes; dialects
-   * that support an efficient `= ANY(...)`/`IN (...)` batched query should override this.
+   * persistence ids with a single round-trip instead of one round-trip per persistence id. Default implementation
+   * delegates to [[sequenceNumbersOfSnapshotsConcurrently]]; dialects that support an efficient `= ANY(...)`/`IN (...)`
+   * batched query should override this instead.
    *
    * Only returns entries for persistence ids that actually have a snapshot; ids without one are absent from the result
    * map.
    */
   def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
+      ec: ExecutionContext): Future[Map[String, Long]] =
+    sequenceNumbersOfSnapshotsConcurrently(persistenceIds)
+
+  /**
+   * Fallback for dialects without an efficient batched lookup: resolves each persistence id concurrently with its own
+   * round-trip. Exposed so a dialect that overrides `sequenceNumbersOfSnapshots` further down the class hierarchy (for
+   * example a subclass of a dialect that does support batching) can opt back into this instead.
+   */
+  protected def sequenceNumbersOfSnapshotsConcurrently(persistenceIds: Set[String])(implicit
       ec: ExecutionContext): Future[Map[String, Long]] =
     Future
       .traverse(persistenceIds)(pid => sequenceNumberOfSnapshot(pid).map(pid -> _))

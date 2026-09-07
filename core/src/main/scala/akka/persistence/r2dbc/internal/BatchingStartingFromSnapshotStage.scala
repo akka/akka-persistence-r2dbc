@@ -28,13 +28,11 @@ import akka.stream.stage.TimerGraphStageLogic
 import akka.util.RecencyList
 
 /**
- * SKETCH / PROTOTYPE — not wired into `R2dbcReadJournal` yet.
- *
- * Alternative to `StartingFromSnapshotStage` addressing the observed Westpac issue: with a cache-miss rate close to 1
- * (many more distinct persistence ids per projection partition than `cache-capacity`), the original stage degrades into
- * one fully serialized, blocking DB round-trip per event, because it does not pull the next upstream element until the
- * current lookup's callback has completed. Total pipeline throughput then becomes bound by round-trip latency instead
- * of DB or write capacity.
+ * Alternative to `StartingFromSnapshotStage` for workloads where a projection partition handles many more distinct
+ * persistence ids than `cache-capacity`. In that situation the original stage's cache-miss rate approaches 1, and it
+ * degrades into one fully serialized, blocking DB round-trip per event, because it does not pull the next upstream
+ * element until the current lookup's callback has completed. Total pipeline throughput then becomes bound by round-trip
+ * latency instead of DB or write capacity.
  *
  * This stage keeps the same LRU cache, but resolves a batch of cache misses with a single round-trip instead of one
  * round-trip per miss. All envelopes — cache hits included — pass through a single ordered `pendingQueue` and are only
@@ -49,19 +47,20 @@ import akka.util.RecencyList
  *     the moment the head's id isn't resolved yet (nothing later in the queue can be emitted before it without
  *     reordering) or a snapshot payload load is in flight for the current head
  *
- * An earlier version of this stage had a fast path that decided cache-hit envelopes immediately, bypassing the queue.
- * That reordered the stream whenever a cache hit arrived while an async snapshot-payload load for an *earlier* envelope
- * was still in flight (caught by EventsBySliceStartingFromSnapshotSpec against real Postgres with batching enabled —
- * the first delivered envelope was a later plain event instead of the pending snapshot). Every envelope, hit or miss,
- * must now pass through the same head-of-queue gate.
+ * Every envelope, hit or miss, must pass through the same head-of-queue gate: deciding a cache-hit envelope out of
+ * order, ahead of an earlier envelope still waiting on a lookup or a snapshot load, would reorder the stream.
+ *
+ * A persistence id that is resolved in the cache but still referenced by an envelope sitting in `pendingQueue` (stuck
+ * behind an earlier, not-yet-resolved head) is pinned and exempt from LRU eviction until it is dequeued. Without this,
+ * the entry could be evicted between being resolved and being dequeued, leaving that envelope permanently unresolved
+ * and stalling the stage.
  *
  * Loading the actual snapshot payload for entities whose boundary event is reached is left serialized as before — that
  * only happens once per entity (not once per cache eviction) so it isn't the dominant cost, but it is a natural next
  * step to pipeline the same way if it turns out to matter.
  *
- * Known gaps to close before this can replace the original stage:
+ * Known gaps:
  *   - no automated tests yet (should reuse/extend StartingFromSnapshotStageSpec)
- *   - config wiring for lookupBatchSize / maxBufferedEnvelopes / batchLinger not added to reference.conf
  *   - memory bound of the envelope buffer under pathological miss patterns not validated
  *   - snapshot-load step not pipelined (see above)
  */
@@ -71,7 +70,7 @@ import akka.util.RecencyList
 }
 
 /**
- * SKETCH / PROTOTYPE — see class doc.
+ * See class doc.
  */
 @InternalApi private[r2dbc] class BatchingStartingFromSnapshotStage[Event](
     cacheCapacity: Int,
@@ -105,8 +104,14 @@ import akka.util.RecencyList
       // ALL not-yet-decided envelopes, in arrival order. Only ever advanced from the head, so that a cache
       // hit can never jump ahead of an earlier envelope that is still waiting on a lookup or a snapshot load.
       private val pendingQueue = mutable.Queue.empty[EventEnvelope[Event]]
-      // ids seen in pendingQueue that aren't cached yet and aren't part of an in-flight batch
+      // reference count, per persistence id, of envelopes currently in pendingQueue; used to pin cache entries
+      // that a not-yet-dequeued envelope depends on so eviction can't invalidate a resolution before it's consumed
+      private val pinCount = mutable.Map.empty[String, Int]
+      // ids seen in pendingQueue that aren't cached yet and aren't already covered by an in-flight batch
       private val pendingLookupIds = mutable.LinkedHashSet.empty[String]
+      // ids covered by the batch currently in flight, so a re-arriving envelope for the same id doesn't trigger
+      // a redundant duplicate lookup
+      private val idsInFlight = mutable.Set.empty[String]
       private var batchInFlight = false
 
       // envelopes that have been decided (should be pushed) but are waiting for downstream demand
@@ -119,13 +124,35 @@ import akka.util.RecencyList
       private var filterCount = 0L
       private var latestTimestamp = Instant.EPOCH
 
+      private def pin(persistenceId: String): Unit =
+        pinCount.update(persistenceId, pinCount.getOrElse(persistenceId, 0) + 1)
+
+      private def unpin(persistenceId: String): Unit =
+        pinCount.get(persistenceId) match {
+          case Some(1) => pinCount -= persistenceId
+          case Some(n) => pinCount.update(persistenceId, n - 1)
+          case None    => ()
+        }
+
+      private def isPinned(persistenceId: String): Boolean = pinCount.contains(persistenceId)
+
       private def updateState(persistenceId: String, seqNr: Long, emitted: Boolean): Unit = {
         snapshotState = snapshotState.updated(persistenceId, SnapshotState(seqNr, emitted))
         recency.update(persistenceId)
-        if (recency.size > cacheCapacity)
-          recency.removeLeastRecent().foreach { pid =>
-            snapshotState -= pid
+        var continueEviction = recency.size > cacheCapacity
+        while (continueEviction) {
+          recency.leastToMostRecent.find(pid => !isPinned(pid)) match {
+            case Some(pid) =>
+              recency.remove(pid)
+              snapshotState -= pid
+              continueEviction = recency.size > cacheCapacity
+            case None =>
+              // every cached entry is pinned (referenced by an envelope still sitting in pendingQueue behind a
+              // not-yet-resolved head) - can't evict without risking losing a resolution before it's consumed.
+              // Temporarily over cacheCapacity; bounded by maxBufferedEnvelopes.
+              continueEviction = false
           }
+        }
       }
 
       private def emit(env: EventEnvelope[Event]): Unit = {
@@ -195,6 +222,7 @@ import akka.util.RecencyList
       private val batchCallback = getAsyncCallback[Try[(Set[String], Map[String, Long])]] {
         case Success((ids, results)) =>
           batchInFlight = false
+          idsInFlight --= ids
           ids.foreach { pid =>
             results.get(pid) match {
               case Some(seqNr) => updateState(pid, seqNr, emitted = false)
@@ -215,6 +243,7 @@ import akka.util.RecencyList
         if (pendingLookupIds.nonEmpty && !batchInFlight) {
           val ids = pendingLookupIds.toSet
           pendingLookupIds.clear()
+          idsInFlight ++= ids
           batchInFlight = true
           sequenceNumbersOfSnapshots(ids)
             .map(results => (ids, results))(ExecutionContext.parasitic)
@@ -240,6 +269,7 @@ import akka.util.RecencyList
           snapshotState.get(pendingQueue.head.persistenceId) match {
             case Some(s) =>
               val env = pendingQueue.dequeue()
+              unpin(env.persistenceId)
               handleResolved(env, s) // may set awaitingSnapshotLoad = true, loop condition then stops us
             case None =>
               // head not resolved yet - nothing after it can be emitted without reordering
@@ -260,7 +290,8 @@ import akka.util.RecencyList
       override def onPush(): Unit = {
         val env = grab(in)
         pendingQueue.enqueue(env)
-        if (!snapshotState.contains(env.persistenceId)) {
+        pin(env.persistenceId)
+        if (!snapshotState.contains(env.persistenceId) && !idsInFlight.contains(env.persistenceId)) {
           pendingLookupIds += env.persistenceId
           maybeTriggerBatch()
         }
@@ -271,8 +302,9 @@ import akka.util.RecencyList
       override def onPull(): Unit = {
         if (readyQueue.nonEmpty)
           push(out, readyQueue.dequeue())
-        else
-          pullIfRoom()
+        // keep pulling upstream regardless, so refilling the buffer overlaps with downstream draining it
+        // instead of the two phases alternating
+        pullIfRoom()
         completeIfDone()
       }
 
@@ -281,6 +313,7 @@ import akka.util.RecencyList
         // flush whatever is pending rather than waiting for lookupBatchSize / the linger timer
         if (pendingLookupIds.nonEmpty && !batchInFlight)
           triggerBatch()
+        advance()
         completeIfDone()
       }
 
