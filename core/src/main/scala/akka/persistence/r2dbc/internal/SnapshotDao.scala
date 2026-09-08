@@ -46,6 +46,11 @@ private[r2dbc] object SnapshotDao {
 private[r2dbc] trait SnapshotDao {
   import SnapshotDao._
 
+  // Every implementation is backed by an R2dbcExecutorProvider with its own dedicated ec (e.g. H2's blocking-io
+  // dispatcher), so this must come from the implementation rather than be left to whatever ec happens to be
+  // implicit at each call site.
+  protected implicit def ec: ExecutionContext
+
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]]
   def store(serializedRow: SerializedSnapshotRow): Future[Unit]
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit]
@@ -60,8 +65,7 @@ private[r2dbc] trait SnapshotDao {
    * Only returns entries for persistence ids that actually have a snapshot; ids without one are absent from the result
    * map.
    */
-  def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
-      ec: ExecutionContext): Future[Map[String, Long]] =
+  def sequenceNumbersOfSnapshots(persistenceIds: Set[String]): Future[Map[String, Long]] =
     sequenceNumbersOfSnapshotsConcurrently(persistenceIds)
 
   /**
@@ -69,8 +73,7 @@ private[r2dbc] trait SnapshotDao {
    * round-trip. Exposed so a dialect that overrides `sequenceNumbersOfSnapshots` further down the class hierarchy (for
    * example a subclass of a dialect that does support batching) can opt back into this instead.
    */
-  protected def sequenceNumbersOfSnapshotsConcurrently(persistenceIds: Set[String])(implicit
-      ec: ExecutionContext): Future[Map[String, Long]] =
+  protected def sequenceNumbersOfSnapshotsConcurrently(persistenceIds: Set[String]): Future[Map[String, Long]] =
     Future
       .traverse(persistenceIds)(pid => sequenceNumberOfSnapshot(pid).map(pid -> _))
       .map(_.collect { case (pid, Some(seqNr)) => pid -> seqNr }.toMap)

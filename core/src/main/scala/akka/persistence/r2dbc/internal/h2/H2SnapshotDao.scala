@@ -4,7 +4,6 @@
 
 package akka.persistence.r2dbc.internal.h2
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
 import org.slf4j.Logger
@@ -30,8 +29,7 @@ private[r2dbc] final class H2SnapshotDao(executorProvider: R2dbcExecutorProvider
 
   // The `= ANY(?)` batched query in PostgresSnapshotDao is not verified to work against H2's r2dbc driver, so opt
   // back into the safe per-id fallback rather than inheriting the Postgres override.
-  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
-      ec: ExecutionContext): Future[Map[String, Long]] =
+  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String]): Future[Map[String, Long]] =
     sequenceNumbersOfSnapshotsConcurrently(persistenceIds)
 
   override protected def upsertSql(slice: Int): String =

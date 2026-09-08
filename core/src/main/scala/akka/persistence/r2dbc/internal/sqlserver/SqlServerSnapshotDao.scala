@@ -4,7 +4,6 @@
 
 package akka.persistence.r2dbc.internal.sqlserver
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
 import io.r2dbc.spi.Statement
@@ -45,8 +44,7 @@ private[r2dbc] class SqlServerSnapshotDao(executorProvider: R2dbcExecutorProvide
 
   // `= ANY(?)` (inherited from PostgresSnapshotDao) is not valid T-SQL and SQL Server has no array bind parameter
   // type, so opt back into the safe per-id fallback rather than inheriting the Postgres override.
-  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
-      ec: ExecutionContext): Future[Map[String, Long]] =
+  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String]): Future[Map[String, Long]] =
     sequenceNumbersOfSnapshotsConcurrently(persistenceIds)
 
   override def selectSql(slice: Int, criteria: SnapshotSelectionCriteria): String = {

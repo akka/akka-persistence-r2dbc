@@ -269,8 +269,7 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   }
 
   // One `= ANY(?)` query per data-partition instead of one query per id.
-  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String])(implicit
-      ec: ExecutionContext): Future[Map[String, Long]] = {
+  override def sequenceNumbersOfSnapshots(persistenceIds: Set[String]): Future[Map[String, Long]] = {
     if (persistenceIds.isEmpty) {
       Future.successful(Map.empty)
     } else {
