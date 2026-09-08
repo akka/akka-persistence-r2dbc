@@ -129,7 +129,7 @@
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-handler-proxy</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.1.137.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
@@ -347,7 +347,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler-proxy</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.1.137.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
