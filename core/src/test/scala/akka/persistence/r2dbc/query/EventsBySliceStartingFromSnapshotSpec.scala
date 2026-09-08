@@ -52,14 +52,25 @@ object EventsBySliceStartingFromSnapshotSpec {
     """))
       .withFallback(TestConfig.config)
       .resolve()
+
+  // Same as `config`, but with the batched cache-miss lookup path enabled, so
+  // PostgresSnapshotDao.sequenceNumbersOfSnapshots's `= ANY(?)` SQL is exercised against a real
+  // database too, not just the plain per-id lookup. See BatchingEventsBySliceStartingFromSnapshotSpec.
+  def batchingConfig: Config =
+    ConfigFactory
+      .parseString("akka.persistence.r2dbc.query.start-from-snapshot.batching.enabled = true")
+      .withFallback(config)
+      .resolve()
 }
 
-class EventsBySliceStartingFromSnapshotSpec
-    extends ScalaTestWithActorTestKit(EventsBySliceStartingFromSnapshotSpec.config)
+class EventsBySliceStartingFromSnapshotSpec(testKitConfig: Config)
+    extends ScalaTestWithActorTestKit(testKitConfig)
     with AnyWordSpecLike
     with TestDbLifecycle
     with TestData
     with LogCapturing {
+  def this() = this(EventsBySliceStartingFromSnapshotSpec.config)
+
   import EventsBySliceStartingFromSnapshotSpec._
 
   override def typedSystem: ActorSystem[_] = system
