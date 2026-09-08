@@ -236,7 +236,8 @@ import akka.util.RecencyList
 
       private def maybeTriggerBatch(): Unit = {
         if (!batchInFlight && pendingLookupIds.nonEmpty) {
-          if (pendingLookupIds.size >= lookupBatchSize || pendingQueue.size >= maxBufferedEnvelopes)
+          // once upstream is finished no further ids can arrive, so there is nothing left to linger for
+          if (upstreamFinished || pendingLookupIds.size >= lookupBatchSize || pendingQueue.size >= maxBufferedEnvelopes)
             triggerBatch()
           else if (!isTimerActive(BatchLingerTimerKey))
             scheduleOnce(BatchLingerTimerKey, batchLinger)
@@ -291,9 +292,7 @@ import akka.util.RecencyList
 
       override def onUpstreamFinish(): Unit = {
         upstreamFinished = true
-        // flush whatever is pending rather than waiting for lookupBatchSize / the linger timer
-        if (pendingLookupIds.nonEmpty && !batchInFlight)
-          triggerBatch()
+        maybeTriggerBatch()
         advance()
         completeIfDone()
       }
