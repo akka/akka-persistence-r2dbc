@@ -46,6 +46,9 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
   protected val settings: R2dbcSettings = executorProvider.settings
   protected val system: ActorSystem[_] = executorProvider.system
   implicit protected val ec: ExecutionContext = executorProvider.ec
+  // half the pool, so a lookup batch can't starve unrelated journal/query traffic sharing it
+  protected val maxConcurrentSequenceNumberLookups: Int =
+    math.max(1, settings.connectionFactorySettings.poolSettings.maxSize / 2)
   import settings.codecSettings.SnapshotImplicits._
 
   import SnapshotDao._

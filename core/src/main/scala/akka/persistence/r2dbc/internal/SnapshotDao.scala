@@ -51,6 +51,11 @@ private[r2dbc] trait SnapshotDao {
   // implicit at each call site.
   protected implicit def ec: ExecutionContext
 
+  // Upper bound on concurrent requests fired by sequenceNumbersOfSnapshotsConcurrently. That fallback is one
+  // round-trip per persistence id, so left unbounded a single lookup batch (up to `lookup-batch-size` ids) can
+  // flood the connection pool and starve unrelated journal/query traffic sharing it.
+  protected def maxConcurrentSequenceNumberLookups: Int
+
   def load(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Option[SerializedSnapshotRow]]
   def store(serializedRow: SerializedSnapshotRow): Future[Unit]
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria): Future[Unit]
@@ -70,12 +75,21 @@ private[r2dbc] trait SnapshotDao {
 
   /**
    * Fallback for dialects without an efficient batched lookup: resolves each persistence id concurrently with its own
-   * round-trip. Exposed so a dialect that overrides `sequenceNumbersOfSnapshots` further down the class hierarchy (for
-   * example a subclass of a dialect that does support batching) can opt back into this instead.
+   * round-trip, `maxConcurrentSequenceNumberLookups` at a time. Exposed so a dialect that overrides
+   * `sequenceNumbersOfSnapshots` further down the class hierarchy (for example a subclass of a dialect that does
+   * support batching) can opt back into this instead.
    */
-  protected def sequenceNumbersOfSnapshotsConcurrently(persistenceIds: Set[String]): Future[Map[String, Long]] =
-    Future
-      .traverse(persistenceIds)(pid => sequenceNumberOfSnapshot(pid).map(pid -> _))
-      .map(_.collect { case (pid, Some(seqNr)) => pid -> seqNr }.toMap)
+  protected def sequenceNumbersOfSnapshotsConcurrently(persistenceIds: Set[String]): Future[Map[String, Long]] = {
+    def resolveChunk(chunk: Set[String]): Future[Map[String, Long]] =
+      Future
+        .traverse(chunk)(pid => sequenceNumberOfSnapshot(pid).map(pid -> _))
+        .map(_.collect { case (pid, Some(seqNr)) => pid -> seqNr }.toMap)
+
+    persistenceIds
+      .grouped(math.max(1, maxConcurrentSequenceNumberLookups))
+      .foldLeft(Future.successful(Map.empty[String, Long])) { (acc, chunk) =>
+        acc.flatMap(resolved => resolveChunk(chunk).map(resolved ++ _))
+      }
+  }
 
 }
