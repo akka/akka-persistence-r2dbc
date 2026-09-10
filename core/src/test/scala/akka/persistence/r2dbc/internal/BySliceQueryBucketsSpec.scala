@@ -85,6 +85,12 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
 
       // don't change createdAt
       buckets.clearUntil(firstBucketStartTime.plusSeconds(31)).createdAt shouldBe buckets.createdAt
+
+      // don't change hasMore
+      buckets.hasMore shouldBe false
+      val bucketsWithMore = buckets.add(Nil, hasMore = true)
+      bucketsWithMore.clearUntil(firstBucketStartTime.plusSeconds(31)).hasMore shouldBe true
+      bucketsWithMore.clearUntil(firstBucketStartTime.plusSeconds(100)).hasMore shouldBe true
     }
 
     "provide start time for next query" in {
