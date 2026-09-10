@@ -422,15 +422,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     val executor = executorProvider.executorFor(minSlice)
 
     val now = InstantFactory.now() // not important to use database time
-    val toTimestamp = {
-      if (fromTimestamp == Instant.EPOCH)
-        now
-      else {
-        // max buckets, just to have some upper bound
-        val t = fromTimestamp.plusSeconds(Buckets.BucketDurationSeconds * limit + Buckets.BucketDurationSeconds)
-        if (t.isAfter(now)) now else t
-      }
-    }
+    val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, limit, now)
 
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {

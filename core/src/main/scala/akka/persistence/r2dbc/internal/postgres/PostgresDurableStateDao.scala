@@ -872,15 +872,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       correlationId: Option[String]): Future[Seq[Bucket]] = {
 
     val now = InstantFactory.now() // not important to use database time
-    val toTimestamp = {
-      if (fromTimestamp == Instant.EPOCH)
-        now
-      else {
-        // max buckets, just to have some upper bound
-        val t = fromTimestamp.plusSeconds(Buckets.BucketDurationSeconds * limit + Buckets.BucketDurationSeconds)
-        if (t.isAfter(now)) now else t
-      }
-    }
+    val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, limit, now)
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
