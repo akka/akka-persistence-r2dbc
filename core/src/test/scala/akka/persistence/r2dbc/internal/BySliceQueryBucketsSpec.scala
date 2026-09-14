@@ -109,6 +109,58 @@ class BySliceQueryBucketsSpec extends AnyWordSpec with TestSuite with Matchers {
         firstBucketStartTime.minusSeconds(Buckets.BucketDurationSeconds).truncatedTo(ChronoUnit.SECONDS))
     }
 
+    "append empty bucket at the end of time range" in {
+      // reproducer of rounding bug when the timestamp is at the end of the bucket
+      val toTimestamp = Instant.parse("2025-12-02T08:55:39.508Z")
+      val lastBucketStartTime = 1764665730L
+      Instant.ofEpochSecond(lastBucketStartTime) shouldBe Instant.parse("2025-12-02T08:55:30Z")
+
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector.empty, toTimestamp) shouldBe
+      Vector(Bucket(lastBucketStartTime, 0))
+
+      val earlierBucket = Bucket(lastBucketStartTime - 10 * BucketDurationSeconds, 2)
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector(earlierBucket), toTimestamp) shouldBe
+      Vector(earlierBucket, Bucket(lastBucketStartTime, 0))
+
+      // already has a bucket for the end of the time range
+      val lastBucket = Bucket(lastBucketStartTime, 2)
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector(earlierBucket, lastBucket), toTimestamp) shouldBe
+      Vector(earlierBucket, lastBucket)
+
+      // already has a bucket after the end of the time range, don't replace the count of the lastBucket
+      val laterBucket = Bucket(lastBucketStartTime + BucketDurationSeconds, 3)
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector(earlierBucket, lastBucket, laterBucket), toTimestamp) shouldBe
+      Vector(earlierBucket, lastBucket, laterBucket)
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector(earlierBucket, laterBucket), toTimestamp) shouldBe
+      Vector(earlierBucket, laterBucket)
+    }
+
+    "limit time range of bucket count query" in {
+      val fromTimestamp = Instant.parse("2025-12-02T08:38:49.508Z")
+      val fromBucketStartTime = 1764664720L
+      Instant.ofEpochSecond(fromBucketStartTime) shouldBe Instant.parse("2025-12-02T08:38:40Z")
+      val now = fromTimestamp.plusSeconds(3 * 24 * 3600)
+      val limit = 100
+
+      // limit + 1 buckets after fromTimestamp
+      val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, limit, now)
+      toTimestamp shouldBe fromTimestamp.plusSeconds((limit + 1) * BucketDurationSeconds)
+      toTimestamp shouldBe Instant.parse("2025-12-02T08:55:39.508Z")
+      Buckets.appendEmptyBucketIfLastIsMissing(Vector.empty, toTimestamp).last.startTime shouldBe
+      (fromBucketStartTime + (limit + 1) * BucketDurationSeconds)
+
+      Buckets.countBucketsToTimestamp(fromTimestamp, Buckets.Limit, now) shouldBe
+      fromTimestamp.plusSeconds((Buckets.Limit + 1) * BucketDurationSeconds)
+
+      // not after now
+      Buckets.countBucketsToTimestamp(now.minusSeconds(limit * BucketDurationSeconds), limit, now) shouldBe now
+      Buckets.countBucketsToTimestamp(now.minusSeconds(1), limit, now) shouldBe now
+      Buckets.countBucketsToTimestamp(now, limit, now) shouldBe now
+
+      // no time range limit from the beginning of time
+      Buckets.countBucketsToTimestamp(Instant.EPOCH, limit, now) shouldBe now
+    }
+
   }
 
 }

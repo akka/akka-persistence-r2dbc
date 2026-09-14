@@ -133,6 +133,22 @@ import org.slf4j.Logger
         if (t.isAfter(now)) now else t
       }
     }
+
+    /**
+     * Append an empty bucket for `toTimestamp` if the last bucket is before that time. When the bucket count query was
+     * limited by its time range, this makes the next bucket count query continue after that time range, also when there
+     * were no entries at the end of the time range. Nothing is appended if the last bucket is after that time, since
+     * that would replace the count of an existing bucket.
+     */
+    def appendEmptyBucketIfLastIsMissing(buckets: Seq[Bucket], toTimestamp: Instant): Seq[Bucket] = {
+      val startTimeOfLastBucket = (toTimestamp.getEpochSecond / BucketDurationSeconds) * BucketDurationSeconds
+      if (buckets.isEmpty)
+        Vector(Bucket(startTimeOfLastBucket, 0))
+      else if (buckets.last.startTime < startTimeOfLastBucket)
+        buckets :+ Bucket(startTimeOfLastBucket, 0)
+      else
+        buckets
+    }
   }
 
   /**
@@ -254,11 +270,17 @@ import org.slf4j.Logger
      */
     def countBucketsMayChange: Boolean
 
+    /**
+     * Count entries in 10 seconds buckets, from `fromTimestamp` to `toTimestamp` (both inclusive). The result is
+     * ordered by the start time of the buckets, and limited to `limit` buckets. Buckets without entries are not
+     * included.
+     */
     def countBuckets(
         entityType: String,
         minSlice: Int,
         maxSlice: Int,
         fromTimestamp: Instant,
+        toTimestamp: Instant,
         limit: Int,
         correlationId: Option[String]): Future[Seq[Bucket]]
 
@@ -276,18 +298,6 @@ import org.slf4j.Logger
         limit: Int,
         correlationId: Option[String]): Source[String, NotUsed] =
       throw new UnsupportedOperationException(s"persistenceIdsBySlices is not supported by ${getClass.getName}")
-
-    protected def appendEmptyBucketIfLastIsMissing(
-        buckets: IndexedSeq[Bucket],
-        toTimestamp: Instant): IndexedSeq[Bucket] = {
-      val startTimeOfLastBucket = (toTimestamp.getEpochSecond / 10) * 10
-      if (buckets.isEmpty)
-        Vector(Bucket(startTimeOfLastBucket, 0))
-      else if (buckets.last.startTime != startTimeOfLastBucket)
-        buckets :+ Bucket(startTimeOfLastBucket, 0)
-      else
-        buckets
-    }
 
   }
 }
@@ -672,61 +682,76 @@ import org.slf4j.Logger
     def retrievedRecently: Boolean =
       JDuration.between(state.buckets.createdAt, InstantFactory.now()).compareTo(eventBucketCountInterval) <= 0
 
-    def retrieveBuckets(buckets: Buckets): Future[Buckets] = {
-      val fromTimestamp = buckets.nextStartTime match {
-        case Some(t) if !dao.countBucketsMayChange => t
-        case _ =>
-          if (state.latestBacktracking.timestamp == Instant.EPOCH && state.latest.timestamp == Instant.EPOCH)
-            Instant.EPOCH
-          else if (state.latestBacktracking.timestamp == Instant.EPOCH)
-            state.latest.timestamp.minus(firstBacktrackingQueryWindow)
-          else
-            state.latestBacktracking.timestamp
-      }
-      // the dao uses the same time range, but possibly with a slightly later `now`
-      val now = InstantFactory.now()
+    def retrieveBuckets(buckets: Buckets, fromTimestamp: Instant): Future[Buckets] = {
+      val now = InstantFactory.now() // not important to use database time
+      val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, Buckets.Limit, now)
 
-      dao.countBuckets(entityType, minSlice, maxSlice, fromTimestamp, Buckets.Limit, correlationId).flatMap { counts =>
-        val hasMore =
-          counts.size >= Buckets.Limit || Buckets.countBucketsToTimestamp(fromTimestamp, Buckets.Limit, now) != now
-        val newBuckets = buckets.add(counts, hasMore)
-        if (log.isDebugEnabled) {
-          val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
-          log.debug(
-            "{} retrieved [{}] event count buckets, with a total of [{}], from time [{}], has more [{}]",
-            logPrefix,
-            counts.size,
-            sum,
-            fromTimestamp,
-            hasMore)
+      dao
+        .countBuckets(entityType, minSlice, maxSlice, fromTimestamp, toTimestamp, Buckets.Limit, correlationId)
+        .flatMap { counts =>
+          // limited by its time range or number of buckets rather than by current time
+          val hasMore = toTimestamp != now || counts.size >= Buckets.Limit
+          // empty bucket at the end, so that next retrieval continues after this time range
+          val countsWithEnd =
+            if (toTimestamp == now) counts
+            else Buckets.appendEmptyBucketIfLastIsMissing(counts, toTimestamp)
+          val newBuckets = buckets.add(countsWithEnd, hasMore)
+
+          if (log.isDebugEnabled) {
+            val sum = counts.iterator.map { case Bucket(_, count) => count }.sum
+            log.debug(
+              "{} retrieved [{}] count buckets, with a total of [{}], between time [{} - {}], has more [{}]",
+              logPrefix,
+              counts.size,
+              sum,
+              fromTimestamp,
+              toTimestamp,
+              hasMore)
+          }
+
+          // Continue with the next time range directly if there were too few entries in this time range,
+          // otherwise the query would not have an upper bound. Only when making progress, to be safe.
+          newBuckets.nextStartTime match {
+            case Some(nextFromTimestamp)
+                if hasMore && !enoughBuckets(newBuckets) && nextFromTimestamp.isAfter(fromTimestamp) =>
+              retrieveBuckets(newBuckets, nextFromTimestamp)
+            case _ =>
+              Future.successful(newBuckets)
+          }
         }
-
-        // For Event Sourced, continue with the next time range directly if there were too few events in this
-        // time range, otherwise the query would not have an upper bound. Only when making progress, to be safe.
-        if (!dao.countBucketsMayChange && hasMore && !enoughBuckets(newBuckets) &&
-          newBuckets.nextStartTime.exists(_.isAfter(fromTimestamp)))
-          retrieveBuckets(newBuckets)
-        else
-          Future.successful(newBuckets)
-      }
     }
 
     val shouldRetrieveBuckets =
       if (!settings.querySettings.estimateTimeRange)
         false
-      else if (dao.countBucketsMayChange)
-        // For Durable State we always refresh the bucket counts at the interval.
-        state.buckets.isEmpty || !retrievedRecently
+      else if (state.buckets.isEmpty)
+        true
+      else if (enoughBuckets(state.buckets))
+        // For Durable State we always refresh the bucket counts at the interval. For Event Sourced we know
+        // that they don't change because events are append only.
+        dao.countBucketsMayChange && !retrievedRecently
       else
-        // For Event Sourced we know that they don't change because events are append only, so only retrieve more
-        // when needed. Don't run this too frequently, unless the previous retrieval was limited by its time range
-        // or number of buckets. Otherwise the queries will not have an upper bound when catching up a long backlog.
-        !enoughBuckets(state.buckets) && (state.buckets.isEmpty || state.buckets.hasMore || !retrievedRecently)
+        // Don't run this too frequently, unless the previous retrieval was limited by its time range or number of
+        // buckets. Otherwise the queries will not have an upper bound when catching up a long backlog.
+        state.buckets.hasMore || !retrievedRecently
 
-    if (shouldRetrieveBuckets)
-      Some(retrieveBuckets(state.buckets).map(newBuckets => state.copy(buckets = newBuckets)))
-    else
+    if (shouldRetrieveBuckets) {
+      val fromTimestamp = state.buckets.nextStartTime match {
+        case Some(t) if !dao.countBucketsMayChange =>
+          t // Event Sourced, continue after previous buckets
+        case _ =>
+          if (state.latest.timestamp == Instant.EPOCH)
+            Instant.EPOCH
+          else {
+            // latestBacktracking doesn't progress when backtracking is disabled because far behind
+            val t = state.latest.timestamp.minus(firstBacktrackingQueryWindow)
+            if (state.latestBacktracking.timestamp.isAfter(t)) state.latestBacktracking.timestamp else t
+          }
+      }
+      Some(retrieveBuckets(state.buckets, fromTimestamp).map(newBuckets => state.copy(buckets = newBuckets)))
+    } else {
       None // already enough buckets or retrieved recently
+    }
   }
 
   // TODO Unit test in isolation

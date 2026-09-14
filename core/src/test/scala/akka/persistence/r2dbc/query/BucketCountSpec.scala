@@ -49,7 +49,14 @@ class BucketCountSpec
 
       val buckets =
         dao
-          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, Buckets.Limit, None)
+          .countBuckets(
+            entityType,
+            0,
+            persistenceExt.numberOfSlices - 1,
+            startTime,
+            InstantFactory.now(),
+            Buckets.Limit,
+            None)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
         buckets.size shouldBe 10
@@ -60,7 +67,7 @@ class BucketCountSpec
       }
     }
 
-    "append empty bucket if no events in the last bucket, limit before now" in {
+    "count events in 10 second buckets until toTimestamp and limit number of buckets" in {
       pendingIfMoreThanOneDataPartition()
 
       val entityType = nextEntityType()
@@ -69,7 +76,6 @@ class BucketCountSpec
       val slice1 = persistenceExt.sliceForPersistenceId(pid1)
       val slice2 = persistenceExt.sliceForPersistenceId(pid2)
 
-      val limit = 100
       val startTime = InstantFactory.now().minusSeconds(3600)
       val bucketStartTime = (startTime.getEpochSecond / 10) * 10
 
@@ -78,54 +84,28 @@ class BucketCountSpec
         writeEvent(slice2, pid2, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
       }
 
-      val buckets =
+      // toTimestamp is inclusive
+      val toTimestamp = startTime.plusSeconds(4 * Buckets.BucketDurationSeconds)
+      val buckets1 =
         dao
-          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit, None)
+          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, toTimestamp, Buckets.Limit, None)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
-        buckets.size shouldBe 11
-        buckets.head.startTime shouldBe bucketStartTime
-        buckets.last.count shouldBe 0
-        // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
-        buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
-        buckets.dropRight(1).map(_.count).toSet shouldBe Set(2)
-        buckets.map(_.count).sum shouldBe (2 * 10)
-      }
-    }
-
-    "append empty bucket if no events in the last bucket, where timestamp is at the end of the bucket" in {
-      pendingIfMoreThanOneDataPartition()
-
-      val entityType = nextEntityType()
-      val pid1 = nextPid(entityType)
-      val pid2 = nextPid(entityType)
-      val slice1 = persistenceExt.sliceForPersistenceId(pid1)
-      val slice2 = persistenceExt.sliceForPersistenceId(pid2)
-
-      val limit = 100
-      val startTime = Instant.parse("2025-12-02T08:38:49.508Z")
-      val bucketStartTime = (startTime.getEpochSecond / 10) * 10
-      bucketStartTime shouldBe 1764664720L
-      Instant.ofEpochSecond(1764664720L) shouldBe Instant.parse("2025-12-02T08:38:40.000Z")
-
-      (0 until 10).foreach { i =>
-        writeEvent(slice1, pid1, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
-        writeEvent(slice2, pid2, 1 + i, startTime.plusSeconds(Buckets.BucketDurationSeconds * i), s"e1-$i")
+        buckets1.size shouldBe 5
+        buckets1.head.startTime shouldBe bucketStartTime
+        buckets1.last.startTime shouldBe (bucketStartTime + 4 * Buckets.BucketDurationSeconds)
+        buckets1.map(_.count).sum shouldBe (2 * 5)
       }
 
-      val buckets =
+      val limit = 3
+      val buckets2 =
         dao
-          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, limit, None)
+          .countBuckets(entityType, 0, persistenceExt.numberOfSlices - 1, startTime, InstantFactory.now(), limit, None)
           .futureValue
       withClue(s"startTime $startTime ($bucketStartTime): ") {
-        buckets.size shouldBe 11
-        buckets.head.startTime shouldBe bucketStartTime
-        buckets.last.count shouldBe 0
-        // the toTimestamp of the sql query is one bucket more than fromTimestamp + (limit * BucketDurationSeconds)
-        buckets.last.startTime shouldBe (bucketStartTime + (limit + 1) * Buckets.BucketDurationSeconds)
-        buckets.last.startTime shouldBe 1764665730L
-        buckets.dropRight(1).map(_.count).toSet shouldBe Set(2)
-        buckets.map(_.count).sum shouldBe (2 * 10)
+        buckets2.size shouldBe limit
+        buckets2.head.startTime shouldBe bucketStartTime
+        buckets2.last.startTime shouldBe (bucketStartTime + 2 * Buckets.BucketDurationSeconds)
       }
     }
 
@@ -141,9 +121,10 @@ class BucketCountSpec
         writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, seqNr, Instant.parse(t), s"e-$seqNr")
       }
 
+      val toTimestamp = Buckets.countBucketsToTimestamp(startTime, Buckets.Limit, InstantFactory.now())
       val buckets =
         dao
-          .countBuckets(entityType, 960, 975, startTime, Buckets.Limit, None)
+          .countBuckets(entityType, 960, 975, startTime, toTimestamp, Buckets.Limit, None)
           .futureValue
 
       buckets.head.startTime shouldBe 1746024900L
