@@ -19,11 +19,8 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.Persistence
 import akka.persistence.r2dbc.R2dbcSettings
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.BucketDurationSeconds
 import akka.persistence.r2dbc.internal.CorrelationId
-import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.QueryDao
 import akka.persistence.r2dbc.internal.R2dbcExecutorProvider
@@ -417,12 +414,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      toTimestamp: Instant,
       limit: Int,
       correlationId: Option[String]): Future[Seq[Bucket]] = {
     val executor = executorProvider.executorFor(minSlice)
-
-    val now = InstantFactory.now() // not important to use database time
-    val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, limit, now)
 
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
       connection => {
@@ -444,10 +439,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           maxSlice,
           CorrelationId.toLogText(correlationId)))
 
-    if (toTimestamp == now)
-      result
-    else
-      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
+    result
   }
 
   /**

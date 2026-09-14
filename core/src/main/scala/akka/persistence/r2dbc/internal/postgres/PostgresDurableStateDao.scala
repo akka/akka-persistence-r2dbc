@@ -30,13 +30,11 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.internal.AdditionalColumnFactory
-import akka.persistence.r2dbc.internal.BySliceQuery.Buckets
 import akka.persistence.r2dbc.internal.BySliceQuery.Buckets.Bucket
 import akka.persistence.r2dbc.internal.ChangeHandlerFactory
 import akka.persistence.r2dbc.internal.CorrelationId
 import akka.persistence.r2dbc.internal.Dialect
 import akka.persistence.r2dbc.internal.DurableStateDao
-import akka.persistence.r2dbc.internal.InstantFactory
 import akka.persistence.r2dbc.internal.JournalDao
 import akka.persistence.r2dbc.internal.JournalDao.SerializedJournalRow
 import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
@@ -120,7 +118,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     sqlCache.get(minSlice, s"selectBucketsSql-${settings.durableStateTableCacheKey(entityType)}-$minSlice-$maxSlice") {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, minSlice)
       sql"""
-       SELECT extract(EPOCH from db_timestamp)::BIGINT / 10 AS bucket, count(*) AS count
+       SELECT floor(extract(EPOCH from db_timestamp) / 10)::BIGINT AS bucket, count(*) AS count
        FROM $stateTable
        WHERE entity_type = ?
        AND ${sliceCondition(minSlice, maxSlice)}
@@ -868,11 +866,9 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       minSlice: Int,
       maxSlice: Int,
       fromTimestamp: Instant,
+      toTimestamp: Instant,
       limit: Int,
       correlationId: Option[String]): Future[Seq[Bucket]] = {
-
-    val now = InstantFactory.now() // not important to use database time
-    val toTimestamp = Buckets.countBucketsToTimestamp(fromTimestamp, limit, now)
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
@@ -892,10 +888,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
         log.debug("Read [{}] bucket counts from slices [{} - {}]{}", rows.size, minSlice, maxSlice, correlationText))
     }
 
-    if (toTimestamp == now)
-      result
-    else
-      result.map(appendEmptyBucketIfLastIsMissing(_, toTimestamp))
+    result
   }
 
   private def additionalBindings(
