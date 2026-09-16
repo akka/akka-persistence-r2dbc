@@ -13,7 +13,7 @@ object Dependencies {
   val AkkaVersionInDocs = VersionNumber(AkkaVersion).numbers match { case Seq(major, minor, _*) => s"$major.$minor" }
   val AkkaPersistenceJdbcVersion = "5.5.5" // only in migration tool tests
   val AkkaProjectionVersionInDocs = "current"
-  val H2Version = "2.4.240"
+  val H2Version = "2.5.250"
   val R2dbcH2Version = "1.1.0.RELEASE"
   val SqlServerR2dbcVersion = "1.0.5.RELEASE"
   val SqlServerJdbcVersion = "13.2.1.jre8"
