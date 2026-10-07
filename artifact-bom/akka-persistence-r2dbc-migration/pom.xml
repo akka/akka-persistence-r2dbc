@@ -94,7 +94,7 @@
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-buffer</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
@@ -103,78 +103,88 @@
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
+                <artifactId>netty-codec-base</artifactId>
+                <version>4.2.15.Final</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec-compression</artifactId>
+                <version>4.2.15.Final</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
                 <artifactId>netty-codec-dns</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-codec-http</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-codec-socks</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-common</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-handler</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-handler-proxy</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-resolver</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-resolver-dns</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-resolver-dns-classes-macos</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-resolver-dns-native-macos</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport-classes-epoll</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport-native-epoll</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport-native-unix-common</artifactId>
-                <version>4.1.136.Final</version>
+                <version>4.2.15.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-core</artifactId>
-                <version>3.7.19</version>
+                <version>3.8.6</version>
             </dependency>
             <dependency>
                 <groupId>io.projectreactor.addons</groupId>
@@ -184,7 +194,7 @@
             <dependency>
                 <groupId>io.projectreactor.netty</groupId>
                 <artifactId>reactor-netty-core</artifactId>
-                <version>1.2.18</version>
+                <version>1.3.6</version>
             </dependency>
             <dependency>
                 <groupId>io.r2dbc</groupId>
@@ -200,6 +210,11 @@
                 <groupId>org.agrona</groupId>
                 <artifactId>agrona</artifactId>
                 <version>1.22.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jspecify</groupId>
+                <artifactId>jspecify</artifactId>
+                <version>1.0.0</version>
             </dependency>
             <dependency>
                 <groupId>org.postgresql</groupId>
@@ -312,7 +327,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-buffer</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
@@ -321,78 +336,88 @@
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
+            <artifactId>netty-codec-base</artifactId>
+            <version>4.2.15.Final</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-compression</artifactId>
+            <version>4.2.15.Final</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
             <artifactId>netty-codec-dns</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec-http</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec-socks</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-common</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler-proxy</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver-dns</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver-dns-classes-macos</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver-dns-native-macos</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport-classes-epoll</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport-native-epoll</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport-native-unix-common</artifactId>
-            <version>4.1.136.Final</version>
+            <version>4.2.15.Final</version>
         </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
-            <version>3.7.19</version>
+            <version>3.8.6</version>
         </dependency>
         <dependency>
             <groupId>io.projectreactor.addons</groupId>
@@ -402,7 +427,7 @@
         <dependency>
             <groupId>io.projectreactor.netty</groupId>
             <artifactId>reactor-netty-core</artifactId>
-            <version>1.2.18</version>
+            <version>1.3.6</version>
         </dependency>
         <dependency>
             <groupId>io.r2dbc</groupId>
@@ -418,6 +443,11 @@
             <groupId>org.agrona</groupId>
             <artifactId>agrona</artifactId>
             <version>1.22.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>

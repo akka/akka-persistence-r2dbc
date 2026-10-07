@@ -40,7 +40,7 @@ object Dependencies {
     // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
     // https://github.com/reactor/reactor-netty/releases#release-v1.2.18
     // Won't release more in the 1.2.18 line. https://projectreactor.io/support
-    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.2.18"
+    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.3.6"
 
     // As Reactor Netty 1.2 won't be updated further, we explicitly update Netty 4.1.x
     // Netty requires all its modules to be on the same version. The modules below are only requested
