@@ -47,7 +47,7 @@ object Dependencies {
     // transitively by reactor-netty, which lags behind netty releases), so each one has to be
     // overridden explicitly, or it stays behind on an unpatched version.
     // Note: netty-tcnative-* is versioned separately and is deliberately not listed here.
-    val NettyVersion = "4.1.136.Final"
+    val NettyVersion = "4.1.138.Final"
     val NettyModules = Seq(
       "netty-buffer",
       "netty-codec",
