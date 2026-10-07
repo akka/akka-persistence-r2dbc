@@ -15,7 +15,7 @@ object Dependencies {
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.5.250"
   val R2dbcH2Version = "1.1.0.RELEASE"
-  val SqlServerR2dbcVersion = "1.0.5.RELEASE"
+  val SqlServerR2dbcVersion = "1.0.7.RELEASE"
   val SqlServerJdbcVersion = "13.2.1.jre8"
 
   // Java Platform version for JavaDoc creation
