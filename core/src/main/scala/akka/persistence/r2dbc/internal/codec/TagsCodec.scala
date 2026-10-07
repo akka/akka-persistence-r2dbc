@@ -4,7 +4,6 @@
 
 package akka.persistence.r2dbc.internal.codec
 
-import com.typesafe.config.Config
 import io.r2dbc.spi.Row
 import io.r2dbc.spi.Statement
 
@@ -39,27 +38,6 @@ import akka.annotation.InternalApi
     }
   }
   case object PostgresTagsCodec extends PostgresTagsCodec
-
-  class SqlServerTagsCodec(connectionFactoryConfig: Config) extends TagsCodec {
-
-    private val tagSeparator: Char = {
-      val tagStr = connectionFactoryConfig.getString("tag-separator")
-      require(tagStr.length == 1, s"Tag separator '$tagSeparator' must be a single character.")
-      tagStr.charAt(0)
-    }
-
-    override def tagsClass: Class[String] = classOf[String]
-    override def bindTags(statement: Statement, index: Int, tags: Set[String]): Statement =
-      statement.bind(index, tags.mkString(","))
-
-    override def bindTags(statement: Statement, name: String, tags: Set[String]): Statement =
-      statement.bind(name, tags.mkString(","))
-
-    override def getTags(row: Row, column: String): Set[String] = row.get(column, classOf[String]) match {
-      case null    => Set.empty[String]
-      case entries => entries.split(tagSeparator).toSet
-    }
-  }
 
   object H2TagsCodec extends PostgresTagsCodec {
     // needs to be picked up with Object event though it is an Array[String]

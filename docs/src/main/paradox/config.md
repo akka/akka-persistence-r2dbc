@@ -16,9 +16,6 @@ Yugabyte:
 H2:
 : @@snip [application.conf](/docs/src/test/resources/application-h2.conf) { #connection-settings }
 
-SQLServer:
-: @@snip [application.conf](/docs/src/test/resources/application-sqlserver.conf) { #connection-settings }
-
 Full set of settings that can be overridden for each of the dialects, and their default values:
 
 Postgres:
@@ -29,9 +26,6 @@ Yugabyte:
 
 H2:
 : @@snip [reference.conf](/core/src/main/resources/reference.conf) { #connection-settings-h2 }
-
-SQLServer:
-: @@snip [reference.conf](/core/src/main/resources/reference.conf) { #connection-settings-sqlserver }
 
 Connection pool settings are the same across the different dialects, but are defined in-line in the connection factory block:
 

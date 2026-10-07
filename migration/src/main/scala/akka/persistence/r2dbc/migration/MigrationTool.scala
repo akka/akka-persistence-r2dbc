@@ -161,12 +161,7 @@ class MigrationTool(system: ActorSystem[_]) {
     log.error("Migrating to H2 using the migration tool not currently supported")
   }
   //private[r2dbc] val migratioDao = new MigrationToolDao(targetExecutorProvider)
-  private[r2dbc] val migrationDao = {
-    targetR2dbcSettings.dialectName match {
-      case "sqlserver" => new SqlServerMigrationToolDao(targetExecutorProvider)
-      case _           => new MigrationToolDao(targetExecutorProvider)
-    }
-  }
+  private[r2dbc] val migrationDao = new MigrationToolDao(targetExecutorProvider)
 
   private[r2dbc] val durableStateMigrationToolDao =
     new DurableStateMigrationToolDao(targetExecutorProvider, targetR2dbcSettings.connectionFactorySettings.dialect)

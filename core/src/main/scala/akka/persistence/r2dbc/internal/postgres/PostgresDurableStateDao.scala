@@ -626,15 +626,11 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       }
   }
 
-  /**
-   * behindCurrentTime is not used for postgres but for sqlserver
-   */
   protected def bindStateBySlicesRange(
       stmt: Statement,
       entityType: String,
       fromTimestamp: Instant,
-      toTimestamp: Option[Instant],
-      behindCurrentTime: FiniteDuration): Statement = {
+      toTimestamp: Option[Instant]): Statement = {
     stmt
       .bind(0, entityType)
       .bindTimestamp(1, fromTimestamp)
@@ -674,7 +670,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               backtracking,
               minSlice,
               maxSlice))
-        bindStateBySlicesRange(stmt, entityType, fromTimestamp, toTimestamp, behindCurrentTime)
+        bindStateBySlicesRange(stmt, entityType, fromTimestamp, toTimestamp)
       },
       row =>
         if (backtracking) {

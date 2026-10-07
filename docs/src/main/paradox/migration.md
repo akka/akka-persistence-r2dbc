@@ -46,23 +46,6 @@ CREATE TABLE IF NOT EXISTS migration_progress(
   PRIMARY KEY(persistence_id)
 ```
 
-SQLServer:
-: ```sql
-IF object_id('migration_progress') is null
-  CREATE TABLE migration_progress(
-    persistence_id NVARCHAR(255) NOT NULL,
-    event_seq_nr BIGINT,
-    snapshot_seq_nr BIGINT,
-    state_revision  BIGINT,
-    PRIMARY KEY(persistence_id)
-```
-
-@@@ warning { .group-sqlserver }
-
-The SQL Server dialect is marked `experimental` and not yet production ready until various [issues](https://github.com/akka/akka-persistence-r2dbc/issues?q=is%3Aopen+label%3Asqlserver+label%3Abug) with the integration of the `r2dbc-mssql` plugin have been resolved.
-
-@@@
-
 ## Running
 
 The migration tool can be run as main class `akka.persistence.r2dbc.migration.MigrationTool` provided by the above
@@ -80,9 +63,6 @@ You need to provide configuration for the source persistence plugin and the targ
 
 Postgres:
 : @@snip [application-postgres.conf](/migration-tests/src/test/resources/application-postgres-example.conf)
-
-SQLServer:
-: @@snip [application-sqlserver.conf](/migration-tests/src/test/resources/application-sqlserver-example.conf)
 
 @@@ note
 

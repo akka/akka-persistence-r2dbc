@@ -34,10 +34,6 @@ class R2dbcJournalPerfManyActorsSpec extends JournalPerfSpec(R2dbcJournalPerfSpe
 
   "A PersistentActor's performance" must {
 
-    if (settings.dialectName == "sqlserver") {
-      pending
-    }
-
     s"measure: persist()-ing $eventsCount events for $actorCount actors" in {
       val testProbe = TestProbe()
       val replyAfter = eventsCount

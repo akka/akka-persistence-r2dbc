@@ -73,10 +73,7 @@ class JournalAdditionalColumnSpec
   private def journalTable(slice: Int) = settings.journalTableWithSchema(slice)
 
   private def alterAddColumn(slice: Int, col: String, colType: String): String =
-    if (settings.dialectName == "sqlserver")
-      s"IF COL_LENGTH('${journalTable(slice)}', '$col') IS NULL ALTER TABLE ${journalTable(slice)} ADD $col $colType"
-    else
-      s"alter table ${journalTable(slice)} add if not exists $col $colType"
+    s"alter table ${journalTable(slice)} add if not exists $col $colType"
 
   override def beforeAll(): Unit = {
     settings.dataPartitionSliceRanges.foreach { sliceRange =>

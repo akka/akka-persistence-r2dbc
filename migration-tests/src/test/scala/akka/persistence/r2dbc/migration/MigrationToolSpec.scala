@@ -28,22 +28,7 @@ object MigrationToolSpec {
   private val testConfig = TestConfig.config
 
   private val dialect = testConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
-  private val dbProfile = if (dialect == "sqlserver") {
-    """
-      default {
-        profile = "slick.jdbc.SQLServerProfile$"
-        db {
-          url = "jdbc:sqlserver://"127.0.0.1":1433;databaseName=master;integratedSecurity=false;"
-          user = "SA"
-          password = "<YourStrong@Passw0rd>"
-          driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
-          numThreads = 5
-          maxConnections = 5
-          minConnections = 1
-        }
-      }
-    """
-  } else {
+  private val dbProfile =
     """
       default {
         profile = "slick.jdbc.PostgresProfile$"
@@ -59,7 +44,6 @@ object MigrationToolSpec {
         }
       }
       """
-  }
 
   private val config: Config = ConfigFactory
     .parseString(s"""
@@ -115,12 +99,9 @@ class MigrationToolSpec
 
   // don't run this for Yugabyte since it is using akka-persistence-jdbc
   private val postgresTest = dialect == "postgres"
-  // FIXME flaky for sqlserver, issue https://github.com/akka/akka-persistence-r2dbc/issues/523
-//  private val sqlServerTest = dialect == "sqlserver"
-//  private val testEnabled = postgresTest || sqlServerTest
   private val testEnabled = postgresTest
 
-  private val createJournalTablePostgres =
+  private val createJournalTableSql =
     """CREATE TABLE IF NOT EXISTS jdbc_event_journal(
       |  ordering BIGSERIAL,
       |  persistence_id VARCHAR(255) NOT NULL,
@@ -142,26 +123,7 @@ class MigrationToolSpec
       |  PRIMARY KEY(persistence_id, sequence_number)
       |)""".stripMargin
 
-  private val createJournalTableSqlServer =
-    """IF object_id('jdbc_event_journal') is null
-      |CREATE TABLE "jdbc_event_journal" (
-      |    "ordering" BIGINT IDENTITY(1,1) NOT NULL,
-      |    "deleted" BIT DEFAULT 0 NOT NULL,
-      |    "persistence_id" NVARCHAR(255) NOT NULL,
-      |    "sequence_number" NUMERIC(10,0) NOT NULL,
-      |    "writer" NVARCHAR(255) NOT NULL,
-      |    "write_timestamp" BIGINT NOT NULL,
-      |    "adapter_manifest" NVARCHAR(MAX) NOT NULL,
-      |    "event_payload" VARBINARY(MAX) NOT NULL,
-      |    "event_ser_id" INTEGER NOT NULL,
-      |    "event_ser_manifest" NVARCHAR(MAX) NOT NULL,
-      |    "meta_payload" VARBINARY(MAX),
-      |    "meta_ser_id" INTEGER,
-      |    "meta_ser_manifest" NVARCHAR(MAX)
-      |    PRIMARY KEY ("persistence_id", "sequence_number")
-      |)""".stripMargin
-
-  private val createSnapshotTablePostgres =
+  private val createSnapshotTableSql =
     """CREATE TABLE IF NOT EXISTS jdbc_snapshot (
       |  persistence_id VARCHAR(255) NOT NULL,
       |  sequence_number BIGINT NOT NULL,
@@ -177,27 +139,6 @@ class MigrationToolSpec
       |
       |  PRIMARY KEY(persistence_id, sequence_number)
       |)""".stripMargin
-
-  private val createSnapshotTableSqlServer =
-    """IF object_id('jdbc_snapshot') is null
-      |CREATE TABLE "jdbc_snapshot" (
-      |    "persistence_id" NVARCHAR(255) NOT NULL,
-      |    "sequence_number" NUMERIC(10,0) NOT NULL,
-      |    "created" BIGINT NOT NULL,
-      |    "snapshot_ser_id" INTEGER NOT NULL,
-      |    "snapshot_ser_manifest" NVARCHAR(255) NOT NULL,
-      |    "snapshot_payload" VARBINARY(MAX) NOT NULL,
-      |    "meta_ser_id" INTEGER,
-      |    "meta_ser_manifest" NVARCHAR(255),
-      |    "meta_payload" VARBINARY(MAX),
-      |    PRIMARY KEY ("persistence_id", "sequence_number")
-      |  )
-      |""".stripMargin
-
-  private val createJournalTableSql =
-    if (dialect == "sqlserver") createJournalTableSqlServer else createJournalTablePostgres
-  private val createSnapshotTableSql =
-    if (dialect == "sqlserver") createSnapshotTableSqlServer else createSnapshotTablePostgres
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()

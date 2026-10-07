@@ -1,0 +1,6 @@
+# internal, SQL Server dialect removed
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec$SqlServerTagsCodec")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec$SqlServerTimestampCodec$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.sqlserver.*")

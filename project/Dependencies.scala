@@ -15,8 +15,6 @@ object Dependencies {
   val AkkaProjectionVersionInDocs = "current"
   val H2Version = "2.5.250"
   val R2dbcH2Version = "1.1.0.RELEASE"
-  val SqlServerR2dbcVersion = "1.0.5.RELEASE"
-  val SqlServerJdbcVersion = "13.2.1.jre8"
 
   // Java Platform version for JavaDoc creation
   lazy val JavaDocLinkVersion = scala.util.Properties.javaSpecVersion
@@ -68,8 +66,6 @@ object Dependencies {
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
-
-    val r2dbcSqlServer = "io.r2dbc" % "r2dbc-mssql" % SqlServerR2dbcVersion % Provided // ApacheV2
   }
 
   object TestDeps {
@@ -102,7 +98,6 @@ object Dependencies {
     reactorNettyCore,
     h2,
     r2dbcH2,
-    r2dbcSqlServer,
     TestDeps.akkaPersistenceTck,
     TestDeps.akkaStreamTestkit,
     TestDeps.akkaTestkit,
@@ -114,13 +109,11 @@ object Dependencies {
   val migrationTests =
     Seq(
       "com.lightbend.akka" %% "akka-persistence-jdbc" % AkkaPersistenceJdbcVersion % Test,
-      "com.microsoft.sqlserver" % "mssql-jdbc" % SqlServerJdbcVersion % Test,
       TestDeps.postgresql,
       TestDeps.logback,
       TestDeps.scalaTest,
       h2,
-      r2dbcH2,
-      r2dbcSqlServer)
+      r2dbcH2)
 
   val docs =
     Seq(

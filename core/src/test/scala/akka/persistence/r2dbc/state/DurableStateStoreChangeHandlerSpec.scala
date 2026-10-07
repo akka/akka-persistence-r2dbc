@@ -32,24 +32,14 @@ import org.scalatest.wordspec.AnyWordSpecLike
 
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
-import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 
 object DurableStateStoreChangeHandlerSpec {
 
   val testConfig = TestConfig.config
 
-  val dialect = testConfig.getString("akka.persistence.r2dbc.connection-factory.dialect")
-  val javaDslcustomEntity = if (dialect == "sqlserver") {
-    classOf[JavadslChangeHandlerSqlServer].getName
-  } else {
-    classOf[JavadslChangeHandler].getName
-  }
+  val javaDslcustomEntity = classOf[JavadslChangeHandler].getName
 
-  implicit val queryAdapter: QueryAdapter =
-    if (dialect == "sqlserver")
-      SqlServerQueryAdapter
-    else
-      IdentityAdapter
+  implicit val queryAdapter: QueryAdapter = IdentityAdapter
 
   val config: Config = ConfigFactory
     .parseString(s"""
@@ -105,14 +95,10 @@ class DurableStateStoreChangeHandlerSpec
     with TestData
     with LogCapturing {
 
-  val dialect = config.getString("akka.persistence.r2dbc.connection-factory.dialect")
   private val anotherTable = "changes_test"
 
-  val createTableSql = if (dialect == "sqlserver") {
-    s"IF object_id('$anotherTable') is null create table $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
-  } else {
+  val createTableSql =
     s"create table if not exists $anotherTable (pid varchar(256), rev bigint, the_value varchar(256))"
-  }
 
   override def typedSystem: ActorSystem[_] = system
 

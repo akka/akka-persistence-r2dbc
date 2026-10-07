@@ -251,44 +251,6 @@ jobs:
           cp .jvmopts-ci .jvmopts
           sbt -Dconfig.resource=application-h2.conf test
 
-  test-sqlserver:
-    name: Run test with SQL Server
-    runs-on: Akka-Default
-    if: github.repository == 'akka/akka-persistence-r2dbc'
-    steps:
-      - name: Akka resolver setup
-        uses: akka/github-actions-scripts/setup_global_resolver@main
-
-      - name: Checkout
-        # https://github.com/actions/checkout/releases
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Checkout GitHub merge
-        if: github.event.pull_request
-        run: |-
-          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
-          git checkout scratch
-      - name: Cache Coursier cache
-        # https://github.com/coursier/cache-action/releases
-        uses: coursier/cache-action@v8.1.1
-
-      - name: Set up JDK 11
-        # https://github.com/coursier/setup-action/releases
-        uses: coursier/setup-action@v3.0.0
-        with:
-          jvm: temurin:1.11.0
-
-      - name: Start DB
-        run: |-
-          docker compose -f docker/docker-compose-sqlserver.yml up --wait
-          docker exec -i sqlserver-db /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P '<YourStrong@Passw0rd>' -d master < ddl-scripts/create_tables_sqlserver.sql
-      - name: sbt test
-        run: |-
-          cp .jvmopts-ci .jvmopts
-          sbt -Dconfig.resource=application-sqlserver.conf test
-
   test-docs:
     name: Docs
     runs-on: Akka-Default
