@@ -16,9 +16,8 @@ import akka.annotation.InternalApi
  */
 @InternalApi private[akka] sealed trait TimestampCodec {
 
-  def encode(timestamp: Instant): Any
+  def encode(timestamp: Instant): Instant
   def decode(row: Row, name: String): Instant
-  def decode(row: Row, index: Int): Instant
 
 }
 
@@ -29,9 +28,8 @@ import akka.annotation.InternalApi
 
   class PostgresTimestampCodec extends TimestampCodec {
     override def decode(row: Row, name: String): Instant = row.get(name, classOf[Instant])
-    override def decode(row: Row, index: Int): Instant = row.get(index, classOf[Instant])
 
-    override def encode(timestamp: Instant): Any = timestamp
+    override def encode(timestamp: Instant): Instant = timestamp
   }
   object PostgresTimestampCodec extends PostgresTimestampCodec
 

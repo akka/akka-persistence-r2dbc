@@ -7,3 +7,5 @@ ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.sql
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#PostgresTagsCodec.bindTags")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTagsNull")
 ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTags")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec#PostgresTimestampCodec.decode")
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec#PostgresTimestampCodec.encode")
