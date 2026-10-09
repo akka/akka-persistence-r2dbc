@@ -88,9 +88,10 @@ class EventsBySlicePubSubBacktrackingSpec
         topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
       }
 
-      // Events from one atomic write have the same db timestamp, so the regular query emits all of them
-      // before the first backtracking query. Events from separate writes have different timestamps. Then the
-      // regular query can emit some of them, backtracking emits those again, and the regular query emits the rest.
+      // Each batch of ten events in this test is one atomic write. Events from one atomic write have the same
+      // db timestamp, so the regular query emits all of them before the next backtracking query. Events from
+      // separate writes have different timestamps. Then the regular query can emit some of them, backtracking
+      // emits those again, and the regular query emits the rest.
       persister ! PersistAll((1 to 10).map(i => s"e-$i").toList)
       persister ! Ping(probe.ref)
       probe.expectMessage(Done)
@@ -111,6 +112,7 @@ class EventsBySlicePubSubBacktrackingSpec
       }
 
       // after backtracking the PubSub events will get through
+      // (one atomic write, for the same reason as e-1 to e-10)
       persister ! PersistAll((11 to 20).map(i => s"e-$i").toList)
       for (i <- 11 to 20) {
         val env = result.expectNext()
