@@ -206,16 +206,12 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?"""
     }
 
-  protected def insertDeleteMarkerSql(
-      entityType: String,
-      slice: Int,
-      timestamp: String = "CURRENT_TIMESTAMP"): String = {
-    // timestamp param doesn't have to be part of cache key because it's just different for different dialects
+  protected def insertDeleteMarkerSql(entityType: String, slice: Int): String = {
     sqlCache.get(slice, s"insertDeleteMarkerSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       INSERT INTO ${journalTable(entityType, slice)}
       (slice, entity_type, persistence_id, seq_nr, db_timestamp, writer, adapter_manifest, event_ser_id, event_ser_manifest, event_payload, deleted)
-      VALUES (?, ?, ?, ?, $timestamp, ?, ?, ?, ?, ?, ?)"""
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)"""
     }
   }
 

@@ -185,14 +185,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       slice: Int,
       entityType: String,
       updateTags: Boolean,
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
-      currentTimestamp: String = "CURRENT_TIMESTAMP"): String = {
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     def createSql = {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
 
       val timestamp =
         if (settings.dbTimestampMonotonicIncreasing)
-          currentTimestamp
+          "CURRENT_TIMESTAMP"
         else
           "GREATEST(CURRENT_TIMESTAMP, " +
           s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
@@ -212,7 +211,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
 
     if (additionalBindings.isEmpty)
-      // timestamp param doesn't have to be part of cache key because it's just different for different dialects
       sqlCache.get(slice, s"updateStateSql-${settings.durableStateTableCacheKey(entityType)}-$updateTags")(createSql)
     else
       createSql // no cache
