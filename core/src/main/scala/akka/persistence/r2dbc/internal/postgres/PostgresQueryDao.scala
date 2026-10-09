@@ -11,7 +11,6 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import io.r2dbc.spi.Row
-import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import akka.NotUsed
@@ -210,17 +209,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       LIMIT ?"""
     }
 
-  protected def bindSelectEventsSql(
-      stmt: Statement,
-      persistenceId: String,
-      fromSequenceNr: Long,
-      toSequenceNr: Long,
-      bufferSize: Int): Statement = stmt
-    .bind(0, persistenceId)
-    .bind(1, fromSequenceNr)
-    .bind(2, toSequenceNr)
-    .bind(3, settings.querySettings.bufferSize)
-
   protected def allPersistenceIdsSql(table: String): String =
     // not worth caching, only run on configured custom tables
     sql"SELECT DISTINCT(persistence_id) from $table ORDER BY persistence_id LIMIT ?"
@@ -265,24 +253,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       """
     }
 
-  protected def bindPersistenceIdsBySlicesSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      toTimestamp: Option[Instant],
-      limit: Int): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-    toTimestamp match {
-      case Some(until) =>
-        stmt.bindTimestamp(2, until)
-        stmt.bind(3, limit)
-      case None =>
-        stmt.bind(2, limit)
-    }
-  }
-
   override def currentDbTimestamp(slice: Int): Future[Instant] = {
     val executor = executorProvider.executorFor(slice)
     executor
@@ -293,32 +263,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         case Some(time) => time
         case None       => throw new IllegalStateException(s"Expected one row for: $currentDbTimestampSql")
       }
-  }
-
-  protected def bindEventsBySlicesRangeSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      fromSeqNr: Option[Long],
-      toTimestamp: Option[Instant]): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-    val index1 = 2
-    val index2 = fromSeqNr match {
-      case Some(seqNr) =>
-        stmt.bindTimestamp(index1, fromTimestamp)
-        stmt.bind(index1 + 1, seqNr)
-        index1 + 2
-      case None => index1
-    }
-    toTimestamp match {
-      case Some(until) =>
-        stmt.bindTimestamp(index2, until)
-        stmt.bind(index2 + 1, settings.querySettings.bufferSize)
-      case None =>
-        stmt.bind(index2, settings.querySettings.bufferSize)
-    }
   }
 
   override def rowsBySlices(
@@ -349,7 +293,23 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
               backtracking,
               minSlice,
               maxSlice))
-        bindEventsBySlicesRangeSql(stmt, entityType, fromTimestamp, fromSeqNr, toTimestamp)
+          .bind(0, entityType)
+          .bindTimestamp(1, fromTimestamp)
+        val index1 = 2
+        val index2 = fromSeqNr match {
+          case Some(seqNr) =>
+            stmt.bindTimestamp(index1, fromTimestamp)
+            stmt.bind(index1 + 1, seqNr)
+            index1 + 2
+          case None => index1
+        }
+        toTimestamp match {
+          case Some(until) =>
+            stmt.bindTimestamp(index2, until)
+            stmt.bind(index2 + 1, settings.querySettings.bufferSize)
+          case None =>
+            stmt.bind(index2, settings.querySettings.bufferSize)
+        }
       },
       row =>
         if (backtracking)
@@ -394,19 +354,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  protected def bindSelectBucketsSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      toTimestamp: Instant,
-      limit: Int): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-      .bindTimestamp(2, toTimestamp)
-      .bind(3, limit)
-  }
-
   override def countBuckets(
       entityType: String,
       minSlice: Int,
@@ -418,10 +365,13 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     val executor = executorProvider.executorFor(minSlice)
 
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
-      connection => {
-        val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
-        bindSelectBucketsSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
-      },
+      connection =>
+        connection
+          .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
+          .bind(0, entityType)
+          .bindTimestamp(1, fromTimestamp)
+          .bindTimestamp(2, toTimestamp)
+          .bind(3, limit),
       row => {
         val bucketStartEpochSeconds = row.get[java.lang.Long]("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong
@@ -584,8 +534,12 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         val selectSql =
           if (includeDeleted) selectEventsIncludeDeletedSql(entityType, slice)
           else selectEventsSql(entityType, slice)
-        val stmt = connection.createStatement(selectSql)
-        bindSelectEventsSql(stmt, persistenceId, fromSequenceNr, toSequenceNr, settings.querySettings.bufferSize)
+        connection
+          .createStatement(selectSql)
+          .bind(0, persistenceId)
+          .bind(1, fromSequenceNr)
+          .bind(2, toSequenceNr)
+          .bind(3, settings.querySettings.bufferSize)
       },
       row =>
         if (includeDeleted && row.get[java.lang.Boolean]("deleted", classOf[java.lang.Boolean])) {
@@ -634,28 +588,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
       metadata = None)
   }
 
-  protected def bindPersistenceIdsForEntityTypeAfterSql(
-      stmt: Statement,
-      entityType: String,
-      likeStmtPostfix: String,
-      after: String,
-      limit: Long): Statement = {
-    stmt
-      .bind(0, entityType + likeStmtPostfix)
-      .bind(1, after)
-      .bind(2, limit)
-  }
-
-  protected def bindPersistenceIdsForEntityTypeSql(
-      stmt: Statement,
-      entityType: String,
-      likeStmtPostfix: String,
-      limit: Long): Statement = {
-    stmt
-      .bind(0, entityType + likeStmtPostfix)
-      .bind(1, limit)
-  }
-
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
     val likeStmtPostfix = PersistenceId.DefaultSeparator + "%"
@@ -667,13 +599,17 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           connection =>
             afterId match {
               case Some(after) =>
-                val stmt =
-                  connection.createStatement(persistenceIdsForEntityTypeAfterSql(entityType, sliceRange.min))
-                bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
+                connection
+                  .createStatement(persistenceIdsForEntityTypeAfterSql(entityType, sliceRange.min))
+                  .bind(0, entityType + likeStmtPostfix)
+                  .bind(1, after)
+                  .bind(2, actualLimit)
 
               case None =>
-                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(entityType, sliceRange.min))
-                bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
+                connection
+                  .createStatement(persistenceIdsForEntityTypeSql(entityType, sliceRange.min))
+                  .bind(0, entityType + likeStmtPostfix)
+                  .bind(1, actualLimit)
 
             },
           row => row.get("persistence_id", classOf[String]))
@@ -692,12 +628,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     Source.futureSource(combined.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  protected def bindAllPersistenceIdsAfterSql(stmt: Statement, after: String, limit: Long): Statement = {
-    stmt
-      .bind(0, after)
-      .bind(1, limit)
-  }
-
   override def persistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] = {
     val actualLimit = if (limit > Int.MaxValue) Int.MaxValue else limit.toInt
     // Iterate over the default journal table and any configured per-entity-type custom journal tables.
@@ -710,8 +640,10 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
           connection =>
             afterId match {
               case Some(after) =>
-                val stmt = connection.createStatement(allPersistenceIdsAfterSql(table))
-                bindAllPersistenceIdsAfterSql(stmt, after, actualLimit)
+                connection
+                  .createStatement(allPersistenceIdsAfterSql(table))
+                  .bind(0, after)
+                  .bind(1, actualLimit)
 
               case None =>
                 connection
@@ -750,9 +682,17 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select persistenceIdsBySlices [$minSlice - $maxSlice]")(
       connection => {
-        val stmt =
-          connection.createStatement(persistenceIdsBySlicesSql(entityType, toTimestamp.isDefined, minSlice, maxSlice))
-        bindPersistenceIdsBySlicesSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
+        val stmt = connection
+          .createStatement(persistenceIdsBySlicesSql(entityType, toTimestamp.isDefined, minSlice, maxSlice))
+          .bind(0, entityType)
+          .bindTimestamp(1, fromTimestamp)
+        toTimestamp match {
+          case Some(until) =>
+            stmt.bindTimestamp(2, until)
+            stmt.bind(3, limit)
+          case None =>
+            stmt.bind(2, limit)
+        }
       },
       row => row.get("persistence_id", classOf[String]))
 

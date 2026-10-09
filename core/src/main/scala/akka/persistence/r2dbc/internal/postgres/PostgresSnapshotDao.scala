@@ -10,7 +10,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
 import io.r2dbc.spi.Row
-import io.r2dbc.spi.Statement
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -300,51 +299,43 @@ private[r2dbc] class PostgresSnapshotDao(executorProvider: R2dbcExecutorProvider
     }
   }
 
-  protected def bindUpsertSql(statement: Statement, serializedRow: SerializedSnapshotRow): Statement = {
-    statement
-      .bind(0, serializedRow.slice)
-      .bind(1, serializedRow.entityType)
-      .bind(2, serializedRow.persistenceId)
-      .bind(3, serializedRow.seqNr)
-      .bind(4, serializedRow.writeTimestamp)
-      .bindPayload(5, serializedRow.snapshot)
-      .bind(6, serializedRow.serializerId)
-      .bind(7, serializedRow.serializerManifest)
-
-    serializedRow.metadata match {
-      case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
-        statement
-          .bind(8, serializedMeta)
-          .bind(9, serializerId)
-          .bind(10, serializerManifest)
-      case None =>
-        statement
-          .bindNull(8, classOf[Array[Byte]])
-          .bindNull(9, classOf[Integer])
-          .bindNull(10, classOf[String])
-    }
-
-    // db_timestamp and tags columns were added in 1.2.0
-    if (settings.querySettings.startFromSnapshotEnabled) {
-      statement
-        .bindTimestamp(11, serializedRow.dbTimestamp)
-        .bindTags(12, serializedRow.tags)
-    }
-    statement
-  }
-
   def store(serializedRow: SerializedSnapshotRow): Future[Unit] = {
     val slice = persistenceExt.sliceForPersistenceId(serializedRow.persistenceId)
     val executor = executorProvider.executorFor(slice)
     executor
       .updateOne(s"upsert snapshot [${serializedRow.persistenceId}], sequence number [${serializedRow.seqNr}]") {
         connection =>
-          val statement =
-            connection
-              .createStatement(upsertSql(slice))
+          val statement = connection
+            .createStatement(upsertSql(slice))
+            .bind(0, serializedRow.slice)
+            .bind(1, serializedRow.entityType)
+            .bind(2, serializedRow.persistenceId)
+            .bind(3, serializedRow.seqNr)
+            .bind(4, serializedRow.writeTimestamp)
+            .bindPayload(5, serializedRow.snapshot)
+            .bind(6, serializedRow.serializerId)
+            .bind(7, serializedRow.serializerManifest)
 
-          bindUpsertSql(statement, serializedRow)
+          serializedRow.metadata match {
+            case Some(SerializedSnapshotMetadata(serializedMeta, serializerId, serializerManifest)) =>
+              statement
+                .bind(8, serializedMeta)
+                .bind(9, serializerId)
+                .bind(10, serializerManifest)
+            case None =>
+              statement
+                .bindNull(8, classOf[Array[Byte]])
+                .bindNull(9, classOf[Integer])
+                .bindNull(10, classOf[String])
+          }
 
+          // db_timestamp and tags columns were added in 1.2.0
+          if (settings.querySettings.startFromSnapshotEnabled) {
+            statement
+              .bindTimestamp(11, serializedRow.dbTimestamp)
+              .bindTags(12, serializedRow.tags)
+          }
+          statement
       }
       .map(_ => ())(ExecutionContext.parasitic)
   }
