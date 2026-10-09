@@ -20,8 +20,9 @@ import akka.persistence.query.NoOffset
 import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.typed.EventEnvelope
 import akka.persistence.r2dbc.TestActors
-import akka.persistence.r2dbc.TestActors.Persister.Persist
+import akka.persistence.r2dbc.TestActors.Persister.PersistAll
 import akka.persistence.r2dbc.TestActors.Persister.PersistWithAck
+import akka.persistence.r2dbc.TestActors.Persister.Ping
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.TestData
 import akka.persistence.r2dbc.TestDbLifecycle
@@ -87,10 +88,12 @@ class EventsBySlicePubSubBacktrackingSpec
         topicStatsProbe.receiveMessage().localSubscriberCount shouldBe 1
       }
 
-      for (i <- 1 to 9) {
-        persister ! Persist(s"e-$i")
-      }
-      persister ! PersistWithAck("e-10", probe.ref)
+      // Each batch of ten events in this test is one atomic write. Events from one atomic write have the same
+      // db timestamp, so the regular query emits all of them before the next backtracking query. Events from
+      // separate writes have different timestamps. Then the regular query can emit some of them, backtracking
+      // emits those again, and the regular query emits the rest.
+      persister ! PersistAll((1 to 10).map(i => s"e-$i").toList)
+      persister ! Ping(probe.ref)
       probe.expectMessage(Done)
       // Initial PubSub events are dropped because no backtracking events yet
       result.expectNoMessage(500.millis)
@@ -109,10 +112,8 @@ class EventsBySlicePubSubBacktrackingSpec
       }
 
       // after backtracking the PubSub events will get through
-      for (i <- 11 to 19) {
-        persister ! Persist(s"e-$i")
-      }
-      persister ! PersistWithAck("e-20", probe.ref)
+      // (one atomic write, for the same reason as e-1 to e-10)
+      persister ! PersistAll((11 to 20).map(i => s"e-$i").toList)
       for (i <- 11 to 20) {
         val env = result.expectNext()
         env.event shouldBe s"e-$i"
