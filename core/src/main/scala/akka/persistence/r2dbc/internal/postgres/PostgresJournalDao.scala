@@ -532,7 +532,6 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
       readLowestSequenceNr(persistenceId)
     }
   }
-  protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
   override def deleteEventsTo(persistenceId: String, toSequenceNr: Long, resetSequenceNumber: Boolean): Future[Unit] = {
     val entityType = PersistenceId.extractEntityType(persistenceId)
     val slice = persistenceExt.sliceForPersistenceId(persistenceId)
@@ -540,14 +539,12 @@ private[r2dbc] class PostgresJournalDao(executorProvider: R2dbcExecutorProvider)
 
     def insertDeleteMarkerStmt(deleteMarkerSeqNr: Long, connection: Connection): Statement = {
       val idx = Iterator.range(0, Int.MaxValue)
-      val stmt = connection.createStatement(insertDeleteMarkerSql(entityType, slice))
-      stmt
+      connection
+        .createStatement(insertDeleteMarkerSql(entityType, slice))
         .bind(idx.next(), slice)
         .bind(idx.next(), entityType)
         .bind(idx.next(), persistenceId)
         .bind(idx.next(), deleteMarkerSeqNr)
-
-      bindTimestampNow(stmt, idx.next)
         .bind(idx.next(), "")
         .bind(idx.next(), "")
         .bind(idx.next(), 0)

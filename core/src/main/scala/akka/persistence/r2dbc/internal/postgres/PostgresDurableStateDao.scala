@@ -364,8 +364,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       FutureInstantNone
   }
 
-  protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
-
   override def upsertState(
       state: SerializedStateRow,
       value: Any,
@@ -484,7 +482,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
           def insertDeleteMarkerStatement(connection: Connection): Statement = {
-            val stmt = connection
+            connection
               .createStatement(
                 insertStateSql(slice, entityType, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
@@ -496,8 +494,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               .bind(5, "")
               .bindPayloadOption(6, None)
               .bindTagsNull(7)
-
-            bindTimestampNow(stmt, () => 8)
           }
 
           def recoverDataIntegrityViolation[A](f: Future[A]): Future[A] =
@@ -533,8 +529,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               .bind(idx.next(), 0)
               .bind(idx.next(), "")
               .bindPayloadOption(idx.next(), None)
-
-            bindTimestampNow(stmt, idx.next)
 
             if (settings.dbTimestampMonotonicIncreasing) {
               if (settings.durableStateAssertSingleWriter)
@@ -935,8 +929,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     bindTags(state, stmt, idx.next())
     bindAdditionalColumns(stmt, bindings, idx.next)
 
-    bindTimestampNow(stmt, idx.next)
-
     if (settings.dbTimestampMonotonicIncreasing) {
       if (settings.durableStateAssertSingleWriter)
         stmt
@@ -977,8 +969,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       .bindPayloadOption(idx.next(), state.payload)
     bindTags(state, stmt, idx.next())
     bindAdditionalColumns(stmt, bindings, idx.next)
-
-    bindTimestampNow(stmt, idx.next)
     stmt
   }
 
