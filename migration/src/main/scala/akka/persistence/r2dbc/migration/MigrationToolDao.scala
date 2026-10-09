@@ -56,62 +56,41 @@ import akka.persistence.typed.PersistenceId
   // progress always in data partition 0
   private val r2dbcExecutor = executorProvider.executorFor(slice = 0)
 
-  protected def createMigrationProgressTableSql(): String = {
-    sql"""
-          CREATE TABLE IF NOT EXISTS migration_progress(
-            persistence_id VARCHAR(255) NOT NULL,
-            event_seq_nr BIGINT,
-            snapshot_seq_nr BIGINT,
-            state_revision  BIGINT,
-            PRIMARY KEY(persistence_id)
-          )"""
-  }
-
   def createProgressTable(): Future[Done] = {
     r2dbcExecutor.executeDdl("create migration progress table") { connection =>
-      connection.createStatement(createMigrationProgressTableSql())
+      connection.createStatement(sql"""
+        CREATE TABLE IF NOT EXISTS migration_progress(
+          persistence_id VARCHAR(255) NOT NULL,
+          event_seq_nr BIGINT,
+          snapshot_seq_nr BIGINT,
+          state_revision  BIGINT,
+          PRIMARY KEY(persistence_id)
+        )""")
     }
   }
 
-  protected def baseUpsertMigrationProgressSql(column: String): String = {
-    sql"""
+  def updateEventProgress(persistenceId: String, seqNr: Long): Future[Done] =
+    upsertProgress(persistenceId, "event_seq_nr", seqNr)
+
+  def updateSnapshotProgress(persistenceId: String, seqNr: Long): Future[Done] =
+    upsertProgress(persistenceId, "snapshot_seq_nr", seqNr)
+
+  def updateDurableStateProgress(persistenceId: String, revision: Long): Future[Done] =
+    upsertProgress(persistenceId, "state_revision", revision)
+
+  private def upsertProgress(persistenceId: String, column: String, value: Long): Future[Done] = {
+    r2dbcExecutor
+      .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
+        connection
+          .createStatement(sql"""
             INSERT INTO migration_progress
             (persistence_id, $column)
             VALUES (?, ?)
             ON CONFLICT (persistence_id)
             DO UPDATE SET
-            $column = excluded.$column"""
-  }
-
-  protected def bindBaseUpsertSql(stmt: Statement, persistenceId: String, seqNr: Long): Statement = {
-    stmt
-      .bind(0, persistenceId)
-      .bind(1, seqNr)
-  }
-
-  def updateEventProgress(persistenceId: String, seqNr: Long): Future[Done] = {
-    r2dbcExecutor
-      .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("event_seq_nr"))
-        bindBaseUpsertSql(stmt, persistenceId, seqNr)
-      }
-      .map(_ => Done)(ExecutionContext.parasitic)
-  }
-
-  def updateSnapshotProgress(persistenceId: String, seqNr: Long): Future[Done] = {
-    r2dbcExecutor
-      .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("snapshot_seq_nr"))
-        bindBaseUpsertSql(stmt, persistenceId, seqNr)
-      }
-      .map(_ => Done)(ExecutionContext.parasitic)
-  }
-
-  def updateDurableStateProgress(persistenceId: String, revision: Long): Future[Done] = {
-    r2dbcExecutor
-      .updateOne(s"upsert migration progress [$persistenceId]") { connection =>
-        val stmt = connection.createStatement(baseUpsertMigrationProgressSql("state_revision"))
-        bindBaseUpsertSql(stmt, persistenceId, revision)
+            $column = excluded.$column""")
+          .bind(0, persistenceId)
+          .bind(1, value)
       }
       .map(_ => Done)(ExecutionContext.parasitic)
   }
