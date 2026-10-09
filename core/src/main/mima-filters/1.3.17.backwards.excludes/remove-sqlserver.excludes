@@ -4,3 +4,6 @@ ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.cod
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec$SqlServerTagsCodec")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec$SqlServerTimestampCodec$")
 ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.sqlserver.*")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#PostgresTagsCodec.bindTags")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTagsNull")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTags")

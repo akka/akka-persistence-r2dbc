@@ -15,7 +15,6 @@ import akka.annotation.InternalApi
 @InternalApi private[akka] sealed trait TagsCodec {
   def tagsClass: Class[_]
   def bindTags(statement: Statement, index: Int, tags: Set[String]): Statement
-  def bindTags(statement: Statement, name: String, tags: Set[String]): Statement
   def getTags(row: Row, column: String): Set[String]
 }
 
@@ -28,9 +27,6 @@ import akka.annotation.InternalApi
 
     override def bindTags(statement: Statement, index: Int, tags: Set[String]): Statement =
       statement.bind(index, tags.toArray)
-
-    override def bindTags(statement: Statement, name: String, tags: Set[String]): Statement =
-      statement.bind(name, tags.toArray)
 
     def getTags(row: Row, column: String): Set[String] = row.get(column, classOf[Array[String]]) match {
       case null      => Set.empty[String]
@@ -49,10 +45,8 @@ import akka.annotation.InternalApi
   }
 
   implicit class TagsCodecRichStatement(val statement: Statement)(implicit codec: TagsCodec) extends AnyRef {
-    def bindTagsNull(index: String): Statement = statement.bindNull(index, codec.tagsClass)
     def bindTagsNull(index: Int): Statement = statement.bindNull(index, codec.tagsClass)
     def bindTags(index: Int, tags: Set[String]): Statement = codec.bindTags(statement, index, tags)
-    def bindTags(name: String, tags: Set[String]): Statement = codec.bindTags(statement, name, tags)
   }
 
   implicit class TagsCodecRichRow(val row: Row)(implicit codec: TagsCodec) extends AnyRef {
