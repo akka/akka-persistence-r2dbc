@@ -60,8 +60,6 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def journalTable(entityType: String, slice: Int): String =
     settings.getJournalTableWithSchema(entityType, slice)
 
-  protected def sqlFalse: String = "false"
-  protected def sqlDbTimestamp = "CURRENT_TIMESTAMP"
   private val currentDbTimestampSql =
     "SELECT CURRENT_TIMESTAMP AS db_timestamp"
 
@@ -134,7 +132,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
     sqlCache.get(slice, s"selectTimestampOfEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
       SELECT db_timestamp FROM ${journalTable(entityType, slice)}
-      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
     }
 
   protected def selectLatestEventTimestampSql(entityType: String, slice: Int): String =
@@ -147,7 +145,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
            FROM ${journalTable(entityType, slice)}
            WHERE entity_type = ?
            AND slice = slice_range.slice
-           AND deleted = $sqlFalse) AS latest_timestamp
+           AND deleted = false) AS latest_timestamp
         FROM (SELECT * FROM generate_series(?, ?)) AS slice_range(slice)
       ) per_slice
       WHERE per_slice.latest_timestamp IS NOT NULL;
@@ -157,25 +155,25 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectOneEventSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectOneEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, meta_ser_id, meta_ser_manifest, meta_payload, tags
       FROM ${journalTable(entityType, slice)}
-      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
     }
 
   protected def selectOneEventWithoutPayloadSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectOneEventWithoutPayloadSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       FROM ${journalTable(entityType, slice)}
-      WHERE persistence_id = ? AND seq_nr = ? AND deleted = $sqlFalse"""
+      WHERE persistence_id = ? AND seq_nr = ? AND deleted = false"""
     }
 
   protected def selectLastEventSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectLastEventSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       FROM ${journalTable(entityType, slice)}
-      WHERE persistence_id = ? AND seq_nr <= ? AND deleted = $sqlFalse
+      WHERE persistence_id = ? AND seq_nr <= ? AND deleted = false
       ORDER BY seq_nr DESC
       LIMIT 1"""
     }
@@ -183,7 +181,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectLastEventIncludeDeletedSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectLastEventIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      SELECT entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
       FROM ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr <= ?
       ORDER BY seq_nr DESC
@@ -194,7 +192,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectEventsSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectEventsSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
+      SELECT entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags
       from ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       AND deleted = false
@@ -205,7 +203,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
   protected def selectEventsIncludeDeletedSql(entityType: String, slice: Int): String =
     sqlCache.get(slice, s"selectEventsIncludeDeletedSql-${settings.journalTableCacheKey(entityType)}") {
       sql"""
-      SELECT entity_type, seq_nr, db_timestamp, $sqlDbTimestamp AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
+      SELECT entity_type, seq_nr, db_timestamp, CURRENT_TIMESTAMP AS read_db_timestamp, event_ser_id, event_ser_manifest, event_payload, writer, adapter_manifest, meta_ser_id, meta_ser_manifest, meta_payload, tags, deleted
       from ${journalTable(entityType, slice)}
       WHERE persistence_id = ? AND seq_nr >= ? AND seq_nr <= ?
       ORDER BY seq_nr
@@ -259,7 +257,7 @@ private[r2dbc] class PostgresQueryDao(executorProvider: R2dbcExecutorProvider) e
         WHERE entity_type = ?
         AND ${sliceCondition(minSlice, maxSlice)}
         AND db_timestamp >= ? $toDbTimestampCondition
-        AND deleted = $sqlFalse
+        AND deleted = false
         ORDER BY persistence_id, db_timestamp DESC
       ) AS subquery
       ORDER BY db_timestamp DESC, persistence_id ASC
