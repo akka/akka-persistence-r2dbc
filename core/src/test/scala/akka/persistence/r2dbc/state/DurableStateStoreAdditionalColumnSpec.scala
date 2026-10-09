@@ -68,19 +68,11 @@ class DurableStateStoreAdditionalColumnSpec
 
   private def customTable(slice: Int) = settings.getDurableStateTableWithSchema("CustomEntity", slice)
 
-  private def createCustomTable(slice: Int): String = {
-    if (settings.dialectName == "sqlserver")
-      s"IF object_id('${customTable(slice)}') is null SELECT * INTO ${customTable(slice)} FROM ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
-    else
-      s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
-  }
+  private def createCustomTable(slice: Int): String =
+    s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
 
-  private def alterCustomTable(slice: Int, col: String, colType: String): String = {
-    if (settings.dialectName == "sqlserver")
-      s"IF COL_LENGTH('${customTable(slice)}', '$col') IS NULL ALTER TABLE ${customTable(slice)} ADD $col $colType"
-    else
-      s"alter table ${customTable(slice)} add if not exists $col $colType"
-  }
+  private def alterCustomTable(slice: Int, col: String, colType: String): String =
+    s"alter table ${customTable(slice)} add if not exists $col $colType"
 
   override def typedSystem: ActorSystem[_] = system
 

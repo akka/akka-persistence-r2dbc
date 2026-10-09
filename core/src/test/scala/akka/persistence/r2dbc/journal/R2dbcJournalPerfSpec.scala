@@ -6,9 +6,6 @@ package akka.persistence.r2dbc.journal
 
 import scala.concurrent.duration._
 
-import org.scalatest.exceptions.TestPendingException
-
-import akka.actor.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.adapter._
 import akka.persistence.CapabilityFlag
@@ -29,11 +26,4 @@ class R2dbcJournalPerfSpec extends JournalPerfSpec(R2dbcJournalPerfSpec.config) 
   override protected def supportsRejectingNonSerializableObjects: CapabilityFlag = CapabilityFlag.off()
 
   override def typedSystem: ActorSystem[_] = system.toTyped
-
-  override def benchActor(replyAfter: Int): ActorRef = {
-    if (settings.dialectName == "sqlserver")
-      throw new TestPendingException
-    else
-      super.benchActor(replyAfter)
-  }
 }

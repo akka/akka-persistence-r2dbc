@@ -64,13 +64,8 @@ class CurrentPersistenceIdsQuerySpec
 
   private def customTable(slice: Int) = settings.getDurableStateTableWithSchema("CustomEntity", slice)
 
-  private def createTable(slice: Int) = {
-    if (settings.dialectName == "sqlserver") {
-      s"IF object_id('${customTable(slice)}') is null SELECT * into ${customTable(slice)} from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
-    } else {
-      s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
-    }
-  }
+  private def createTable(slice: Int) =
+    s"create table if not exists ${customTable(slice)} as select * from ${settings.durableStateTableWithSchema(slice)} where persistence_id = ''"
 
   override protected def beforeAll(): Unit = {
     settings.dataPartitionSliceRanges.foreach { sliceRange =>

@@ -95,34 +95,6 @@ akka.persistence.r2dbc.connection-factory = {
 
 See @ref[Configuration](config.md) for more configuration details.
 
-#### Microsoft SQL Server
-
-@@@ warning
-
-The SQL Server dialect is marked `experimental` and not yet production ready until various [issues](https://github.com/akka/akka-persistence-r2dbc/issues?q=is%3Aopen+label%3Asqlserver+label%3Abug) with the integration of the `r2dbc-mssql` plugin have been resolved.
-
-@@@
-
-The SQL Server dependency is marked as `provided` dependencies of `akka-persistence-r2dbc` to not be pulled in for projects not using SQL Server. It must be listed explicitly as dependencies in the build configuration for projects that use it. The required artifacts is:
-
-@@dependency [Maven,sbt,Gradle] {
-group=io.r2dbc
-artifact=r2dbc-mssql_$scala.binary.version$
-version=$sqlserver.version$
-}
-
-With the dependencies added to your project, configure the connection factory to the default SQL Server block:
-
-```hocon
-akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.sqlserver}
-akka.persistence.r2dbc.connection-factory = {
-  # overrides for default values from the 'akka.persistence.r2dbc.sqlserver' config block
-  user = "myuser"
-}
-```
-
-See @ref[Configuration](config.md) for more configuration details.
-
 ## Local testing with docker
 
 The database can be run in Docker. Here's a sample docker compose file:
@@ -132,9 +104,6 @@ Postgres:
 
 Yugabyte:
 : @@snip [docker-compose.yml](/docker/docker-compose-yugabyte.yml)
-
-SQLServer:
-: @@snip [docker-compose.yml](/docker/docker-compose-sqlserver.yml)
 
 Start with:
 
@@ -146,11 +115,6 @@ docker compose -f docker/docker-compose-postgres.yml up --wait
 Yugabyte:
 : ```
 docker compose -f docker/docker-compose-yugabyte.yml up
-```
-
-SQLServer:
-: ```
-docker compose -f docker/docker-compose-sqlserver.yml up
 ```
 
 <a id="schema"></a>
@@ -167,9 +131,6 @@ Postgres JSONB:
 Yugabyte:
 : @@snip [create_tables.sql](/ddl-scripts/create_tables_yugabyte.sql)
 
-SQLServer:
-: @@snip [create_tables.sql](/ddl-scripts/create_tables_sqlserver.sql)
-
 The ddl script can be run in Docker with:
 
 Postgres:
@@ -182,11 +143,6 @@ Yugabyte:
 docker exec -i yb-tserver-n1 /home/yugabyte/bin/ysqlsh -h yb-tserver-n1 -t < ddl-scripts/create_tables_yugabyte.sql
 ```
 
-SQLServer:
-: ```
-docker exec -i sqlserver-db /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P '<YourStrong@Passw0rd>' -d master < ddl-scripts/create_tables_sqlserver.sql
-```
-
 ### Dropping the schema
 
 Postgres:
@@ -194,9 +150,6 @@ Postgres:
 
 Yugabyte:
 : @@snip [drop_tables.sql](/ddl-scripts/drop_tables_postgres.sql)
-
-SQLServer:
-: @@snip [drop_tables.sql](/ddl-scripts/drop_tables_sqlserver.sql)
 
 ### Local testing in process with H2
 

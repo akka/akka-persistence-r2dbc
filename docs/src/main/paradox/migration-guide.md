@@ -1,5 +1,14 @@
 # Migration Guide
 
+## 1.3.17 to 1.3.18
+
+### SQL Server support removed
+The SQL Server dialect has been removed, because the underlying R2DBC driver never became stable.
+
+The `akka.persistence.r2dbc.sqlserver` configuration block no longer exists. A configuration that refers to it,
+for example `akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.sqlserver}`, will fail to load,
+and `dialect = "sqlserver"` is rejected as an unknown dialect. Stay on 1.3.17 if you need SQL Server.
+
 ## 1.2.x to 1.3.0
 
 ### Durable State table schema change (optional)

@@ -185,14 +185,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       slice: Int,
       entityType: String,
       updateTags: Boolean,
-      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings],
-      currentTimestamp: String = "CURRENT_TIMESTAMP"): String = {
+      additionalBindings: immutable.IndexedSeq[EvaluatedAdditionalColumnBindings]): String = {
     def createSql = {
       val stateTable = settings.getDurableStateTableWithSchema(entityType, slice)
 
       val timestamp =
         if (settings.dbTimestampMonotonicIncreasing)
-          currentTimestamp
+          "CURRENT_TIMESTAMP"
         else
           "GREATEST(CURRENT_TIMESTAMP, " +
           s"(SELECT db_timestamp + '1 microsecond'::interval FROM $stateTable WHERE persistence_id = ? AND revision = ?))"
@@ -212,7 +211,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     }
 
     if (additionalBindings.isEmpty)
-      // timestamp param doesn't have to be part of cache key because it's just different for different dialects
       sqlCache.get(slice, s"updateStateSql-${settings.durableStateTableCacheKey(entityType)}-$updateTags")(createSql)
     else
       createSql // no cache
@@ -257,18 +255,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
   protected def allPersistenceIdsAfterSql(table: String): String = {
     // not worth caching
     sql"SELECT persistence_id from $table WHERE persistence_id > ? ORDER BY persistence_id LIMIT ?"
-  }
-
-  protected def bindPersistenceIdsForEntityTypeAfterSql(
-      stmt: Statement,
-      entityType: String,
-      likeStmtPostfix: String,
-      after: String,
-      limit: Long): Statement = {
-    stmt
-      .bind(0, entityType + likeStmtPostfix)
-      .bind(1, after)
-      .bind(2, limit)
   }
 
   protected def persistenceIdsForEntityTypeAfterSql(table: String): String = {
@@ -365,8 +351,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     else
       FutureInstantNone
   }
-
-  protected def bindTimestampNow(stmt: Statement, getAndIncIndex: () => Int): Statement = stmt
 
   override def upsertState(
       state: SerializedStateRow,
@@ -486,7 +470,7 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           val slice = persistenceExt.sliceForPersistenceId(persistenceId)
 
           def insertDeleteMarkerStatement(connection: Connection): Statement = {
-            val stmt = connection
+            connection
               .createStatement(
                 insertStateSql(slice, entityType, Vector.empty)
               ) // FIXME should the additional columns be cleared (null)? Then they must allow NULL
@@ -498,8 +482,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               .bind(5, "")
               .bindPayloadOption(6, None)
               .bindTagsNull(7)
-
-            bindTimestampNow(stmt, () => 8)
           }
 
           def recoverDataIntegrityViolation[A](f: Future[A]): Future[A] =
@@ -535,8 +517,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               .bind(idx.next(), 0)
               .bind(idx.next(), "")
               .bindPayloadOption(idx.next(), None)
-
-            bindTimestampNow(stmt, idx.next)
 
             if (settings.dbTimestampMonotonicIncreasing) {
               if (settings.durableStateAssertSingleWriter)
@@ -626,27 +606,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       }
   }
 
-  /**
-   * behindCurrentTime is not used for postgres but for sqlserver
-   */
-  protected def bindStateBySlicesRange(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      toTimestamp: Option[Instant],
-      behindCurrentTime: FiniteDuration): Statement = {
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-    toTimestamp match {
-      case Some(until) =>
-        stmt.bindTimestamp(2, until)
-        stmt.bind(3, settings.querySettings.bufferSize)
-      case None =>
-        stmt.bind(2, settings.querySettings.bufferSize)
-    }
-  }
-
   override def rowsBySlices(
       entityType: String,
       minSlice: Int,
@@ -674,7 +633,15 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
               backtracking,
               minSlice,
               maxSlice))
-        bindStateBySlicesRange(stmt, entityType, fromTimestamp, toTimestamp, behindCurrentTime)
+          .bind(0, entityType)
+          .bindTimestamp(1, fromTimestamp)
+        toTimestamp match {
+          case Some(until) =>
+            stmt.bindTimestamp(2, until)
+            stmt.bind(3, settings.querySettings.bufferSize)
+          case None =>
+            stmt.bind(2, settings.querySettings.bufferSize)
+        }
       },
       row =>
         if (backtracking) {
@@ -768,12 +735,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     Source.futureSource(result.map(Source(_))).mapMaterializedValue(_ => NotUsed)
   }
 
-  def bindAllPersistenceIdsAfterSql(stmt: Statement, after: String, limit: Long): Statement = {
-    stmt
-      .bind(0, after)
-      .bind(1, limit)
-  }
-
   private def readPersistenceIds(
       afterId: Option[String],
       limit: Long,
@@ -784,8 +745,10 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       connection =>
         afterId match {
           case Some(after) =>
-            val stmt = connection.createStatement(allPersistenceIdsAfterSql(table))
-            bindAllPersistenceIdsAfterSql(stmt, after, limit)
+            connection
+              .createStatement(allPersistenceIdsAfterSql(table))
+              .bind(0, after)
+              .bind(1, limit)
           case None =>
             connection
               .createStatement(allPersistenceIdsSql(table))
@@ -796,16 +759,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     if (log.isDebugEnabled)
       result.foreach(rows => log.debug("Read [{}] persistence ids", rows.size))
     result
-  }
-
-  protected def bindPersistenceIdsForEntityTypeSql(
-      stmt: Statement,
-      entityType: String,
-      likeStmtPostfix: String,
-      limit: Long): Statement = {
-    stmt
-      .bind(0, entityType + likeStmtPostfix)
-      .bind(1, limit)
   }
 
   override def persistenceIds(entityType: String, afterId: Option[String], limit: Long): Source[String, NotUsed] = {
@@ -820,12 +773,17 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
           connection =>
             afterId match {
               case Some(after) =>
-                val stmt = connection.createStatement(persistenceIdsForEntityTypeAfterSql(table))
-                bindPersistenceIdsForEntityTypeAfterSql(stmt, entityType, likeStmtPostfix, after, actualLimit)
+                connection
+                  .createStatement(persistenceIdsForEntityTypeAfterSql(table))
+                  .bind(0, entityType + likeStmtPostfix)
+                  .bind(1, after)
+                  .bind(2, actualLimit)
 
               case None =>
-                val stmt = connection.createStatement(persistenceIdsForEntityTypeSql(table))
-                bindPersistenceIdsForEntityTypeSql(stmt, entityType, likeStmtPostfix, actualLimit)
+                connection
+                  .createStatement(persistenceIdsForEntityTypeSql(table))
+                  .bind(0, entityType + likeStmtPostfix)
+                  .bind(1, actualLimit)
             },
           row => row.get("persistence_id", classOf[String]))
       }
@@ -849,18 +807,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
    */
   override def countBucketsMayChange: Boolean = true
 
-  protected def bindSelectBucketSql(
-      stmt: Statement,
-      entityType: String,
-      fromTimestamp: Instant,
-      toTimestamp: Instant,
-      limit: Int): Statement =
-    stmt
-      .bind(0, entityType)
-      .bindTimestamp(1, fromTimestamp)
-      .bindTimestamp(2, toTimestamp)
-      .bind(3, limit)
-
   override def countBuckets(
       entityType: String,
       minSlice: Int,
@@ -872,10 +818,13 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
 
     val executor = executorProvider.executorFor(minSlice)
     val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
-      connection => {
-        val stmt = connection.createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
-        bindSelectBucketSql(stmt, entityType, fromTimestamp, toTimestamp, limit)
-      },
+      connection =>
+        connection
+          .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))
+          .bind(0, entityType)
+          .bindTimestamp(1, fromTimestamp)
+          .bindTimestamp(2, toTimestamp)
+          .bind(3, limit),
       row => {
         val bucketStartEpochSeconds = row.get("bucket", classOf[java.lang.Long]).toLong * 10
         val count = row.get[java.lang.Long]("count", classOf[java.lang.Long]).toLong
@@ -941,8 +890,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
     bindTags(state, stmt, idx.next())
     bindAdditionalColumns(stmt, bindings, idx.next)
 
-    bindTimestampNow(stmt, idx.next)
-
     if (settings.dbTimestampMonotonicIncreasing) {
       if (settings.durableStateAssertSingleWriter)
         stmt
@@ -983,8 +930,6 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       .bindPayloadOption(idx.next(), state.payload)
     bindTags(state, stmt, idx.next())
     bindAdditionalColumns(stmt, bindings, idx.next)
-
-    bindTimestampNow(stmt, idx.next)
     stmt
   }
 

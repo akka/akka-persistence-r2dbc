@@ -23,7 +23,6 @@ import akka.persistence.r2dbc.internal.codec.PayloadCodec.RichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.TimestampCodecRichRow
 import akka.persistence.r2dbc.internal.codec.TimestampCodec.PostgresTimestampCodec
-import akka.persistence.r2dbc.internal.codec.TimestampCodec.SqlServerTimestampCodec
 import akka.persistence.typed.PersistenceId
 import akka.serialization.SerializationExtension
 
@@ -39,11 +38,7 @@ class PersistTimestampSpec
   private val serialization = SerializationExtension(system)
   case class Row(pid: String, seqNr: Long, dbTimestamp: Instant, event: String)
 
-  implicit private val codec: TimestampCodec =
-    if (settings.dialectName == "sqlserver")
-      SqlServerTimestampCodec
-    else
-      PostgresTimestampCodec
+  implicit private val codec: TimestampCodec = PostgresTimestampCodec
 
   private def selectRows(table: String, minSlice: Int): IndexedSeq[Row] = {
     r2dbcExecutor(minSlice)

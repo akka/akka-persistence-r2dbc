@@ -12,7 +12,6 @@ import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import akka.persistence.r2dbc.internal.codec.IdentityAdapter
 import akka.persistence.r2dbc.internal.codec.PayloadCodec
-import akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter
 import akka.persistence.r2dbc.internal.codec.QueryAdapter
 import akka.persistence.r2dbc.internal.codec.TagsCodec
 import akka.persistence.r2dbc.internal.codec.TimestampCodec
@@ -150,14 +149,6 @@ object R2dbcSettings {
         if (useJsonPayload("state")) PayloadCodec.JsonCodec else PayloadCodec.ByteArrayCodec
 
       connectionFactorySettings.head.dialect.name match {
-        case "sqlserver" =>
-          new CodecSettings(
-            journalPayloadCodec,
-            snapshotPayloadCodec,
-            durableStatePayloadCodec,
-            tagsCodec = new TagsCodec.SqlServerTagsCodec(connectionFactorySettings.head.config),
-            timestampCodec = TimestampCodec.SqlServerTimestampCodec,
-            queryAdapter = SqlServerQueryAdapter)
         case "h2" =>
           new CodecSettings(
             journalPayloadCodec,
@@ -396,7 +387,7 @@ final class R2dbcSettings private (
     slice / (NumberOfSlices / numberOfDataPartitions)
 
   /**
-   * One of the supported dialects 'postgres', 'yugabyte', 'sqlserver' or 'h2'
+   * One of the supported dialects 'postgres', 'yugabyte' or 'h2'
    */
   def dialectName: String = connectionFactorySettings.dialect.name
 

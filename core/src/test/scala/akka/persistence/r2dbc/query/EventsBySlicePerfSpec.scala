@@ -59,10 +59,6 @@ class EventsBySlicePerfSpec
 
   s"EventsBySlices performance" should {
 
-    if (settings.dialectName == "sqlserver") {
-      pending
-    }
-
     "retrieve from several slices" in {
       // increase these properties for "real" testing
       // also, remove LogCapturing and change logback log levels for "real" testing

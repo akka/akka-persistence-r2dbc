@@ -1,0 +1,11 @@
+# internal, SQL Server dialect removed
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.SqlServerQueryAdapter$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec$SqlServerTagsCodec")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec$SqlServerTimestampCodec$")
+ProblemFilters.exclude[MissingClassProblem]("akka.persistence.r2dbc.internal.sqlserver.*")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#PostgresTagsCodec.bindTags")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTagsNull")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TagsCodec#TagsCodecRichStatement.bindTags")
+ProblemFilters.exclude[DirectMissingMethodProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec#PostgresTimestampCodec.decode")
+ProblemFilters.exclude[IncompatibleResultTypeProblem]("akka.persistence.r2dbc.internal.codec.TimestampCodec#PostgresTimestampCodec.encode")
