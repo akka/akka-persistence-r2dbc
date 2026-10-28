@@ -6,8 +6,10 @@ package akka.persistence.r2dbc.journal
 
 import java.lang
 
+import scala.annotation.tailrec
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.util.control.NonFatal
 
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
@@ -75,13 +77,25 @@ class JournalAdditionalColumnSpec
   private def alterAddColumn(slice: Int, col: String, colType: String): String =
     s"alter table ${journalTable(slice)} add if not exists $col $colType"
 
+  // On H2 the alter can fail if a new pool connection concurrently runs the schema INIT script,
+  // re-creating event_journal while the alter has it renamed, see issue #778
+  @tailrec private def alterAddColTitle(slice: Int, attemptsLeft: Int = 3): Unit = {
+    val done =
+      try {
+        Await.result(
+          r2dbcExecutor(slice).executeDdl("beforeAll alter event_journal add col_title")(
+            _.createStatement(alterAddColumn(slice, "col_title", "varchar(256)"))),
+          20.seconds)
+        true
+      } catch {
+        case NonFatal(_) if attemptsLeft > 1 => false
+      }
+    if (!done) alterAddColTitle(slice, attemptsLeft - 1)
+  }
+
   override def beforeAll(): Unit = {
     settings.dataPartitionSliceRanges.foreach { sliceRange =>
-      val slice = sliceRange.min
-      Await.result(
-        r2dbcExecutor(slice).executeDdl("beforeAll alter event_journal add col_title")(
-          _.createStatement(alterAddColumn(slice, "col_title", "varchar(256)"))),
-        20.seconds)
+      alterAddColTitle(sliceRange.min)
     }
     super.beforeAll()
   }
