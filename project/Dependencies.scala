@@ -35,20 +35,22 @@ object Dependencies {
     // https://github.com/ongres/scram/releases
     val scramClient = "com.ongres.scram" % "scram-client" % "3.4"
 
-    // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
-    // https://github.com/reactor/reactor-netty/releases#release-v1.2.18
-    // Won't release more in the 1.2.18 line. https://projectreactor.io/support
-    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.2.18"
+    // Override for the transitive dependency from r2dbc-postgresql (which depends on Reactor Netty 1.2.x)
+    // Reactor Netty 1.3.x is built on Netty 4.2, so NettyVersion below must be a 4.2.x release.
+    // https://github.com/reactor/reactor-netty/releases
+    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.3.6"
 
-    // As Reactor Netty 1.2 won't be updated further, we explicitly update Netty 4.1.x
     // Netty requires all its modules to be on the same version. The modules below are only requested
     // transitively by reactor-netty, which lags behind netty releases), so each one has to be
     // overridden explicitly, or it stays behind on an unpatched version.
+    // Must be on the same Netty minor version that reactorNettyCore is built on (4.2.x for Reactor Netty 1.3.x).
     // Note: netty-tcnative-* is versioned separately and is deliberately not listed here.
-    val NettyVersion = "4.1.138.Final"
+    val NettyVersion = "4.2.18.Final"
     val NettyModules = Seq(
       "netty-buffer",
       "netty-codec",
+      "netty-codec-base",
+      "netty-codec-compression",
       "netty-codec-dns",
       "netty-codec-http",
       "netty-codec-socks",
