@@ -94,7 +94,7 @@ class EventsBySliceSpec
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
     val probe = createTestProbe[Done]()
-    val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+    val sinkProbe = TestSink[EventEnvelope[String]]()
   }
 
   List[QueryType](Current, Live).foreach { queryType =>
@@ -154,7 +154,7 @@ class EventsBySliceSpec
 
         val withOffset =
           doQuery(entityType, slice, slice, offset)
-            .runWith(TestSink.probe[EventEnvelope[String]](system.classicSystem))
+            .runWith(TestSink[EventEnvelope[String]]())
         withOffset.request(12)
         for (i <- 11 to 20) {
           withOffset.expectNext().event shouldBe s"e-$i"
@@ -269,13 +269,13 @@ class EventsBySliceSpec
 
         val env1 = result.expectNext()
         env1.event shouldBe "e-1"
-        val meta1 = env1.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        val meta1 = env1.metadata[ReplicatedEventMetadata].get
         meta1.originReplica.id shouldBe "dc-1"
         meta1.originSequenceNr shouldBe 1L
 
         val env2 = result.expectNext()
         env2.event shouldBe "e-2"
-        val meta2 = env2.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        val meta2 = env2.metadata[ReplicatedEventMetadata].get
         meta2.originReplica.id shouldBe "dc-1"
         meta2.originSequenceNr shouldBe 2L
 

@@ -207,7 +207,7 @@ final class R2dbcReadJournal(delegate: scaladsl.R2dbcReadJournal)
     delegate.currentPersistenceIds().asJava
 
   override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] =
-    delegate.currentPersistenceIds(afterId.asScala, limit).asJava
+    delegate.currentPersistenceIds(afterId.toScala, limit).asJava
 
   /**
    * Get the current persistence ids.

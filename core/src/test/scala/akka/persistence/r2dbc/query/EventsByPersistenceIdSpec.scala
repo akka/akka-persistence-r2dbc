@@ -169,13 +169,13 @@ class EventsByPersistenceIdSpec
 
         val env1 = sub.expectNext()
         env1.event shouldBe "e-1"
-        val meta1 = env1.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        val meta1 = env1.metadata[ReplicatedEventMetadata].get
         meta1.originReplica.id shouldBe "dc-1"
         meta1.originSequenceNr shouldBe 1L
 
         val env2 = sub.expectNext()
         env2.event shouldBe "e-2"
-        val meta2 = env2.eventMetadata.get.asInstanceOf[ReplicatedEventMetadata]
+        val meta2 = env2.metadata[ReplicatedEventMetadata].get
         meta2.originReplica.id shouldBe "dc-1"
         meta2.originSequenceNr shouldBe 2L
 

@@ -64,7 +64,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       // don't let behind-current-time be a reason for not finding events
       val startTime = InstantFactory.now().minusSeconds(90)
@@ -155,7 +155,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       // don't let behind-current-time be a reason for not finding events
       val startTime = InstantFactory.now().minusSeconds(90)
@@ -215,7 +215,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       val startTime = InstantFactory.now().minusSeconds(60 * 60 * 24)
 
@@ -271,7 +271,7 @@ class EventsBySliceBacktrackingSpec
       val pid2 = nextPid(entityType)
       val slice1 = query.sliceForPersistenceId(pid1)
       val slice2 = query.sliceForPersistenceId(pid2)
-      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       val startTime = InstantFactory.now().minusSeconds(60 * 60 * 24)
 
@@ -342,7 +342,7 @@ class EventsBySliceBacktrackingSpec
       val entityType = nextEntityType()
       val pid = nextPid(entityType)
       val slice = query.sliceForPersistenceId(pid)
-      val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       // use times in the past well outside behind-current-time
       val timeZero = InstantFactory
@@ -394,7 +394,7 @@ class EventsBySliceBacktrackingSpec
       val entityType = nextEntityType()
       val pid = nextPid(entityType)
       val slice = query.sliceForPersistenceId(pid)
-      val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       // use times in the past well outside behind-current-time
       val t1 = InstantFactory
@@ -456,7 +456,7 @@ class EventsBySliceBacktrackingSpec
       val pid1 = nextPid(entityType)
       val pid2 = nextPid(entityType)
       val slice = query.sliceForPersistenceId(pid1)
-      val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       // use times in the past well outside behind-current-time
       val t1 = InstantFactory

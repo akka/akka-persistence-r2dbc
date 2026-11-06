@@ -72,7 +72,7 @@ class EventsBySlicePubSubBacktrackingSpec
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
     val probe = createTestProbe[Done]()
-    val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+    val sinkProbe = TestSink[EventEnvelope[String]]()
   }
 
   s"EventsBySlices pub-sub with backtracking enabled" should {
