@@ -55,7 +55,7 @@ class EventsBySliceCatchupSpec
         writeEvent(persistenceExt.sliceForPersistenceId(pid), pid, seqNr, Instant.parse(t), s"e-$seqNr")
       }
 
-      val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+      val sinkProbe = TestSink[EventEnvelope[String]]()
 
       val startTimestamp = Instant.parse("2025-04-30T14:56:51.569186Z")
       val result: TestSubscriber.Probe[EventEnvelope[String]] =

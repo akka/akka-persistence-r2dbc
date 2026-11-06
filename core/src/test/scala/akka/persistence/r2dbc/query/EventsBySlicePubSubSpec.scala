@@ -85,7 +85,7 @@ class EventsBySlicePubSubSpec
     val slice = query.sliceForPersistenceId(persistenceId)
     val persister = spawn(TestActors.Persister(persistenceId))
     val probe = createTestProbe[Done]()
-    val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+    val sinkProbe = TestSink[EventEnvelope[String]]()
   }
 
   private def createEnvelope(
@@ -112,7 +112,7 @@ class EventsBySlicePubSubSpec
       env.sequenceNr,
       eventOption = None,
       env.timestamp,
-      env.eventMetadata,
+      env.internalEventMetadata,
       env.entityType,
       env.slice,
       env.filtered,

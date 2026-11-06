@@ -60,7 +60,7 @@ class EventsByPersistenceIdStartingFromSnapshotSpec
     val snapshotAckProbe = createTestProbe[Long]()
     val persister = spawn(TestActors.Persister.withSnapshotAck(persistenceId, Set.empty, snapshotAckProbe.ref))
     val probe = createTestProbe[Done]()
-    val sinkProbe = TestSink[EventEnvelope[String]]()(system.classicSystem)
+    val sinkProbe = TestSink[EventEnvelope[String]]()
   }
 
   // Snapshots of the Persister is string concatenation of the events

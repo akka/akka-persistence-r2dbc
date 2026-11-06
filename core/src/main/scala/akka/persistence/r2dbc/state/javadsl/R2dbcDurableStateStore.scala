@@ -104,12 +104,12 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
    */
   def currentPersistenceIds(entityType: String, afterId: Optional[String], limit: Long): Source[String, NotUsed] = {
     import scala.jdk.OptionConverters._
-    scalaStore.currentPersistenceIds(entityType, afterId.asScala, limit).asJava
+    scalaStore.currentPersistenceIds(entityType, afterId.toScala, limit).asJava
   }
 
   override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] = {
     import scala.jdk.OptionConverters._
-    scalaStore.currentPersistenceIds(afterId.asScala, limit).asJava
+    scalaStore.currentPersistenceIds(afterId.toScala, limit).asJava
   }
 
   def currentPersistenceIds(): Source[String, NotUsed] =

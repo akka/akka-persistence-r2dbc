@@ -88,7 +88,7 @@ class EventsBySliceStartingFromSnapshotSpec(testKitConfig: Config)
     val snapshotAckProbe = createTestProbe[Long]()
     val persister = spawn(TestActors.Persister.withSnapshotAck(persistenceId, Set.empty, snapshotAckProbe.ref))
     val probe = createTestProbe[Done]()
-    val sinkProbe = TestSink.probe[EventEnvelope[String]](system.classicSystem)
+    val sinkProbe = TestSink[EventEnvelope[String]]()
   }
 
   List[QueryType](Current, Live).foreach { queryType =>
@@ -169,7 +169,7 @@ class EventsBySliceStartingFromSnapshotSpec(testKitConfig: Config)
 
         val withOffset =
           doQuery(entityType, slice, slice, offset)
-            .runWith(TestSink.probe[EventEnvelope[String]](system.classicSystem))
+            .runWith(TestSink[EventEnvelope[String]]())
         withOffset.request(12)
         for (i <- 11 to 20) {
           // doesn't include the snapshot because that was before the offset
