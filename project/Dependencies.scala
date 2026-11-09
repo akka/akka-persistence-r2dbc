@@ -53,8 +53,6 @@ object Dependencies {
       "netty-codec-compression",
       "netty-codec-dns",
       "netty-codec-http",
-      "netty-codec-marshalling",
-      "netty-codec-protobuf",
       "netty-codec-socks",
       "netty-common",
       "netty-handler",
