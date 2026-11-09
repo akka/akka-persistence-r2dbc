@@ -7,6 +7,7 @@ import Dependencies.Compile.NettyModules
 
 GlobalScope / parallelExecution := false
 Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
+ThisBuild / makeBomIncludeDependencies := true
 
 inThisBuild(
   Seq(
