@@ -35,7 +35,9 @@ object Dependencies {
     // https://github.com/ongres/scram/releases
     val scramClient = "com.ongres.scram" % "scram-client" % "3.4"
 
-    // Override for the transitive dependency from r2dbc-postgresql (which depends on Reactor Netty 1.2.x)
+    // Override for the transitive dependency from r2dbc-postgresql. Version 1.1.2 declares Reactor Netty 1.1.22,
+    // Reactor Core 3.5.20 and Netty 4.1.x. Overriding to Reactor Netty 1.3.x (with Reactor Core 3.8.x and Netty 4.2.x)
+    // is outside the driver's tested range, but is kept to pick up Netty security fixes.
     // Reactor Netty 1.3.x is built on Netty 4.2, so NettyVersion below must be a 4.2.x release.
     // https://github.com/reactor/reactor-netty/releases
     val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.3.8"
