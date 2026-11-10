@@ -9,6 +9,21 @@ The `akka.persistence.r2dbc.sqlserver` configuration block no longer exists. A c
 for example `akka.persistence.r2dbc.connection-factory = ${akka.persistence.r2dbc.sqlserver}`, will fail to load,
 and `dialect = "sqlserver"` is rejected as an unknown dialect. Stay on 1.3.17 if you need SQL Server.
 
+### Netty 4.2 and Reactor Core 3.8
+The Postgres driver's networking stack has been updated to pick up Netty security fixes. Akka Persistence R2DBC
+now depends on Netty 4.2, Reactor Netty 1.3, Reactor Core 3.8 and reactor-pool 1.2 (previously Netty 4.1,
+Reactor Netty 1.2, Reactor Core 3.7 and reactor-pool 1.0). If your application uses any of these libraries directly, or through
+another dependency, it will be moved to these versions as well.
+
+Netty 4.2 changes the default buffer allocator from the pooled allocator to the new adaptive allocator. This can
+change the direct memory usage of your application. To keep the allocator used by Netty 4.1, start the JVM with:
+
+```
+-Dio.netty.allocator.type=pooled
+```
+
+This setting applies to all Netty usage in the JVM.
+
 ## 1.2.x to 1.3.0
 
 ### Durable State table schema change (optional)
