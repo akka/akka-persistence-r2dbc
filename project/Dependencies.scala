@@ -42,6 +42,12 @@ object Dependencies {
     // https://github.com/reactor/reactor-netty/releases
     val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.3.8"
 
+    // Override for the transitive dependency from r2dbc-pool 1.0.2 (which declares reactor-pool 1.0.8 on Reactor Core 3.5).
+    // Keep aligned with the reactor-pool version in the Reactor BOM (io.projectreactor:reactor-bom) that pairs with
+    // reactorNettyCore above (2025.0.8: reactor-core 3.8.8, reactor-netty 1.3.8, reactor-pool 1.2.8).
+    // https://github.com/reactor/reactor-pool/releases
+    val reactorPool = "io.projectreactor.addons" % "reactor-pool" % "1.2.8"
+
     // Netty requires all its modules to be on the same version. The modules below are only requested
     // transitively by reactor-netty, which lags behind netty releases), so each one has to be
     // overridden explicitly, or it stays behind on an unpatched version.
@@ -100,6 +106,7 @@ object Dependencies {
     r2dbcPostgres,
     scramClient,
     reactorNettyCore,
+    reactorPool,
     h2,
     r2dbcH2,
     TestDeps.akkaPersistenceTck,
