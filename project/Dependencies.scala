@@ -78,7 +78,7 @@ object Dependencies {
     val akkaJackson = "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion % Test
 
     // Note: out of sync with r2dc-postgresql which depends on 42.7.2
-    val postgresql = "org.postgresql" % "postgresql" % "42.7.13" % Test // BSD-2-Clause
+    val postgresql = "org.postgresql" % "postgresql" % "42.7.14" % Test // BSD-2-Clause
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.6.4" % Test // EPL 1.0 / LGPL 2.1
     val scalaTest = "org.scalatest" %% "scalatest" % "3.2.20" % Test // ApacheV2
