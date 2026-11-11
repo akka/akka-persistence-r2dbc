@@ -106,7 +106,9 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Dependencies.core,
     // explicitly overriding Netty dependencies for downstream use
     libraryDependencies ++= NettyModules.map("io.netty" % _ % NettyVersion),
-    dependencyOverrides ++= NettyModules.map("io.netty" % _ % NettyVersion),
+    // Direct dependencies on these split codecs would bypass netty-codec's exclusions of optional libraries.
+    dependencyOverrides ++= (NettyModules ++ Seq("netty-codec-marshalling", "netty-codec-protobuf"))
+      .map("io.netty" % _ % NettyVersion),
     AutomaticModuleName.settings("akka.persistence.r2dbc"))
   .enablePlugins(AutomateHeaderPlugin)
   .enablePlugins(ArtifactBomPlugin)

@@ -35,20 +35,30 @@ object Dependencies {
     // https://github.com/ongres/scram/releases
     val scramClient = "com.ongres.scram" % "scram-client" % "3.4"
 
-    // Override for the transitive dependency from r2dbc-postgresql to get Netty 4.1.135
-    // https://github.com/reactor/reactor-netty/releases#release-v1.2.18
-    // Won't release more in the 1.2.18 line. https://projectreactor.io/support
-    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.2.18"
+    // Override for the transitive dependency from r2dbc-postgresql. Version 1.1.2 declares Reactor Netty 1.1.22,
+    // Reactor Core 3.5.20 and Netty 4.1.x. Overriding to Reactor Netty 1.3.x (with Reactor Core 3.8.x and Netty 4.2.x)
+    // is outside the driver's tested range, but is kept to pick up Netty security fixes.
+    // Reactor Netty 1.3.x is built on Netty 4.2, so NettyVersion below must be a 4.2.x release.
+    // https://github.com/reactor/reactor-netty/releases
+    val reactorNettyCore = "io.projectreactor.netty" % "reactor-netty-core" % "1.3.8"
 
-    // As Reactor Netty 1.2 won't be updated further, we explicitly update Netty 4.1.x
+    // Override for the transitive dependency from r2dbc-pool 1.0.2 (which declares reactor-pool 1.0.8 on Reactor Core 3.5).
+    // Keep aligned with the reactor-pool version in the Reactor BOM (io.projectreactor:reactor-bom) that pairs with
+    // reactorNettyCore above (2025.0.8: reactor-core 3.8.8, reactor-netty 1.3.8, reactor-pool 1.2.8).
+    // https://github.com/reactor/reactor-pool/releases
+    val reactorPool = "io.projectreactor.addons" % "reactor-pool" % "1.2.8"
+
     // Netty requires all its modules to be on the same version. The modules below are only requested
     // transitively by reactor-netty, which lags behind netty releases), so each one has to be
     // overridden explicitly, or it stays behind on an unpatched version.
+    // Must be on the same Netty minor version that reactorNettyCore is built on (4.2.x for Reactor Netty 1.3.x).
     // Note: netty-tcnative-* is versioned separately and is deliberately not listed here.
-    val NettyVersion = "4.1.138.Final"
+    val NettyVersion = "4.2.20.Final"
     val NettyModules = Seq(
       "netty-buffer",
       "netty-codec",
+      "netty-codec-base",
+      "netty-codec-compression",
       "netty-codec-dns",
       "netty-codec-http",
       "netty-codec-socks",
@@ -96,6 +106,7 @@ object Dependencies {
     r2dbcPostgres,
     scramClient,
     reactorNettyCore,
+    reactorPool,
     h2,
     r2dbcH2,
     TestDeps.akkaPersistenceTck,
