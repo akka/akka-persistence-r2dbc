@@ -22,7 +22,8 @@ object NoPublish extends AutoPlugin {
 }
 
 object Publish extends AutoPlugin {
-  override def requires = plugins.JvmPlugin
+  // must be ordered after SbtPgp, otherwise its publishSigned definition replaces our override below
+  override def requires = plugins.JvmPlugin && com.jsuereth.sbtpgp.SbtPgp
   override def trigger = AllRequirements
 
   lazy val beforePublishTask = taskKey[Unit]("setup before publish")
