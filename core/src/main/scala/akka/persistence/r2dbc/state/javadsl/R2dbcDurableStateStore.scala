@@ -51,7 +51,7 @@ class R2dbcDurableStateStore[A](scalaStore: ScalaR2dbcDurableStateStore[A])(impl
     scalaStore.upsertObject(persistenceId, revision, value, tag, changeEvent).asJava
 
   @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
-  override def deleteObject(persistenceId: String): CompletionStage[Done] =
+  def deleteObject(persistenceId: String): CompletionStage[Done] =
     deleteObject(persistenceId, revision = 0)
 
   override def deleteObject(persistenceId: String, revision: Long): CompletionStage[Done] =

@@ -48,7 +48,7 @@ class PersistTimestampSpec
           val event = serialization
             .deserialize(
               row.getPayload("event_payload"),
-              row.get("event_ser_id", classOf[Integer]),
+              row.get[Integer]("event_ser_id", classOf[Integer]),
               row.get("event_ser_manifest", classOf[String]))
             .get
             .asInstanceOf[String]
