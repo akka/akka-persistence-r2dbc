@@ -256,7 +256,7 @@ class R2dbcDurableStateStore[A](system: ExtendedActorSystem, config: Config, cfg
   }
 
   @deprecated(message = "Use the deleteObject overload with revision instead.", since = "1.0.0")
-  override def deleteObject(persistenceId: String): Future[Done] =
+  def deleteObject(persistenceId: String): Future[Done] =
     deleteObject(persistenceId, revision = 0)
 
   /**
