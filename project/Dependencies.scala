@@ -26,14 +26,19 @@ object Dependencies {
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
 
     val r2dbcSpi = "io.r2dbc" % "r2dbc-spi" % "1.0.0.RELEASE" // ApacheV2
+    // Override for the transitive dependency from r2dbc-spi, which Maven would pick over the newer one from Akka
+    val reactiveStreams = "org.reactivestreams" % "reactive-streams" % "1.0.4"
     val r2dbcPool = "io.r2dbc" % "r2dbc-pool" % "1.0.2.RELEASE" // ApacheV2
 
-    // FIXME: when bumping, check if the reactor-netty-core override below is still needed
+    // FIXME: when bumping, check if the overrides below (scram, reactor, netty) are still needed
     val r2dbcPostgres = "org.postgresql" % "r2dbc-postgresql" % "1.1.2.RELEASE" // ApacheV2
 
     // Override for the transitive dependency from r2dbc-postgresql
     // https://github.com/ongres/scram/releases
-    val scramClient = "com.ongres.scram" % "scram-client" % "3.4"
+    val ScramVersion = "3.4"
+    val scramClient = "com.ongres.scram" % "scram-client" % ScramVersion
+    // r2dbc-postgresql also depends directly on scram-common, so Maven would pick its older version
+    val scramCommon = "com.ongres.scram" % "scram-common" % ScramVersion
 
     // Override for the transitive dependency from r2dbc-postgresql. Version 1.1.2 declares Reactor Netty 1.1.22,
     // Reactor Core 3.5.20 and Netty 4.1.x. Overriding to Reactor Netty 1.3.x (with Reactor Core 3.8.x and Netty 4.2.x)
@@ -47,6 +52,11 @@ object Dependencies {
     // reactorNettyCore above (2025.0.8: reactor-core 3.8.8, reactor-netty 1.3.8, reactor-pool 1.2.8).
     // https://github.com/reactor/reactor-pool/releases
     val reactorPool = "io.projectreactor.addons" % "reactor-pool" % "1.2.8"
+
+    // Override for the transitive dependency from r2dbc-pool and r2dbc-postgresql (Reactor Core 3.5).
+    // Keep aligned with the reactor-core version in the same Reactor BOM as reactorPool above.
+    // https://github.com/reactor/reactor-core/releases
+    val reactorCore = "io.projectreactor" % "reactor-core" % "3.8.8"
 
     // Netty requires all its modules to be on the same version. The modules below are only requested
     // transitively by reactor-netty, which lags behind netty releases), so each one has to be
@@ -73,6 +83,10 @@ object Dependencies {
       "netty-transport-classes-epoll",
       "netty-transport-native-epoll",
       "netty-transport-native-unix-common")
+    // Native jars that reactor-netty-core depends on with a classifier. Maven treats a classifier as a separate
+    // dependency, so the NettyModules overrides above don't apply to these.
+    val NettyClassifiedModules =
+      Seq("netty-resolver-dns-native-macos" -> "osx-x86_64", "netty-transport-native-epoll" -> "linux-x86_64")
 
     val h2 = "com.h2database" % "h2" % H2Version % Provided // EPL 1.0
     val r2dbcH2 = "io.r2dbc" % "r2dbc-h2" % R2dbcH2Version % Provided // ApacheV2
@@ -102,11 +116,14 @@ object Dependencies {
     akkaPersistence,
     akkaPersistenceQuery,
     r2dbcSpi,
+    reactiveStreams,
     r2dbcPool,
     r2dbcPostgres,
     scramClient,
+    scramCommon,
     reactorNettyCore,
     reactorPool,
+    reactorCore,
     h2,
     r2dbcH2,
     TestDeps.akkaPersistenceTck,

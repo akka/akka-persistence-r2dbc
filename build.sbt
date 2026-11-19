@@ -4,6 +4,7 @@ import sbt.Keys.parallelExecution
 import com.geirsson.CiReleasePlugin
 import Dependencies.Compile.NettyVersion
 import Dependencies.Compile.NettyModules
+import Dependencies.Compile.NettyClassifiedModules
 
 GlobalScope / parallelExecution := false
 Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
@@ -106,6 +107,9 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Dependencies.core,
     // explicitly overriding Netty dependencies for downstream use
     libraryDependencies ++= NettyModules.map("io.netty" % _ % NettyVersion),
+    libraryDependencies ++= NettyClassifiedModules.map { case (module, classifier) =>
+      ("io.netty" % module % NettyVersion).classifier(classifier)
+    },
     // Direct dependencies on these split codecs would bypass netty-codec's exclusions of optional libraries.
     dependencyOverrides ++= (NettyModules ++ Seq("netty-codec-marshalling", "netty-codec-protobuf"))
       .map("io.netty" % _ % NettyVersion),
@@ -136,6 +140,25 @@ lazy val core = (project in file("core"))
           s"Found netty modules not matching NettyVersion [$NettyVersion]: " +
           s"${lagging.map(m => s"${m.name}:${m.revision}").mkString(", ")}. " +
           "Add the module to Dependencies.NettyModules so that it is overridden.")
+
+      // Maven doesn't apply the NettyModules overrides to jars with a classifier, so each needs its own dependency.
+      // Uses the per-configuration report, allModuleReports leaves out the classified artifacts.
+      val unlistedClassified = update.value
+        .configuration(Compile.toConfigRef)
+        .toVector
+        .flatMap(_.modules)
+        .filterNot(_.evicted)
+        .filter(_.module.organization == "io.netty")
+        .flatMap(report => report.artifacts.flatMap(_._1.classifier.map(report.module.name -> _)))
+        .filterNot(NettyClassifiedModules.contains)
+        .distinct
+        .sorted
+
+      if (unlistedClassified.nonEmpty)
+        throw new MessageOnlyException(
+          "Found netty modules with a classifier not listed in Dependencies.NettyClassifiedModules: " +
+          s"${unlistedClassified.map { case (m, c) => s"$m:$c" }.mkString(", ")}. " +
+          "Add them so that Maven users get them on NettyVersion.")
 
       cp
     })
