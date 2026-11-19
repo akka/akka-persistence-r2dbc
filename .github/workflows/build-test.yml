@@ -90,6 +90,59 @@ jobs:
           cp .jvmopts-ci .jvmopts
           sbt test
 
+  test-maven:
+    name: Run test with Maven
+    runs-on: Akka-Default
+    if: github.repository == 'akka/akka-persistence-r2dbc'
+    steps:
+      - name: Akka resolver setup
+        uses: akka/github-actions-scripts/setup_global_resolver@main
+        with:
+          maven-mirror-control: "NO_MIRROR"
+
+      - name: Checkout
+        # https://github.com/actions/checkout/releases
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Checkout GitHub merge
+        if: github.event.pull_request
+        run: |-
+          git fetch origin pull/${{ github.event.pull_request.number }}/merge:scratch
+          git checkout scratch
+
+      - name: Cache Coursier cache
+        # https://github.com/coursier/cache-action/releases
+        uses: coursier/cache-action@v8.1.1
+
+      - name: Set up JDK 11
+        # https://github.com/coursier/setup-action/releases
+        uses: coursier/setup-action@v3.0.0
+        with:
+          jvm: temurin:1.11.0
+
+      - name: Gather version
+        # keep the working tree clean (no .jvmopts-ci copy), or the version changes between sbt runs
+        run: |-
+          sbt --no-colors "print core/version" | tail -n 1 | tr -d '\n' > ~/.version
+          echo [$(cat ~/.version)]
+
+      - name: Publish artifacts locally
+        run: |-
+          sbt core/publishM2
+
+      - name: Start DB
+        run: |-
+          docker compose -f docker/docker-compose-postgres.yml up --wait
+          docker exec -i postgres-db psql -U postgres -t < ddl-scripts/create_tables_postgres.sql
+
+      - name: Maven test
+        # checks the dependencies that Maven resolves, and runs on them
+        run: |-
+          cd maven-tests
+          mvn -B -nsu -ntp test -Dakka-persistence-r2dbc.version=`cat ~/.version`
+
   test-postgres-jsonb:
     name: Run test with Postgres and JSONB payload
     runs-on: Akka-Default
