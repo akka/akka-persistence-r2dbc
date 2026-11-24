@@ -579,6 +579,7 @@ final class QuerySettings(config: Config) {
     config.getDuration("start-from-snapshot.batching.batch-linger").toScala
   val cacheLatestEventTimestamp: Option[FiniteDuration] = config.optDuration("cache-latest-event-timestamp")
   val estimateTimeRange: Boolean = config.getBoolean("estimate-time-range")
+  val estimateTimeRangeTimeout: Option[FiniteDuration] = config.optDuration("estimate-time-range-timeout")
 }
 
 /**
@@ -602,6 +603,7 @@ final class ConnectionPoolSettings(config: Config) {
   val validationTimeout: Option[FiniteDuration] = config.optDuration("validation-timeout")
 
   val closeCallsExceeding: Option[FiniteDuration] = config.optDuration("close-calls-exceeding")
+  val closeQueriesExceeding: Option[FiniteDuration] = config.optDuration("close-queries-exceeding")
 }
 
 /**

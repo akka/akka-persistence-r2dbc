@@ -817,7 +817,9 @@ private[r2dbc] class PostgresDurableStateDao(executorProvider: R2dbcExecutorProv
       correlationId: Option[String]): Future[Seq[Bucket]] = {
 
     val executor = executorProvider.executorFor(minSlice)
-    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]")(
+    // the first count of a query from the start can take long, see estimate-time-range-timeout
+    val timeout = settings.querySettings.estimateTimeRangeTimeout
+    val result = executor.select(s"select bucket counts [$minSlice - $maxSlice]", timeout)(
       connection =>
         connection
           .createStatement(selectBucketsSql(entityType, minSlice, maxSlice))

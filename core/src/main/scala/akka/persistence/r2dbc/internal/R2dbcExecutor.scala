@@ -110,7 +110,8 @@ class R2dbcExecutor(
     val connectionFactory: ConnectionFactory,
     log: Logger,
     logDbCallsExceeding: FiniteDuration,
-    closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
+    closeCallsExceeding: Option[FiniteDuration],
+    closeQueriesExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) {
 
   import R2dbcExecutor._
 
@@ -118,11 +119,25 @@ class R2dbcExecutor(
   private val logDbCallsExceedingEnabled = logDbCallsExceedingMicros >= 0
 
   // for backwards compatibility, closeCallsExceeding should be defined
-  @deprecated("Use constructor with closeCallsExceeding", "1.2.0")
+  @deprecated("Use constructor with closeCallsExceeding and closeQueriesExceeding", "1.2.0")
   def this(connectionFactory: ConnectionFactory, log: Logger, logDbCallsExceeding: FiniteDuration)(implicit
       ec: ExecutionContext,
       system: ActorSystem[_]) =
-    this(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding = Some(20.seconds))
+    this(
+      connectionFactory,
+      log,
+      logDbCallsExceeding,
+      closeCallsExceeding = Some(20.seconds),
+      closeQueriesExceeding = Some(10.minutes))
+
+  // for backwards compatibility, closeQueriesExceeding should be defined
+  @deprecated("Use constructor with closeQueriesExceeding", "1.4.2")
+  def this(
+      connectionFactory: ConnectionFactory,
+      log: Logger,
+      logDbCallsExceeding: FiniteDuration,
+      closeCallsExceeding: Option[FiniteDuration])(implicit ec: ExecutionContext, system: ActorSystem[_]) =
+    this(connectionFactory, log, logDbCallsExceeding, closeCallsExceeding, closeQueriesExceeding = Some(10.minutes))
 
   private def nanoTime(): Long =
     if (logDbCallsExceedingEnabled) System.nanoTime() else 0L
@@ -235,11 +250,19 @@ class R2dbcExecutor(
   }
 
   def select[A](
-      logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
+      logPrefix: String)(statement: Connection => Statement, mapRow: Row => A): Future[immutable.IndexedSeq[A]] =
+    select(logPrefix, closeQueriesExceeding)(statement, mapRow)
+
+  /**
+   * Like `select`, with the time limit `timeout` instead of `closeQueriesExceeding`. `None` means no time limit.
+   */
+  def select[A](logPrefix: String, timeout: Option[FiniteDuration])(
+      statement: Connection => Statement,
+      mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection))
+      val timeoutTask = timeout.map { t =>
+        system.scheduler.scheduleOnce(t, () => closeAfterTimeout(logPrefix, connection, t))
       }
 
       val mappedRows =
@@ -282,7 +305,7 @@ class R2dbcExecutor(
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
       val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection))
+        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection, timeout))
       }
 
       val begin = connection.beginTransaction().asFutureDone()
@@ -337,7 +360,7 @@ class R2dbcExecutor(
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
       val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection))
+        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection, timeout))
       }
 
       val autoCommit = connection.setAutoCommit(true).asFutureDone()
@@ -396,11 +419,8 @@ class R2dbcExecutor(
     } catch ignoreConnectionClosedException
   }
 
-  private def closeAfterTimeout(logPrefix: String, connection: Connection): Unit = {
-    log.warn(
-      "{} - Timeout after [{}], will try to close connection",
-      logPrefix,
-      closeCallsExceeding.map(_.toCoarsest).getOrElse(""))
+  private def closeAfterTimeout(logPrefix: String, connection: Connection, timeout: FiniteDuration): Unit = {
+    log.warn("{} - Timeout after [{}], will try to close connection", logPrefix, timeout.toCoarsest)
 
     val done = connection match {
       case wrapped: Wrapped[Connection] @unchecked => wrapped.unwrap().close.asFutureDone()
@@ -444,7 +464,8 @@ class R2dbcExecutor(
           connectionFactory,
           log,
           settings.logDbCallsExceeding,
-          settings.connectionFactorySettings.poolSettings.closeCallsExceeding)(ec, system)
+          settings.connectionFactorySettings.poolSettings.closeCallsExceeding,
+          settings.connectionFactorySettings.poolSettings.closeQueriesExceeding)(ec, system)
         // it's just a cache so no need for guarding concurrent updates or visibility
         cache = cache.updated(slice, executor)
         executor

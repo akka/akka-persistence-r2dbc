@@ -5,6 +5,7 @@
 package akka.persistence.r2dbc.internal
 
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,6 +20,7 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
 import akka.persistence.r2dbc.ConnectionPoolSettings
+import akka.persistence.r2dbc.R2dbcSettings
 import akka.persistence.r2dbc.TestConfig
 import akka.persistence.r2dbc.internal.R2dbcExecutor.PublisherOps
 import com.typesafe.config.ConfigFactory
@@ -195,6 +197,10 @@ class ConnectionFailureSpec
     ConnectionFactoryProvider(system).connectionFactorySettingsFor("akka.persistence.r2dbc.connection-factory")
 
   private val closeCallsExceeding = 2.seconds
+  // longer than closeCallsExceeding, so that a test can tell which limit ended a call
+  private val closeQueriesExceeding = 3.seconds
+  // longer than closeQueriesExceeding, so that a test can tell which limit ended a bucket count
+  private val estimateTimeRangeTimeout = 4.seconds
 
   private final class Setup(poolConfig: String) {
     val poolSettings = new ConnectionPoolSettings(
@@ -205,6 +211,7 @@ class ConnectionFailureSpec
           acquire-timeout = 2 seconds
           acquire-retry = 1
           close-calls-exceeding = ${closeCallsExceeding.toMillis} ms
+          close-queries-exceeding = ${closeQueriesExceeding.toMillis} ms
           $poolConfig
           """)
         .withFallback(connectionFactorySettings.config))
@@ -218,11 +225,30 @@ class ConnectionFailureSpec
     val pool: ConnectionPool =
       ConnectionFactoryProvider(system).createConnectionPoolFactory(poolSettings, connectionFactory)
 
+    private val log = LoggerFactory.getLogger(classOf[ConnectionFailureSpec])
+
     val executor = new R2dbcExecutor(
       pool,
-      LoggerFactory.getLogger(classOf[ConnectionFailureSpec]),
+      log,
       logDbCallsExceeding = 5.seconds,
-      poolSettings.closeCallsExceeding)(system.executionContext, system)
+      poolSettings.closeCallsExceeding,
+      poolSettings.closeQueriesExceeding)(system.executionContext, system)
+
+    // the DAOs of the dialect over this executor
+    val executorProvider: R2dbcExecutorProvider = {
+      val settings = R2dbcSettings(
+        ConfigFactory
+          .parseString(s"query.estimate-time-range-timeout = ${estimateTimeRangeTimeout.toMillis} ms")
+          .withFallback(system.settings.config.getConfig("akka.persistence.r2dbc")))
+      new R2dbcExecutorProvider(
+        system,
+        system.executionContext,
+        settings,
+        "akka.persistence.r2dbc.connection-factory",
+        log) {
+        override def executorFor(slice: Int): R2dbcExecutor = executor
+      }
+    }
 
     def selectOne(): Future[Option[Integer]] =
       executor.selectOne("test")(_.createStatement("select 1"), _.get(0, classOf[Integer]))
@@ -289,11 +315,31 @@ class ConnectionFailureSpec
 
       val startTime = System.nanoTime()
       val result = setup.selectOne()
-      // after about close-calls-exceeding, not after the patience of the test
-      Await.result(result.failed, closeCallsExceeding + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
-      (System.nanoTime() - startTime).nanos should be >= closeCallsExceeding
+      // after about close-queries-exceeding, not after the patience of the test
+      Await.result(result.failed, closeQueriesExceeding + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
+      (System.nanoTime() - startTime).nanos should be >= closeQueriesExceeding
 
       setup.selectOne().futureValue shouldBe Some(1)
+    }
+
+    "limit the bucket count of events with estimate-time-range-timeout" in withPool() { setup =>
+      setup.connectionFactory.plan(QueryHangs)
+      val dao = connectionFactorySettings.dialect.createQueryDao(setup.executorProvider)
+
+      val startTime = System.nanoTime()
+      val result = dao.countBuckets("TestEntity", 0, 1023, Instant.EPOCH, Instant.now(), 10, None)
+      Await.result(result.failed, estimateTimeRangeTimeout + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
+      (System.nanoTime() - startTime).nanos should be >= estimateTimeRangeTimeout
+    }
+
+    "limit the bucket count of durable state with estimate-time-range-timeout" in withPool() { setup =>
+      setup.connectionFactory.plan(QueryHangs)
+      val dao = connectionFactorySettings.dialect.createDurableStateDao(setup.executorProvider)
+
+      val startTime = System.nanoTime()
+      val result = dao.countBuckets("TestEntity", 0, 1023, Instant.EPOCH, Instant.now(), 10, None)
+      Await.result(result.failed, estimateTimeRangeTimeout + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
+      (System.nanoTime() - startTime).nanos should be >= estimateTimeRangeTimeout
     }
 
     "fail a connection creation that does not complete" in withPool("create-connection-timeout = 1 second") { setup =>

@@ -113,6 +113,9 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
       val poolSettings = settings.connectionFactorySettings.poolSettings
       poolSettings.createConnectionTimeout shouldBe Some(10.seconds)
       poolSettings.validationTimeout shouldBe Some(2.seconds)
+      poolSettings.closeCallsExceeding shouldBe Some(20.seconds)
+      poolSettings.closeQueriesExceeding shouldBe Some(10.minutes)
+      settings.querySettings.estimateTimeRangeTimeout shouldBe Some(10.minutes)
       postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe true
     }
 
@@ -122,14 +125,18 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
           akka.persistence.r2dbc.connection-factory {
             create-connection-timeout = off
             validation-timeout = off
+            close-queries-exceeding = off
             tcp-keep-alive = off
           }
+          akka.persistence.r2dbc.query.estimate-time-range-timeout = off
           """)
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       val poolSettings = settings.connectionFactorySettings.poolSettings
       poolSettings.createConnectionTimeout shouldBe None
       poolSettings.validationTimeout shouldBe None
+      poolSettings.closeQueriesExceeding shouldBe None
+      settings.querySettings.estimateTimeRangeTimeout shouldBe None
       postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe false
     }
   }

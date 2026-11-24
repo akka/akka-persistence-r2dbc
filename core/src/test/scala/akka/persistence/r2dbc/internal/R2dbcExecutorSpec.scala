@@ -29,6 +29,7 @@ object R2dbcExecutorSpec {
       initial-size = 1
       max-size = 1
       close-calls-exceeding = 3 seconds
+      close-queries-exceeding = 3 seconds
     }
     """)
     .withFallback(TestConfig.config)
@@ -137,7 +138,7 @@ class R2dbcExecutorSpec
         },
         _ => "slept")
 
-      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
+      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeQueriesExceeding.get.toMillis)
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
