@@ -42,6 +42,24 @@ object ConnectionFactoryProvider extends ExtensionId[ConnectionFactoryProvider] 
         connectionFactoryConfig: Config): ConnectionFactoryOptions
   }
 
+  /**
+   * INTERNAL API
+   */
+  @InternalApi
+  private[r2dbc] def evictionInterval(settings: ConnectionPoolSettings): JDuration = {
+    import settings.maxIdleTime
+    import settings.maxLifeTime
+    if (maxIdleTime <= Duration.Zero && maxLifeTime <= Duration.Zero) {
+      JDuration.ZERO
+    } else if (maxIdleTime <= Duration.Zero) {
+      JDuration.ofMillis((maxLifeTime / 4).toMillis)
+    } else if (maxLifeTime <= Duration.Zero) {
+      JDuration.ofMillis((maxIdleTime / 4).toMillis)
+    } else {
+      JDuration.ofMillis((maxIdleTime.min(maxLifeTime) / 4).toMillis)
+    }
+  }
+
   private object DefaultConnectionFactoryOptionsProvider extends ConnectionFactoryOptionsProvider {
     override def buildOptions(
         builder: ConnectionFactoryOptions.Builder,
@@ -125,20 +143,6 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   private[r2dbc] def createConnectionPoolFactory(
       settings: ConnectionPoolSettings,
       connectionFactory: ConnectionFactory): ConnectionPool = {
-    val evictionInterval = {
-      import settings.maxIdleTime
-      import settings.maxLifeTime
-      if (maxIdleTime <= Duration.Zero && maxLifeTime <= Duration.Zero) {
-        JDuration.ZERO
-      } else if (maxIdleTime <= Duration.Zero) {
-        JDuration.ofMillis((maxLifeTime / 4).toMillis)
-      } else if (maxLifeTime <= Duration.Zero) {
-        JDuration.ofMillis((maxIdleTime / 4).toMillis)
-      } else {
-        JDuration.ofMillis((maxIdleTime.min(maxIdleTime) / 4).toMillis)
-      }
-    }
-
     val poolConfiguration = ConnectionPoolConfiguration
       .builder(connectionFactory)
       .initialSize(settings.initialSize)
@@ -147,7 +151,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
       .maxLifeTime(JDuration.ofMillis(settings.maxLifeTime.toMillis))
-      .backgroundEvictionInterval(evictionInterval)
+      .backgroundEvictionInterval(ConnectionFactoryProvider.evictionInterval(settings))
 
     // r2dbc-pool closes a connection that is created after this timeout
     settings.createConnectionTimeout.foreach { timeout =>
