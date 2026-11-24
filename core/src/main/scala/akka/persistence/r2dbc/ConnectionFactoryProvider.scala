@@ -141,13 +141,16 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .builder(connectionFactory)
       .initialSize(settings.initialSize)
       .maxSize(settings.maxSize)
-      // Don't use maxCreateConnectionTime because it can cause connection leaks, see issue #182
-      // ConnectionFactoryOptions.CONNECT_TIMEOUT is used instead.
       .maxAcquireTime(JDuration.ofMillis(settings.acquireTimeout.toMillis))
       .acquireRetry(settings.acquireRetry)
       .maxIdleTime(JDuration.ofMillis(settings.maxIdleTime.toMillis))
       .maxLifeTime(JDuration.ofMillis(settings.maxLifeTime.toMillis))
       .backgroundEvictionInterval(evictionInterval)
+
+    // r2dbc-pool closes a connection that is created after this timeout
+    settings.createConnectionTimeout.foreach { timeout =>
+      poolConfiguration.maxCreateConnectionTime(JDuration.ofMillis(timeout.toMillis))
+    }
 
     if (settings.validationQuery.nonEmpty)
       poolConfiguration.validationQuery(settings.validationQuery)

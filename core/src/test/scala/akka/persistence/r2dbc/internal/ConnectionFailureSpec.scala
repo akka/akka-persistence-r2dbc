@@ -43,6 +43,9 @@ object ConnectionFailureSpec {
 
   object Fault {
 
+    /** `create()` never emits and never completes. */
+    case object CreateHangs extends Fault
+
     /** `beginTransaction()` fails at once. */
     case object BeginFails extends Fault
 
@@ -62,8 +65,12 @@ object ConnectionFailureSpec {
     // the pool subscribes to the same publisher for each new connection
     override def create(): Publisher[Connection] =
       Mono.defer { () =>
-        val fault = Option(plannedFaults.poll())
-        Mono.from(delegate.create()).map[Connection](connection => new FaultyConnection(connection, fault))
+        Option(plannedFaults.poll()) match {
+          case Some(Fault.CreateHangs) =>
+            Mono.never[Connection]()
+          case fault =>
+            Mono.from(delegate.create()).map[Connection](connection => new FaultyConnection(connection, fault))
+        }
       }
 
     override def getMetadata: ConnectionFactoryMetadata = delegate.getMetadata
@@ -176,6 +183,9 @@ class ConnectionFailureSpec
       logDbCallsExceeding = 5.seconds,
       poolSettings.closeCallsExceeding)(system.executionContext, system)
 
+    def selectOne(): Future[Option[Integer]] =
+      executor.selectOne("test")(_.createStatement("select 1"), _.get(0, classOf[Integer]))
+
     def selectOneInTransaction(): Future[Option[Integer]] =
       executor.withConnection("test") { connection =>
         R2dbcExecutor.selectOneInTx(connection.createStatement("select 1"), _.get(0, classOf[Integer]))(
@@ -216,6 +226,13 @@ class ConnectionFailureSpec
       (System.nanoTime() - startTime).nanos should be >= closeCallsExceeding
 
       setup.selectOneInTransaction().futureValue shouldBe Some(1)
+    }
+
+    "fail a connection creation that does not complete" in withPool("create-connection-timeout = 1 second") { setup =>
+      setup.connectionFactory.plan(CreateHangs)
+
+      // through the acquire retry
+      setup.selectOne().futureValue shouldBe Some(1)
     }
   }
 }

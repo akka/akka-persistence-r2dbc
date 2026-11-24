@@ -596,6 +596,8 @@ final class ConnectionPoolSettings(config: Config) {
   val acquireTimeout: FiniteDuration = config.getDuration("acquire-timeout").toScala
   val acquireRetry: Int = config.getInt("acquire-retry")
 
+  val createConnectionTimeout: Option[FiniteDuration] = config.optDuration("create-connection-timeout")
+
   val validationQuery: String = config.getString("validation-query")
 
   val closeCallsExceeding: Option[FiniteDuration] = config.optDuration("close-calls-exceeding")
