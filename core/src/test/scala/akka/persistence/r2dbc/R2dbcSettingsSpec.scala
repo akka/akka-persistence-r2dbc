@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc
 
+import scala.concurrent.duration._
+
 import com.typesafe.config.ConfigException
 
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect.PostgresConnectionFactorySettings
@@ -103,6 +105,32 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       settings.connectionFactorySettings(0).optionsProvider shouldBe "my.OptProvider"
+    }
+
+    "have connection timeouts and TCP keepalive by default" in {
+      val config = ConfigFactory.load("application-postgres.conf")
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      val poolSettings = settings.connectionFactorySettings.poolSettings
+      poolSettings.createConnectionTimeout shouldBe Some(10.seconds)
+      poolSettings.validationTimeout shouldBe Some(2.seconds)
+      postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe true
+    }
+
+    "support off for connection timeouts and TCP keepalive" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.connection-factory {
+            create-connection-timeout = off
+            validation-timeout = off
+            tcp-keep-alive = off
+          }
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      val poolSettings = settings.connectionFactorySettings.poolSettings
+      poolSettings.createConnectionTimeout shouldBe None
+      poolSettings.validationTimeout shouldBe None
+      postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe false
     }
   }
 
