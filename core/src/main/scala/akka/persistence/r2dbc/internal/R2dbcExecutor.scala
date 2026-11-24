@@ -272,11 +272,23 @@ class R2dbcExecutor(
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      connection.beginTransaction().asFutureDone().flatMap { _ =>
-        val timeoutTask = closeCallsExceeding.map { timeout =>
-          system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(connection))
-        }
+      val timeoutTask = closeCallsExceeding.map { timeout =>
+        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection))
+      }
 
+      val begin = connection.beginTransaction().asFutureDone()
+
+      begin.failed.foreach { exc =>
+        if (log.isDebugEnabled())
+          log.debug("{} - Begin transaction failed: {}", logPrefix, exc.toString)
+        // the transaction was not started, so there is nothing to roll back
+        val done =
+          try connection.close().asFutureDone()
+          catch ignoreConnectionClosedException
+        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+      }
+
+      begin.flatMap { _ =>
         val result =
           try {
             fun(connection)
@@ -316,10 +328,21 @@ class R2dbcExecutor(
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
       val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(connection))
+        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection))
       }
 
-      connection.setAutoCommit(true).asFutureDone().flatMap { _ =>
+      val autoCommit = connection.setAutoCommit(true).asFutureDone()
+
+      autoCommit.failed.foreach { exc =>
+        if (log.isDebugEnabled())
+          log.debug("{} - Set auto-commit failed: {}", logPrefix, exc.toString)
+        val done =
+          try connection.close().asFutureDone()
+          catch ignoreConnectionClosedException
+        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+      }
+
+      autoCommit.flatMap { _ =>
         val result =
           try {
             fun(connection)
@@ -364,8 +387,11 @@ class R2dbcExecutor(
     } catch ignoreConnectionClosedException
   }
 
-  private def closeAfterTimeout(connection: Connection): Unit = {
-    log.warn("Timeout after [{}], will try to close connection", closeCallsExceeding.map(_.toCoarsest).getOrElse(""))
+  private def closeAfterTimeout(logPrefix: String, connection: Connection): Unit = {
+    log.warn(
+      "{} - Timeout after [{}], will try to close connection",
+      logPrefix,
+      closeCallsExceeding.map(_.toCoarsest).getOrElse(""))
 
     val done = connection match {
       case wrapped: Wrapped[Connection] @unchecked => wrapped.unwrap().close.asFutureDone()
@@ -374,9 +400,9 @@ class R2dbcExecutor(
 
     done.onComplete {
       case Success(_) =>
-        log.debug("Connection closed after timeout")
+        log.debug("{} - Connection closed after timeout", logPrefix)
       case Failure(exc) =>
-        log.debug("Tried to close connection after timeout, but {}", exc.toString)
+        log.debug("{} - Tried to close connection after timeout, but {}", logPrefix, exc.toString)
     }
   }
 

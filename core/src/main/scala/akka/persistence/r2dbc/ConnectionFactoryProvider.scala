@@ -116,7 +116,11 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   def connectionPoolSettingsFor(configLocation: String): ConnectionPoolSettings =
     connectionFactorySettingsFor(configLocation).poolSettings
 
-  private def createConnectionPoolFactory(
+  /**
+   * INTERNAL API
+   */
+  @InternalApi
+  private[r2dbc] def createConnectionPoolFactory(
       settings: ConnectionPoolSettings,
       connectionFactory: ConnectionFactory): ConnectionPool = {
     val evictionInterval = {

@@ -1,0 +1,221 @@
+/*
+ * Copyright (C) 2022 - 2025 Lightbend Inc. <https://akka.io>
+ */
+
+package akka.persistence.r2dbc.internal
+
+import java.time.Duration
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+
+import scala.concurrent.Await
+import scala.concurrent.Future
+import scala.concurrent.duration._
+
+import akka.actor.testkit.typed.scaladsl.LogCapturing
+import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import akka.persistence.r2dbc.ConnectionFactoryProvider
+import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
+import akka.persistence.r2dbc.ConnectionPoolSettings
+import akka.persistence.r2dbc.TestConfig
+import akka.persistence.r2dbc.internal.R2dbcExecutor.PublisherOps
+import com.typesafe.config.ConfigFactory
+import io.r2dbc.pool.ConnectionPool
+import io.r2dbc.spi.Batch
+import io.r2dbc.spi.Connection
+import io.r2dbc.spi.ConnectionFactory
+import io.r2dbc.spi.ConnectionFactoryMetadata
+import io.r2dbc.spi.ConnectionMetadata
+import io.r2dbc.spi.IsolationLevel
+import io.r2dbc.spi.R2dbcNonTransientResourceException
+import io.r2dbc.spi.Statement
+import io.r2dbc.spi.TransactionDefinition
+import io.r2dbc.spi.ValidationDepth
+import org.reactivestreams.Publisher
+import org.scalatest.wordspec.AnyWordSpecLike
+import org.slf4j.LoggerFactory
+import reactor.core.publisher.Mono
+import reactor.core.publisher.MonoSink
+
+object ConnectionFailureSpec {
+
+  sealed trait Fault
+
+  object Fault {
+
+    /** `beginTransaction()` fails at once. */
+    case object BeginFails extends Fault
+
+    /** `beginTransaction()` does not complete until the connection is closed. */
+    case object BeginHangs extends Fault
+  }
+
+  /**
+   * Hands out connections in the order of the planned faults. A connection with no planned fault behaves normally.
+   */
+  final class FaultyConnectionFactory(delegate: ConnectionFactory) extends ConnectionFactory {
+    private val plannedFaults = new ConcurrentLinkedQueue[Fault]
+
+    def plan(faults: Fault*): Unit =
+      faults.foreach(plannedFaults.add)
+
+    // the pool subscribes to the same publisher for each new connection
+    override def create(): Publisher[Connection] =
+      Mono.defer { () =>
+        val fault = Option(plannedFaults.poll())
+        Mono.from(delegate.create()).map[Connection](connection => new FaultyConnection(connection, fault))
+      }
+
+    override def getMetadata: ConnectionFactoryMetadata = delegate.getMetadata
+  }
+
+  /**
+   * A fault applies once, to the first operation of its kind, because the pool can hand out the same connection again.
+   * It does not implement `Wrapped`, so that the executor closes this connection when a call times out.
+   */
+  final class FaultyConnection(delegate: Connection, fault: Option[Fault]) extends Connection {
+    import Fault._
+
+    private val faultApplied = new AtomicBoolean(false)
+    private val closed = new AtomicBoolean(false)
+    private val hungOperations = new ConcurrentLinkedQueue[MonoSink[Void]]
+
+    private def applyFault(f: Fault): Boolean =
+      fault.contains(f) && faultApplied.compareAndSet(false, true)
+
+    private def connectionClosedException() =
+      new R2dbcNonTransientResourceException("Connection closed")
+
+    private def hang(): Mono[Void] =
+      Mono.create[Void] { sink =>
+        hungOperations.add(sink)
+        sink.onDispose(() => hungOperations.remove(sink))
+        if (closed.get() && hungOperations.remove(sink))
+          sink.error(connectionClosedException())
+      }
+
+    override def beginTransaction(): Publisher[Void] =
+      if (applyFault(BeginFails))
+        Mono.error(new R2dbcNonTransientResourceException("Injected fault: begin transaction failed"))
+      else if (applyFault(BeginHangs))
+        hang()
+      else
+        delegate.beginTransaction()
+
+    override def beginTransaction(definition: TransactionDefinition): Publisher[Void] =
+      delegate.beginTransaction(definition)
+
+    // fails the hung operations, as the driver fails pending requests when its channel closes
+    override def close(): Publisher[Void] =
+      Mono.defer { () =>
+        closed.set(true)
+        var sink = hungOperations.poll()
+        while (sink != null) {
+          sink.error(connectionClosedException())
+          sink = hungOperations.poll()
+        }
+        Mono.from(delegate.close())
+      }
+
+    override def commitTransaction(): Publisher[Void] = delegate.commitTransaction()
+    override def createBatch(): Batch = delegate.createBatch()
+    override def createSavepoint(name: String): Publisher[Void] = delegate.createSavepoint(name)
+    override def createStatement(sql: String): Statement = delegate.createStatement(sql)
+    override def isAutoCommit: Boolean = delegate.isAutoCommit
+    override def getMetadata: ConnectionMetadata = delegate.getMetadata
+    override def getTransactionIsolationLevel: IsolationLevel = delegate.getTransactionIsolationLevel
+    override def releaseSavepoint(name: String): Publisher[Void] = delegate.releaseSavepoint(name)
+    override def rollbackTransaction(): Publisher[Void] = delegate.rollbackTransaction()
+    override def rollbackTransactionToSavepoint(name: String): Publisher[Void] =
+      delegate.rollbackTransactionToSavepoint(name)
+    override def setAutoCommit(autoCommit: Boolean): Publisher[Void] = delegate.setAutoCommit(autoCommit)
+    override def setLockWaitTimeout(timeout: Duration): Publisher[Void] = delegate.setLockWaitTimeout(timeout)
+    override def setStatementTimeout(timeout: Duration): Publisher[Void] = delegate.setStatementTimeout(timeout)
+    override def setTransactionIsolationLevel(isolationLevel: IsolationLevel): Publisher[Void] =
+      delegate.setTransactionIsolationLevel(isolationLevel)
+    override def validate(depth: ValidationDepth): Publisher[java.lang.Boolean] = delegate.validate(depth)
+  }
+}
+
+class ConnectionFailureSpec
+    extends ScalaTestWithActorTestKit(TestConfig.config)
+    with AnyWordSpecLike
+    with LogCapturing {
+  import ConnectionFailureSpec._
+  import ConnectionFailureSpec.Fault._
+
+  private val connectionFactorySettings =
+    ConnectionFactoryProvider(system).connectionFactorySettingsFor("akka.persistence.r2dbc.connection-factory")
+
+  private val closeCallsExceeding = 2.seconds
+
+  private final class Setup(poolConfig: String) {
+    val poolSettings = new ConnectionPoolSettings(
+      ConfigFactory
+        .parseString(s"""
+          initial-size = 0
+          max-size = 1
+          acquire-timeout = 2 seconds
+          acquire-retry = 1
+          close-calls-exceeding = ${closeCallsExceeding.toMillis} ms
+          $poolConfig
+          """)
+        .withFallback(connectionFactorySettings.config))
+
+    private val optionsProvider: ConnectionFactoryOptionsProvider = (builder, _) => builder.build()
+
+    val connectionFactory = new FaultyConnectionFactory(
+      connectionFactorySettings.dialect.createConnectionFactory(connectionFactorySettings.config, optionsProvider))
+
+    val pool: ConnectionPool =
+      ConnectionFactoryProvider(system).createConnectionPoolFactory(poolSettings, connectionFactory)
+
+    val executor = new R2dbcExecutor(
+      pool,
+      LoggerFactory.getLogger(classOf[ConnectionFailureSpec]),
+      logDbCallsExceeding = 5.seconds,
+      poolSettings.closeCallsExceeding)(system.executionContext, system)
+
+    def selectOneInTransaction(): Future[Option[Integer]] =
+      executor.withConnection("test") { connection =>
+        R2dbcExecutor.selectOneInTx(connection.createStatement("select 1"), _.get(0, classOf[Integer]))(
+          system.executionContext,
+          system)
+      }
+  }
+
+  private def withPool(poolConfig: String = "")(test: Setup => Unit): Unit = {
+    val setup = new Setup(poolConfig)
+    try {
+      test(setup)
+      eventually {
+        setup.pool.getMetrics.get.acquiredSize() shouldBe 0
+      }
+    } finally {
+      setup.pool.disposeLater().asFutureDone().futureValue
+    }
+  }
+
+  "R2dbcExecutor with a failing connection" should {
+
+    "return the connection when the transaction start fails" in withPool() { setup =>
+      setup.connectionFactory.plan(BeginFails)
+
+      setup.selectOneInTransaction().failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
+
+      setup.selectOneInTransaction().futureValue shouldBe Some(1)
+    }
+
+    "close the connection when the transaction start does not answer" in withPool() { setup =>
+      setup.connectionFactory.plan(BeginHangs)
+
+      val startTime = System.nanoTime()
+      val result = setup.selectOneInTransaction()
+      // after about close-calls-exceeding, not after the patience of the test
+      Await.result(result.failed, closeCallsExceeding + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
+      (System.nanoTime() - startTime).nanos should be >= closeCallsExceeding
+
+      setup.selectOneInTransaction().futureValue shouldBe Some(1)
+    }
+  }
+}
