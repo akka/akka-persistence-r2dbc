@@ -124,5 +124,36 @@ class R2dbcExecutorSpec
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
     }
 
+    "close connection when no response from select" in {
+      pendingIfCannotBeTestedWithDialect()
+
+      @volatile var c1: Connection = null
+      @volatile var c2: Connection = null
+
+      val result = r2dbcExecutor.select("test")(
+        { connection =>
+          c1 = connection.asInstanceOf[Wrapped[Connection]].unwrap()
+          connection.createStatement("select pg_sleep(4)")
+        },
+        _ => "slept")
+
+      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
+
+      // The request will fail with PostgresConnectionClosedException
+      result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
+
+      r2dbcExecutor
+        .selectOne("test")(
+          { connection =>
+            c2 = connection.asInstanceOf[Wrapped[Connection]].unwrap()
+            connection.createStatement(s"select col from $table where col = 'c'")
+          },
+          row => Row(row.get("col", classOf[String])))
+        .futureValue shouldBe None
+
+      // it shouldn't reuse the connection
+      c1 should not be theSameInstanceAs(c2)
+    }
+
   }
 }
