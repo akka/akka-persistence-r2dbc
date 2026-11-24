@@ -25,6 +25,7 @@ import scala.util.Success
 
 import com.typesafe.config.Config
 import io.r2dbc.spi.ConnectionFactoryOptions
+import org.slf4j.LoggerFactory
 
 import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
@@ -54,6 +55,7 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
   import ConnectionFactoryProvider.DefaultConnectionFactoryOptionsProvider
 
   import R2dbcExecutor.PublisherOps
+  private val log = LoggerFactory.getLogger(classOf[ConnectionFactoryProvider])
   private val sessions = new ConcurrentHashMap[String, ConnectionPool]
   private val connectionFactorySettings = new ConcurrentHashMap[String, ConnectionFactorySettings]
 
@@ -157,6 +159,13 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
 
     settings.validationTimeout.foreach { timeout =>
       poolConfiguration.maxValidationTime(JDuration.ofMillis(timeout.toMillis))
+      // when the acquire times out during the validation, r2dbc-pool puts the connection back instead of discarding it
+      if (settings.validationQuery.nonEmpty && timeout >= settings.acquireTimeout)
+        log.warn(
+          "Connection pool setting validation-timeout [{}] is not less than acquire-timeout [{}]. A connection whose " +
+          "validation does not complete is then kept in the pool. Set validation-timeout less than acquire-timeout.",
+          timeout.toCoarsest,
+          settings.acquireTimeout.toCoarsest)
     }
 
     val pool = new ConnectionPool(poolConfiguration.build())

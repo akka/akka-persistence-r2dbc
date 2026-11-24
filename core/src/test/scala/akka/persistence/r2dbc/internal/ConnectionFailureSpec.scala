@@ -14,6 +14,7 @@ import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 import akka.actor.testkit.typed.scaladsl.LogCapturing
+import akka.actor.testkit.typed.scaladsl.LoggingTestKit
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.persistence.r2dbc.ConnectionFactoryProvider
 import akka.persistence.r2dbc.ConnectionFactoryProvider.ConnectionFactoryOptionsProvider
@@ -315,6 +316,19 @@ class ConnectionFailureSpec
       connections.size shouldBe 2
       eventually {
         connections.head.isClosed shouldBe true
+      }
+    }
+  }
+
+  "ConnectionFactoryProvider" should {
+    "warn when validation-timeout is not less than acquire-timeout" in {
+      LoggingTestKit.warn("validation-timeout").expect {
+        withPool("""
+          validation-query = "select 1"
+          validation-timeout = 2 seconds
+          """) { setup =>
+          setup.selectOne().futureValue shouldBe Some(1)
+        }
       }
     }
   }
