@@ -54,6 +54,12 @@ object ConnectionFailureSpec {
     /** `beginTransaction()` does not complete until the connection is closed. */
     case object BeginHangs extends Fault
 
+    /** `setAutoCommit()` fails at once. */
+    case object AutoCommitFails extends Fault
+
+    /** The first statement that is not the validation query does not complete until the connection is closed. */
+    case object QueryHangs extends Fault
+
     /** The statement for the validation query does not complete until the connection is closed. */
     case object ValidationHangs extends Fault
   }
@@ -90,7 +96,7 @@ object ConnectionFailureSpec {
 
   /**
    * A fault applies once, to the first operation of its kind, because the pool can hand out the same connection again.
-   * It does not implement `Wrapped`, so that the executor closes this connection when a call times out.
+   * The executor closes this connection when a call times out, because `PooledConnection.unwrap()` returns it.
    */
   final class FaultyConnection(delegate: Connection, fault: Option[Fault], validationQuery: String) extends Connection {
     import Fault._
@@ -144,6 +150,8 @@ object ConnectionFailureSpec {
     override def createStatement(sql: String): Statement =
       if (sql == validationQuery && applyFault(ValidationHangs))
         new HangingStatement(() => hang[Result]())
+      else if (sql != validationQuery && applyFault(QueryHangs))
+        new HangingStatement(() => hang[Result]())
       else
         delegate.createStatement(sql)
     override def isAutoCommit: Boolean = delegate.isAutoCommit
@@ -153,7 +161,11 @@ object ConnectionFailureSpec {
     override def rollbackTransaction(): Publisher[Void] = delegate.rollbackTransaction()
     override def rollbackTransactionToSavepoint(name: String): Publisher[Void] =
       delegate.rollbackTransactionToSavepoint(name)
-    override def setAutoCommit(autoCommit: Boolean): Publisher[Void] = delegate.setAutoCommit(autoCommit)
+    override def setAutoCommit(autoCommit: Boolean): Publisher[Void] =
+      if (applyFault(AutoCommitFails))
+        Mono.error(new R2dbcNonTransientResourceException("Injected fault: set auto-commit failed"))
+      else
+        delegate.setAutoCommit(autoCommit)
     override def setLockWaitTimeout(timeout: Duration): Publisher[Void] = delegate.setLockWaitTimeout(timeout)
     override def setStatementTimeout(timeout: Duration): Publisher[Void] = delegate.setStatementTimeout(timeout)
     override def setTransactionIsolationLevel(isolationLevel: IsolationLevel): Publisher[Void] =
@@ -214,6 +226,13 @@ class ConnectionFailureSpec
     def selectOne(): Future[Option[Integer]] =
       executor.selectOne("test")(_.createStatement("select 1"), _.get(0, classOf[Integer]))
 
+    def selectOneWithAutoCommit(): Future[Option[Integer]] =
+      executor.withAutoCommitConnection("test") { connection =>
+        R2dbcExecutor.selectOneInTx(connection.createStatement("select 1"), _.get(0, classOf[Integer]))(
+          system.executionContext,
+          system)
+      }
+
     def selectOneInTransaction(): Future[Option[Integer]] =
       executor.withConnection("test") { connection =>
         R2dbcExecutor.selectOneInTx(connection.createStatement("select 1"), _.get(0, classOf[Integer]))(
@@ -254,6 +273,26 @@ class ConnectionFailureSpec
       (System.nanoTime() - startTime).nanos should be >= closeCallsExceeding
 
       setup.selectOneInTransaction().futureValue shouldBe Some(1)
+    }
+
+    "return the connection when setting auto-commit fails" in withPool() { setup =>
+      setup.connectionFactory.plan(AutoCommitFails)
+
+      setup.selectOneWithAutoCommit().failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
+
+      setup.selectOneWithAutoCommit().futureValue shouldBe Some(1)
+    }
+
+    "close the connection when a query does not answer" in withPool() { setup =>
+      setup.connectionFactory.plan(QueryHangs)
+
+      val startTime = System.nanoTime()
+      val result = setup.selectOne()
+      // after about close-calls-exceeding, not after the patience of the test
+      Await.result(result.failed, closeCallsExceeding + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
+      (System.nanoTime() - startTime).nanos should be >= closeCallsExceeding
+
+      setup.selectOne().futureValue shouldBe Some(1)
     }
 
     "fail a connection creation that does not complete" in withPool("create-connection-timeout = 1 second") { setup =>
