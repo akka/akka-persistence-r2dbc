@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Await
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 import akka.actor.testkit.typed.scaladsl.LogCapturing
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -28,6 +29,7 @@ import io.r2dbc.spi.ConnectionFactoryMetadata
 import io.r2dbc.spi.ConnectionMetadata
 import io.r2dbc.spi.IsolationLevel
 import io.r2dbc.spi.R2dbcNonTransientResourceException
+import io.r2dbc.spi.Result
 import io.r2dbc.spi.Statement
 import io.r2dbc.spi.TransactionDefinition
 import io.r2dbc.spi.ValidationDepth
@@ -51,13 +53,19 @@ object ConnectionFailureSpec {
 
     /** `beginTransaction()` does not complete until the connection is closed. */
     case object BeginHangs extends Fault
+
+    /** The statement for the validation query does not complete until the connection is closed. */
+    case object ValidationHangs extends Fault
   }
 
   /**
    * Hands out connections in the order of the planned faults. A connection with no planned fault behaves normally.
    */
-  final class FaultyConnectionFactory(delegate: ConnectionFactory) extends ConnectionFactory {
+  final class FaultyConnectionFactory(delegate: ConnectionFactory, validationQuery: String) extends ConnectionFactory {
     private val plannedFaults = new ConcurrentLinkedQueue[Fault]
+    private val created = new ConcurrentLinkedQueue[FaultyConnection]
+
+    def createdConnections: Vector[FaultyConnection] = created.asScala.toVector
 
     def plan(faults: Fault*): Unit =
       faults.foreach(plannedFaults.add)
@@ -69,7 +77,11 @@ object ConnectionFailureSpec {
           case Some(Fault.CreateHangs) =>
             Mono.never[Connection]()
           case fault =>
-            Mono.from(delegate.create()).map[Connection](connection => new FaultyConnection(connection, fault))
+            Mono.from(delegate.create()).map[Connection] { connection =>
+              val faultyConnection = new FaultyConnection(connection, fault, validationQuery)
+              created.add(faultyConnection)
+              faultyConnection
+            }
         }
       }
 
@@ -80,12 +92,14 @@ object ConnectionFailureSpec {
    * A fault applies once, to the first operation of its kind, because the pool can hand out the same connection again.
    * It does not implement `Wrapped`, so that the executor closes this connection when a call times out.
    */
-  final class FaultyConnection(delegate: Connection, fault: Option[Fault]) extends Connection {
+  final class FaultyConnection(delegate: Connection, fault: Option[Fault], validationQuery: String) extends Connection {
     import Fault._
 
     private val faultApplied = new AtomicBoolean(false)
     private val closed = new AtomicBoolean(false)
-    private val hungOperations = new ConcurrentLinkedQueue[MonoSink[Void]]
+    private val hungOperations = new ConcurrentLinkedQueue[MonoSink[_]]
+
+    def isClosed: Boolean = closed.get()
 
     private def applyFault(f: Fault): Boolean =
       fault.contains(f) && faultApplied.compareAndSet(false, true)
@@ -93,8 +107,8 @@ object ConnectionFailureSpec {
     private def connectionClosedException() =
       new R2dbcNonTransientResourceException("Connection closed")
 
-    private def hang(): Mono[Void] =
-      Mono.create[Void] { sink =>
+    private def hang[T](): Mono[T] =
+      Mono.create[T] { sink =>
         hungOperations.add(sink)
         sink.onDispose(() => hungOperations.remove(sink))
         if (closed.get() && hungOperations.remove(sink))
@@ -105,7 +119,7 @@ object ConnectionFailureSpec {
       if (applyFault(BeginFails))
         Mono.error(new R2dbcNonTransientResourceException("Injected fault: begin transaction failed"))
       else if (applyFault(BeginHangs))
-        hang()
+        hang[Void]()
       else
         delegate.beginTransaction()
 
@@ -127,7 +141,11 @@ object ConnectionFailureSpec {
     override def commitTransaction(): Publisher[Void] = delegate.commitTransaction()
     override def createBatch(): Batch = delegate.createBatch()
     override def createSavepoint(name: String): Publisher[Void] = delegate.createSavepoint(name)
-    override def createStatement(sql: String): Statement = delegate.createStatement(sql)
+    override def createStatement(sql: String): Statement =
+      if (sql == validationQuery && applyFault(ValidationHangs))
+        new HangingStatement(() => hang[Result]())
+      else
+        delegate.createStatement(sql)
     override def isAutoCommit: Boolean = delegate.isAutoCommit
     override def getMetadata: ConnectionMetadata = delegate.getMetadata
     override def getTransactionIsolationLevel: IsolationLevel = delegate.getTransactionIsolationLevel
@@ -141,6 +159,15 @@ object ConnectionFailureSpec {
     override def setTransactionIsolationLevel(isolationLevel: IsolationLevel): Publisher[Void] =
       delegate.setTransactionIsolationLevel(isolationLevel)
     override def validate(depth: ValidationDepth): Publisher[java.lang.Boolean] = delegate.validate(depth)
+  }
+
+  final class HangingStatement(execution: () => Publisher[Result]) extends Statement {
+    override def add(): Statement = this
+    override def bind(index: Int, value: Any): Statement = this
+    override def bind(name: String, value: Any): Statement = this
+    override def bindNull(index: Int, `type`: Class[_]): Statement = this
+    override def bindNull(name: String, `type`: Class[_]): Statement = this
+    override def execute(): Publisher[_ <: Result] = execution()
   }
 }
 
@@ -172,7 +199,8 @@ class ConnectionFailureSpec
     private val optionsProvider: ConnectionFactoryOptionsProvider = (builder, _) => builder.build()
 
     val connectionFactory = new FaultyConnectionFactory(
-      connectionFactorySettings.dialect.createConnectionFactory(connectionFactorySettings.config, optionsProvider))
+      connectionFactorySettings.dialect.createConnectionFactory(connectionFactorySettings.config, optionsProvider),
+      poolSettings.validationQuery)
 
     val pool: ConnectionPool =
       ConnectionFactoryProvider(system).createConnectionPoolFactory(poolSettings, connectionFactory)
@@ -233,6 +261,22 @@ class ConnectionFailureSpec
 
       // through the acquire retry
       setup.selectOne().futureValue shouldBe Some(1)
+    }
+
+    "discard a connection whose validation does not complete" in withPool("""
+      validation-query = "select 1"
+      validation-timeout = 1 second
+      """) { setup =>
+      setup.connectionFactory.plan(ValidationHangs)
+
+      setup.selectOne().futureValue shouldBe Some(1)
+      setup.selectOne().futureValue shouldBe Some(1)
+
+      val connections = setup.connectionFactory.createdConnections
+      connections.size shouldBe 2
+      eventually {
+        connections.head.isClosed shouldBe true
+      }
     }
   }
 }

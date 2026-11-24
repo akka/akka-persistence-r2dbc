@@ -599,6 +599,7 @@ final class ConnectionPoolSettings(config: Config) {
   val createConnectionTimeout: Option[FiniteDuration] = config.optDuration("create-connection-timeout")
 
   val validationQuery: String = config.getString("validation-query")
+  val validationTimeout: Option[FiniteDuration] = config.optDuration("validation-timeout")
 
   val closeCallsExceeding: Option[FiniteDuration] = config.optDuration("close-calls-exceeding")
 }

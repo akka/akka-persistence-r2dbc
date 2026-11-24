@@ -155,6 +155,10 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
     if (settings.validationQuery.nonEmpty)
       poolConfiguration.validationQuery(settings.validationQuery)
 
+    settings.validationTimeout.foreach { timeout =>
+      poolConfiguration.maxValidationTime(JDuration.ofMillis(timeout.toMillis))
+    }
+
     val pool = new ConnectionPool(poolConfiguration.build())
 
     // eagerly create initialSize connections
