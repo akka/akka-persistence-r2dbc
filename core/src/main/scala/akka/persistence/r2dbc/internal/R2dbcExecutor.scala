@@ -4,6 +4,7 @@
 
 package akka.persistence.r2dbc.internal
 
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function.BiConsumer
 
 import scala.collection.immutable
@@ -20,6 +21,7 @@ import scala.util.control.Exception.Catcher
 import scala.util.control.NonFatal
 
 import akka.Done
+import akka.actor.Cancellable
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalStableApi
 import io.r2dbc.spi.Connection
@@ -261,9 +263,7 @@ class R2dbcExecutor(
       mapRow: Row => A): Future[immutable.IndexedSeq[A]] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      val timeoutTask = timeout.map { t =>
-        system.scheduler.scheduleOnce(t, () => closeAfterTimeout(logPrefix, connection, t))
-      }
+      val call = new CallTimeout(logPrefix, connection, timeout)
 
       val mappedRows =
         try {
@@ -277,21 +277,16 @@ class R2dbcExecutor(
 
       mappedRows.failed.foreach { exc =>
         log.debug("{} - Select failed: {}", logPrefix, exc)
-        val done =
-          try connection.close().asFutureDone()
-          catch ignoreConnectionClosedException
-        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+        call.close()
       }
 
       mappedRows.flatMap { r =>
-        val done = connection.close().asFutureDone().map { _ =>
+        call.close().map { _ =>
           val durationMicros = durationInMicros(startTime)
           if (durationMicros >= logDbCallsExceedingMicros)
             log.info("{} - Selected [{}] rows in [{}] µs", logPrefix, r.size, durationMicros)
           r
         }
-        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
-        done
       }
 
     }
@@ -304,20 +299,15 @@ class R2dbcExecutor(
   def withConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection, timeout))
-      }
+      val call = new CallTimeout(logPrefix, connection, closeCallsExceeding)
 
-      val begin = connection.beginTransaction().asFutureDone()
+      val begin = futureDone(connection.beginTransaction())
 
       begin.failed.foreach { exc =>
         if (log.isDebugEnabled())
           log.debug("{} - Begin transaction failed: {}", logPrefix, exc.toString)
         // the transaction was not started, so there is nothing to roll back
-        val done =
-          try connection.close().asFutureDone()
-          catch ignoreConnectionClosedException
-        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+        call.close()
       }
 
       begin.flatMap { _ =>
@@ -334,19 +324,16 @@ class R2dbcExecutor(
           if (log.isDebugEnabled())
             log.debug("{} - DB call failed: {}", logPrefix, exc.toString)
           // ok to rollback async like this, or should it be before completing the returned Future?
-          val done = rollbackAndClose(connection)
-          timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+          call.rollbackAndClose()
         }
 
         result.flatMap { r =>
-          val done = commitAndClose(connection).map { _ =>
+          call.commitAndClose().map { _ =>
             val durationMicros = durationInMicros(startTime)
             if (durationMicros >= logDbCallsExceedingMicros)
               log.info("{} - DB call completed in [{}] µs", logPrefix, durationMicros)
             r
           }
-          timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
-          done
         }
 
       }
@@ -359,19 +346,14 @@ class R2dbcExecutor(
   def withAutoCommitConnection[A](logPrefix: String)(fun: Connection => Future[A]): Future[A] = {
     getConnection(logPrefix).flatMap { connection =>
       val startTime = nanoTime()
-      val timeoutTask = closeCallsExceeding.map { timeout =>
-        system.scheduler.scheduleOnce(timeout, () => closeAfterTimeout(logPrefix, connection, timeout))
-      }
+      val call = new CallTimeout(logPrefix, connection, closeCallsExceeding)
 
-      val autoCommit = connection.setAutoCommit(true).asFutureDone()
+      val autoCommit = futureDone(connection.setAutoCommit(true))
 
       autoCommit.failed.foreach { exc =>
         if (log.isDebugEnabled())
           log.debug("{} - Set auto-commit failed: {}", logPrefix, exc.toString)
-        val done =
-          try connection.close().asFutureDone()
-          catch ignoreConnectionClosedException
-        timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+        call.close()
       }
 
       autoCommit.flatMap { _ =>
@@ -387,44 +369,91 @@ class R2dbcExecutor(
         result.failed.foreach { exc =>
           log.debug("{} - DB call failed: {}", logPrefix, exc)
           // auto-commit so nothing to rollback
-          val done = connection.close().asFutureDone()
-          timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
+          call.close()
         }
 
         result.flatMap { r =>
-          val done = connection.close().asFutureDone().map { _ =>
+          call.close().map { _ =>
             val durationMicros = durationInMicros(startTime)
             if (durationMicros >= logDbCallsExceedingMicros)
               log.info("{} - DB call completed [{}] in [{}] µs", logPrefix, r, durationMicros)
             r
           }
-          timeoutTask.foreach { task => done.onComplete(_ => task.cancel()) }
-          done
         }
       }
     }
   }
 
-  private def commitAndClose(connection: Connection): Future[Done] = {
-    connection.commitTransaction().asFutureDone().andThen { case _ =>
-      try connection.close().asFutureDone()
-      catch ignoreConnectionClosedException
+  // an exception thrown by the publisher factory becomes a failed Future
+  private def futureDone(publisher: => Publisher[Void]): Future[Done] =
+    try publisher.asFutureDone()
+    catch {
+      case NonFatal(exc) => Future.failed(exc)
     }
-  }
 
-  private def rollbackAndClose(connection: Connection): Future[Done] = {
-    try connection.rollbackTransaction().asFutureDone().andThen { case _ =>
-      try connection.close().asFutureDone()
-      catch ignoreConnectionClosedException
-    } catch ignoreConnectionClosedException
+  /**
+   * INTERNAL API: ends a call once, by the caller or by the timer of the time limit, whichever comes first. The one
+   * that ends the call closes the pooled connection.
+   */
+  private[internal] final class CallTimeout(
+      logPrefix: String,
+      connection: Connection,
+      timeout: Option[FiniteDuration]) {
+    private val ended = new AtomicBoolean(false)
+
+    private val task: Option[Cancellable] =
+      timeout.map(t => system.scheduler.scheduleOnce(t, () => onTimeout(t)))
+
+    /**
+     * Closes the pooled connection and cancels the timer. Does nothing if the timer has ended the call, because the
+     * timer closes the pooled connection then.
+     */
+    def close(): Future[Done] =
+      if (ended.compareAndSet(false, true)) {
+        // The timer must not close the connection after this. The pool can hand it to another caller as soon as it is
+        // released. The executor never closes the connection while a transaction is open, so PooledConnection.close()
+        // sends nothing to the server and does not need the timer.
+        task.foreach(_.cancel())
+        try connection.close().asFutureDone()
+        catch ignoreConnectionClosedException
+      } else
+        Future.successful(Done)
+
+    /**
+     * Commits the transaction and then closes the pooled connection. Completes when the commit completes.
+     */
+    def commitAndClose(): Future[Done] =
+      futureDone(connection.commitTransaction()).andThen { case _ => close() }
+
+    /**
+     * Rolls back the transaction and then closes the pooled connection.
+     */
+    def rollbackAndClose(): Unit =
+      futureDone(connection.rollbackTransaction()).onComplete(_ => close())
+
+    // the action of the timer, package private for tests
+    private[internal] def onTimeout(t: FiniteDuration): Unit =
+      if (ended.compareAndSet(false, true))
+        closeAfterTimeout(logPrefix, connection, t)
   }
 
   private def closeAfterTimeout(logPrefix: String, connection: Connection, timeout: FiniteDuration): Unit = {
     log.warn("{} - Timeout after [{}], will try to close connection", logPrefix, timeout.toCoarsest)
 
-    val done = connection match {
-      case wrapped: Wrapped[Connection] @unchecked => wrapped.unwrap().close.asFutureDone()
-      case _                                       => connection.close.asFutureDone()
+    // Closing the driver connection fails the pending operations of the call. Closing the pooled connection after that
+    // returns the slot to the pool, also when the caller does not complete. The pool discards the connection, because
+    // it is no longer valid.
+    val closeDriverConnection = connection match {
+      case wrapped: Wrapped[Connection] @unchecked => futureDone(wrapped.unwrap().close())
+      case _                                       => Future.successful(Done)
+    }
+
+    val done = closeDriverConnection.transformWith { driverClosed =>
+      driverClosed.failed.foreach { exc =>
+        log.debug("{} - Tried to close driver connection after timeout, but {}", logPrefix, exc.toString)
+      }
+      try connection.close().asFutureDone()
+      catch ignoreConnectionClosedException
     }
 
     done.onComplete {
@@ -436,7 +465,7 @@ class R2dbcExecutor(
   }
 
   private def ignoreConnectionClosedException: Catcher[Future[Done]] = { case _: IllegalStateException =>
-    // throw by PooledConnection assertNotClosed, if connection closed after timeout
+    // thrown by PooledConnection.assertNotClosed when the connection is already closed
     Future.successful(Done)
   }
 }

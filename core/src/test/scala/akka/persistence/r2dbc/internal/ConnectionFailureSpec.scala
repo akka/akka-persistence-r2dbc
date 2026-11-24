@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.concurrent.Await
 import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -320,6 +321,34 @@ class ConnectionFailureSpec
       (System.nanoTime() - startTime).nanos should be >= closeQueriesExceeding
 
       setup.selectOne().futureValue shouldBe Some(1)
+    }
+
+    "return the connection when the function does not complete" in withPool() { setup =>
+      val functionResult = Promise[Int]()
+      val result = setup.executor.withConnection("test")(_ => functionResult.future)
+
+      Thread.sleep(closeCallsExceeding.toMillis)
+      // the slot comes back after close-calls-exceeding, although the function has not completed
+      setup.selectOne().futureValue shouldBe Some(1)
+
+      // the connection was closed, so the commit fails
+      functionResult.success(1)
+      result.failed.futureValue
+    }
+
+    "not close a connection that the caller has returned to the pool" in withPool() { setup =>
+      val connection = setup.pool.create().asFuture().futureValue
+      val call = new setup.executor.CallTimeout("test", connection, timeout = None)
+      call.close().futureValue
+
+      // the timer fires after the caller has returned the connection
+      call.onTimeout(closeCallsExceeding)
+
+      // the next call gets the same connection
+      setup.selectOne().futureValue shouldBe Some(1)
+      val connections = setup.connectionFactory.createdConnections
+      connections.size shouldBe 1
+      connections.head.isClosed shouldBe false
     }
 
     "limit the bucket count of events with estimate-time-range-timeout" in withPool() { setup =>
