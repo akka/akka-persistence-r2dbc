@@ -21,6 +21,7 @@ import io.r2dbc.spi.Connection
 import io.r2dbc.spi.R2dbcNonTransientResourceException
 import io.r2dbc.spi.Wrapped
 import org.scalatest.wordspec.AnyWordSpecLike
+import org.slf4j.LoggerFactory
 
 object R2dbcExecutorSpec {
   val config: Config = ConfigFactory
@@ -28,8 +29,6 @@ object R2dbcExecutorSpec {
     akka.persistence.r2dbc.connection-factory {
       initial-size = 1
       max-size = 1
-      close-calls-exceeding = 3 seconds
-      close-queries-exceeding = 3 seconds
     }
     """)
     .withFallback(TestConfig.config)
@@ -46,6 +45,18 @@ class R2dbcExecutorSpec
   private val table = "r2dbc_executor_spec"
 
   case class Row(col: String)
+
+  // The call under test runs with this time limit. The database call sleeps much longer, so that the timer fires
+  // first also when it is late. Setup and the reads after the call use r2dbcExecutor with its default limits.
+  private val callTimeout = 1.second
+  private val sleepStatement = "select pg_sleep(5)"
+
+  private lazy val executorWithTimeout = new R2dbcExecutor(
+    r2dbcExecutor.connectionFactory,
+    LoggerFactory.getLogger(classOf[R2dbcExecutorSpec]),
+    settings.logDbCallsExceeding,
+    closeCallsExceeding = Some(callTimeout),
+    closeQueriesExceeding = Some(callTimeout))(system.executionContext, system)
 
   // need pg_sleep or similar
   private def canBeTestedWithDialect: Boolean =
@@ -82,15 +93,13 @@ class R2dbcExecutorSpec
       @volatile var c1: Connection = null
       @volatile var c2: Connection = null
 
-      val result = r2dbcExecutor.update("test") { connection =>
+      val result = executorWithTimeout.update("test") { connection =>
         c1 = connection.asInstanceOf[Wrapped[Connection]].unwrap()
         Vector(
           connection.createStatement(s"insert into $table (col) values ('a')"),
-          connection.createStatement("select pg_sleep(4)"),
+          connection.createStatement(sleepStatement),
           connection.createStatement(s"insert into $table (col) values ('b')"))
       }
-
-      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
@@ -117,9 +126,7 @@ class R2dbcExecutorSpec
     "close connection when no response from update with auto-commit" in {
       pendingIfCannotBeTestedWithDialect()
 
-      val result = r2dbcExecutor.updateOne("test")(_.createStatement("select pg_sleep(4)"))
-
-      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeCallsExceeding.get.toMillis)
+      val result = executorWithTimeout.updateOne("test")(_.createStatement(sleepStatement))
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
@@ -131,14 +138,12 @@ class R2dbcExecutorSpec
       @volatile var c1: Connection = null
       @volatile var c2: Connection = null
 
-      val result = r2dbcExecutor.select("test")(
+      val result = executorWithTimeout.select("test")(
         { connection =>
           c1 = connection.asInstanceOf[Wrapped[Connection]].unwrap()
-          connection.createStatement("select pg_sleep(4)")
+          connection.createStatement(sleepStatement)
         },
         _ => "slept")
-
-      Thread.sleep(settings.connectionFactorySettings.poolSettings.closeQueriesExceeding.get.toMillis)
 
       // The request will fail with PostgresConnectionClosedException
       result.failed.futureValue shouldBe a[R2dbcNonTransientResourceException]
