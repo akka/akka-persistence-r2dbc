@@ -366,6 +366,21 @@ class ConnectionFailureSpec
       connections.head.isClosed shouldBe false
     }
 
+    "return the connection when the time limit cannot be scheduled" in withPool() { setup =>
+      // longer than the scheduler supports
+      val executor = new R2dbcExecutor(
+        setup.pool,
+        LoggerFactory.getLogger(classOf[ConnectionFailureSpec]),
+        logDbCallsExceeding = 5.seconds,
+        closeCallsExceeding = Some(300.days),
+        closeQueriesExceeding = Some(300.days))(system.executionContext, system)
+
+      executor.selectOne("test")(_.createStatement("select 1"), _.get(0, classOf[Integer])).failed.futureValue shouldBe
+      an[IllegalArgumentException]
+
+      setup.selectOne().futureValue shouldBe Some(1)
+    }
+
     "limit the bucket count of events with estimate-time-range-timeout" in withPool() { setup =>
       setup.connectionFactory.plan(QueryHangs)
       val dao = connectionFactorySettings.dialect.createQueryDao(setup.executorProvider)

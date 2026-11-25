@@ -402,7 +402,14 @@ class R2dbcExecutor(
     private val ended = new AtomicBoolean(false)
 
     private val task: Option[Cancellable] =
-      timeout.map(t => system.scheduler.scheduleOnce(t, () => onTimeout(t)))
+      try timeout.map(t => system.scheduler.scheduleOnce(t, () => onTimeout(t)))
+      catch {
+        case NonFatal(exc) =>
+          // the scheduler rejects a time limit that is too long, the call fails and returns its connection
+          try connection.close().asFutureDone()
+          catch ignoreConnectionClosedException
+          throw exc
+      }
 
     /**
      * Closes the pooled connection and cancels the timer. Does nothing if the timer has ended the call, because the
