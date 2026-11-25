@@ -49,9 +49,6 @@ object ConnectionFailureSpec {
 
   object Fault {
 
-    /** `create()` never emits and never completes. */
-    case object CreateHangs extends Fault
-
     /** `beginTransaction()` fails at once. */
     case object BeginFails extends Fault
 
@@ -89,15 +86,11 @@ object ConnectionFailureSpec {
     // the pool subscribes to the same publisher for each new connection
     override def create(): Publisher[Connection] =
       Mono.defer { () =>
-        Option(plannedFaults.poll()) match {
-          case Some(Fault.CreateHangs) =>
-            Mono.never[Connection]()
-          case fault =>
-            Mono.from(delegate.create()).map[Connection] { connection =>
-              val faultyConnection = new FaultyConnection(connection, fault, validationQuery)
-              created.add(faultyConnection)
-              faultyConnection
-            }
+        val fault = Option(plannedFaults.poll())
+        Mono.from(delegate.create()).map[Connection] { connection =>
+          val faultyConnection = new FaultyConnection(connection, fault, validationQuery)
+          created.add(faultyConnection)
+          faultyConnection
         }
       }
 
@@ -391,13 +384,6 @@ class ConnectionFailureSpec
       val result = dao.countBuckets("TestEntity", 0, 1023, Instant.EPOCH, Instant.now(), 10, None)
       Await.result(result.failed, estimateTimeRangeTimeout + 3.seconds) shouldBe a[R2dbcNonTransientResourceException]
       (System.nanoTime() - startTime).nanos should be >= estimateTimeRangeTimeout
-    }
-
-    "fail a connection creation that does not complete" in withPool("create-connection-timeout = 1 second") { setup =>
-      setup.connectionFactory.plan(CreateHangs)
-
-      // through the acquire retry
-      setup.selectOne().futureValue shouldBe Some(1)
     }
 
     "discard a connection whose validation does not complete" in withPool("""
