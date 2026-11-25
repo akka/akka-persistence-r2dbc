@@ -155,18 +155,21 @@ class ConnectionFactoryProvider(system: ActorSystem[_]) extends Extension {
       .maxLifeTime(JDuration.ofMillis(settings.maxLifeTime.toMillis))
       .backgroundEvictionInterval(ConnectionFactoryProvider.evictionInterval(settings))
 
-    if (settings.validationQuery.nonEmpty)
+    if (settings.validationQuery.nonEmpty) {
       poolConfiguration.validationQuery(settings.validationQuery)
 
-    settings.validationTimeout.foreach { timeout =>
-      poolConfiguration.maxValidationTime(JDuration.ofMillis(timeout.toMillis))
-      // when the acquire times out during the validation, r2dbc-pool puts the connection back instead of discarding it
-      if (settings.validationQuery.nonEmpty && timeout >= settings.acquireTimeout)
-        log.warn(
-          "Connection pool setting validation-timeout [{}] is not less than acquire-timeout [{}]. A connection whose " +
-          "validation does not complete is then kept in the pool. Set validation-timeout less than acquire-timeout.",
-          timeout.toCoarsest,
-          settings.acquireTimeout.toCoarsest)
+      // without a validation query the validation is local and needs no time limit
+      settings.validationTimeout.foreach { timeout =>
+        poolConfiguration.maxValidationTime(JDuration.ofMillis(timeout.toMillis))
+        // when the acquire times out during the validation, r2dbc-pool keeps the connection instead of discarding it
+        if (timeout >= settings.acquireTimeout)
+          log.warn(
+            "Connection pool setting validation-timeout [{}] is not less than acquire-timeout [{}]. " +
+            "A connection whose validation does not complete is then kept in the pool. " +
+            "Set validation-timeout less than acquire-timeout.",
+            timeout.toCoarsest,
+            settings.acquireTimeout.toCoarsest)
+      }
     }
 
     val pool = new ConnectionPool(poolConfiguration.build())
