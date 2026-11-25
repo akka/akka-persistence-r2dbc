@@ -23,6 +23,7 @@ import scala.util.control.NonFatal
 import akka.Done
 import akka.actor.Cancellable
 import akka.actor.typed.ActorSystem
+import akka.annotation.InternalApi
 import akka.annotation.InternalStableApi
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactory
@@ -395,6 +396,7 @@ class R2dbcExecutor(
    * INTERNAL API: ends a call once, by the caller or by the timer of the time limit, whichever comes first. The one
    * that ends the call closes the pooled connection.
    */
+  @InternalApi
   private[internal] final class CallTimeout(
       logPrefix: String,
       connection: Connection,
