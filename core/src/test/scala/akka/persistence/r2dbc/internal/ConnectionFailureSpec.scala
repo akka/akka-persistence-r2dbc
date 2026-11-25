@@ -64,6 +64,12 @@ object ConnectionFailureSpec {
     /** The first statement that is not the validation query does not complete until the connection is closed. */
     case object QueryHangs extends Fault
 
+    /**
+     * The first statement that is not the validation query does not complete, and the first `close()` fails it but does
+     * not complete. The driver close does the same when the socket accepts no more writes.
+     */
+    case object QueryAndCloseHang extends Fault
+
     /** The statement for the validation query does not complete until the connection is closed. */
     case object ValidationHangs extends Fault
   }
@@ -106,6 +112,7 @@ object ConnectionFailureSpec {
     import Fault._
 
     private val faultApplied = new AtomicBoolean(false)
+    private val closeHangApplied = new AtomicBoolean(false)
     private val closed = new AtomicBoolean(false)
     private val hungOperations = new ConcurrentLinkedQueue[MonoSink[_]]
 
@@ -145,7 +152,11 @@ object ConnectionFailureSpec {
           sink.error(connectionClosedException())
           sink = hungOperations.poll()
         }
-        Mono.from(delegate.close())
+        val closeDelegate = Mono.from(delegate.close())
+        if (fault.contains(QueryAndCloseHang) && closeHangApplied.compareAndSet(false, true))
+          closeDelegate.thenEmpty(Mono.never[Void]())
+        else
+          closeDelegate
       }
 
     override def commitTransaction(): Publisher[Void] = delegate.commitTransaction()
@@ -154,7 +165,7 @@ object ConnectionFailureSpec {
     override def createStatement(sql: String): Statement =
       if (sql == validationQuery && applyFault(ValidationHangs))
         new HangingStatement(() => hang[Result]())
-      else if (sql != validationQuery && applyFault(QueryHangs))
+      else if (sql != validationQuery && (applyFault(QueryHangs) || applyFault(QueryAndCloseHang)))
         new HangingStatement(() => hang[Result]())
       else
         delegate.createStatement(sql)
@@ -174,7 +185,9 @@ object ConnectionFailureSpec {
     override def setStatementTimeout(timeout: Duration): Publisher[Void] = delegate.setStatementTimeout(timeout)
     override def setTransactionIsolationLevel(isolationLevel: IsolationLevel): Publisher[Void] =
       delegate.setTransactionIsolationLevel(isolationLevel)
-    override def validate(depth: ValidationDepth): Publisher[java.lang.Boolean] = delegate.validate(depth)
+    // as the driver, not valid once the close has started
+    override def validate(depth: ValidationDepth): Publisher[java.lang.Boolean] =
+      if (closed.get()) Mono.just(java.lang.Boolean.FALSE) else delegate.validate(depth)
   }
 
   final class HangingStatement(execution: () => Publisher[Result]) extends Statement {
@@ -321,6 +334,15 @@ class ConnectionFailureSpec
       (System.nanoTime() - startTime).nanos should be >= closeQueriesExceeding
 
       setup.selectOne().futureValue shouldBe Some(1)
+    }
+
+    "return the connection when closing it after a timeout does not complete" in withPool() { setup =>
+      setup.connectionFactory.plan(QueryAndCloseHang)
+
+      Await.result(setup.selectOneWithAutoCommit().failed, closeCallsExceeding + 3.seconds) shouldBe
+      a[R2dbcNonTransientResourceException]
+
+      setup.selectOneWithAutoCommit().futureValue shouldBe Some(1)
     }
 
     "return the connection when the function does not complete" in withPool() { setup =>

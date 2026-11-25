@@ -440,21 +440,21 @@ class R2dbcExecutor(
   private def closeAfterTimeout(logPrefix: String, connection: Connection, timeout: FiniteDuration): Unit = {
     log.warn("{} - Timeout after [{}], will try to close connection", logPrefix, timeout.toCoarsest)
 
-    // Closing the driver connection fails the pending operations of the call. Closing the pooled connection after that
-    // returns the slot to the pool, also when the caller does not complete. The pool discards the connection, because
-    // it is no longer valid.
-    val closeDriverConnection = connection match {
-      case wrapped: Wrapped[Connection] @unchecked => futureDone(wrapped.unwrap().close())
-      case _                                       => Future.successful(Done)
+    // Closing the driver connection fails the pending operations of the call. The drivers report the connection as not
+    // valid as soon as the close has started, so the pooled connection is closed right after that, without waiting for
+    // the driver close. That close does not complete while the socket accepts no more writes. The pool discards the
+    // connection, because it is not valid, and the slot comes back also when the caller does not complete.
+    connection match {
+      case wrapped: Wrapped[Connection] @unchecked =>
+        futureDone(wrapped.unwrap().close()).failed.foreach { exc =>
+          log.debug("{} - Tried to close driver connection after timeout, but {}", logPrefix, exc.toString)
+        }
+      case _ =>
     }
 
-    val done = closeDriverConnection.transformWith { driverClosed =>
-      driverClosed.failed.foreach { exc =>
-        log.debug("{} - Tried to close driver connection after timeout, but {}", logPrefix, exc.toString)
-      }
+    val done =
       try connection.close().asFutureDone()
       catch ignoreConnectionClosedException
-    }
 
     done.onComplete {
       case Success(_) =>
