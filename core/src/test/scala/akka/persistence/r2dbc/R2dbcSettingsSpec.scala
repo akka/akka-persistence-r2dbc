@@ -4,6 +4,8 @@
 
 package akka.persistence.r2dbc
 
+import scala.concurrent.duration._
+
 import com.typesafe.config.ConfigException
 
 import akka.persistence.r2dbc.internal.postgres.PostgresDialect.PostgresConnectionFactorySettings
@@ -103,6 +105,36 @@ class R2dbcSettingsSpec extends AnyWordSpec with TestSuite with Matchers {
         .withFallback(ConfigFactory.load("application-postgres.conf"))
       val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
       settings.connectionFactorySettings(0).optionsProvider shouldBe "my.OptProvider"
+    }
+
+    "have connection timeouts and TCP keepalive by default" in {
+      val config = ConfigFactory.load("application-postgres.conf")
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      val poolSettings = settings.connectionFactorySettings.poolSettings
+      poolSettings.validationTimeout shouldBe Some(2.seconds)
+      poolSettings.closeCallsExceeding shouldBe Some(20.seconds)
+      poolSettings.closeQueriesExceeding shouldBe Some(10.minutes)
+      settings.querySettings.estimateTimeRangeTimeout shouldBe Some(10.minutes)
+      postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe true
+    }
+
+    "support off for connection timeouts and TCP keepalive" in {
+      val config = ConfigFactory
+        .parseString("""
+          akka.persistence.r2dbc.connection-factory {
+            validation-timeout = off
+            close-queries-exceeding = off
+            tcp-keep-alive = off
+          }
+          akka.persistence.r2dbc.query.estimate-time-range-timeout = off
+          """)
+        .withFallback(ConfigFactory.load("application-postgres.conf"))
+      val settings = R2dbcSettings(config.getConfig("akka.persistence.r2dbc"))
+      val poolSettings = settings.connectionFactorySettings.poolSettings
+      poolSettings.validationTimeout shouldBe None
+      poolSettings.closeQueriesExceeding shouldBe None
+      settings.querySettings.estimateTimeRangeTimeout shouldBe None
+      postgresConnectionFactorySettings(config).tcpKeepAlive shouldBe false
     }
   }
 

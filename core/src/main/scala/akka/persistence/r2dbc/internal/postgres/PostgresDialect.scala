@@ -58,6 +58,7 @@ private[r2dbc] object PostgresDialect extends Dialect {
     val sslPassword: String = config.getString("ssl.password")
 
     val connectTimeout: FiniteDuration = config.getDuration("connect-timeout").toScala
+    val tcpKeepAlive: Boolean = config.getBoolean("tcp-keep-alive")
     val statementCacheSize: Int = config.getInt("statement-cache-size")
 
     val statementTimeout: Option[FiniteDuration] =
@@ -93,6 +94,7 @@ private[r2dbc] object PostgresDialect extends Dialect {
       .option(
         PostgresqlConnectionFactoryProvider.PREPARED_STATEMENT_CACHE_QUERIES,
         Integer.valueOf(settings.statementCacheSize))
+      .option(PostgresqlConnectionFactoryProvider.TCP_KEEPALIVE, java.lang.Boolean.valueOf(settings.tcpKeepAlive))
 
     settings.statementTimeout.foreach { timeout =>
       import scala.jdk.DurationConverters._
